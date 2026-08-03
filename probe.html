@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hourhound — opslagtest</title>
+<style>
+  :root{
+    --ink:#1b1d1c; --paper:#f6f4ef; --line:#d8d4c9;
+    --moss:#4a6b47; --rust:#9c4a2c; --mute:#6f6b61;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --ink:#e8e5dc; --paper:#16181a; --line:#33373a; --moss:#8fb684; --rust:#d98a63; --mute:#8e8a80; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:2.5rem 1.25rem;background:var(--paper);color:var(--ink);
+       font:400 15px/1.6 var(--mono);}
+  main{max-width:640px;margin:0 auto}
+  h1{font-size:15px;font-weight:400;letter-spacing:.14em;text-transform:uppercase;
+     color:var(--mute);margin:0 0 .25rem}
+  .lede{margin:0 0 2rem;color:var(--mute);font-size:13px}
+  #verdict{border-left:3px solid var(--line);padding:.9rem 1rem;margin:0 0 2rem;
+           font-size:17px;line-height:1.45}
+  #verdict.ok{border-color:var(--moss)}
+  #verdict.bad{border-color:var(--rust)}
+  dl{display:grid;grid-template-columns:auto 1fr;gap:.4rem 1.5rem;margin:0 0 2rem;font-size:13px}
+  dt{color:var(--mute)}
+  dd{margin:0;word-break:break-word}
+  .buttons{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 2rem}
+  button{font:inherit;font-size:13px;padding:.5rem .85rem;background:transparent;
+         color:var(--ink);border:1px solid var(--line);border-radius:3px;cursor:pointer}
+  button:hover{border-color:var(--mute)}
+  button:focus-visible{outline:2px solid var(--moss);outline-offset:2px}
+  #log{font-size:12px;color:var(--mute);white-space:pre-wrap;border-top:1px solid var(--line);
+       padding-top:1rem;margin:0}
+  .protocol{font-size:13px;color:var(--mute);border-top:1px solid var(--line);
+            padding-top:1rem;margin-top:2rem}
+  .protocol ol{padding-left:1.2rem;margin:.5rem 0 0}
+  .protocol li{margin-bottom:.35rem}
+</style>
+</head>
+<body>
+<main>
+  <h1>hourhound — fase 0</h1>
+  <p class="lede">Overleeft IndexedDB het afsluiten van de browser op deze laptop?</p>
+
+  <div id="verdict">Bezig met lezen…</div>
+
+  <dl>
+    <dt>Eerste bezoek</dt><dd id="first">—</dd>
+    <dt>Vorige sessie</dt><dd id="prev">—</dd>
+    <dt>Aantal sessies</dt><dd id="count">—</dd>
+    <dt>Sessie-id</dt><dd id="sid">—</dd>
+    <dt>IndexedDB</dt><dd id="idb">—</dd>
+    <dt>localStorage</dt><dd id="ls">—</dd>
+    <dt>Persistent</dt><dd id="persist">—</dd>
+    <dt>Quota</dt><dd id="quota">—</dd>
+    <dt>Secure context</dt><dd id="secure">—</dd>
+  </dl>
+
+  <div class="buttons">
+    <button id="btn-persist">Vraag persistente opslag</button>
+    <button id="btn-bulk">Schrijf 500 testregels</button>
+    <button id="btn-export">Exporteer JSON</button>
+    <button id="btn-reset">Wis alles</button>
+  </div>
+
+  <pre id="log"></pre>
+
+  <div class="protocol">
+    Protocol
+    <ol>
+      <li>Open deze pagina, klik <em>Vraag persistente opslag</em>, klik <em>Schrijf 500 testregels</em>.</li>
+      <li>Herlaad. Het aantal sessies moet oplopen.</li>
+      <li>Sluit de browser volledig af (alle vensters), open opnieuw.</li>
+      <li>Herhaal na een nachtelijke herstart en na een dag normaal werken.</li>
+      <li>Blijft "Eerste bezoek" staan, dan is IndexedDB bruikbaar. Springt het terug naar vandaag, dan wist het beleid site data en moet de app om een exportbestand heen worden gebouwd.</li>
+    </ol>
+  </div>
+</main>
+
+<script>
+const DB='hourhound-probe', STORE='probe', KEY='session';
+const $=id=>document.getElementById(id);
+const now=()=>new Date().toISOString().replace('T',' ').slice(0,19);
+const log=m=>{$('log').textContent+=now()+'  '+m+'\n';};
+
+function open(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open(DB,1);
+    r.onupgradeneeded=()=>r.result.createObjectStore(STORE);
+    r.onsuccess=()=>res(r.result);
+    r.onerror=()=>rej(r.error);
+  });
+}
+function tx(db,mode,fn){
+  return new Promise((res,rej)=>{
+    const t=db.transaction(STORE,mode), s=t.objectStore(STORE);
+    const req=fn(s);
+    t.oncomplete=()=>res(req&&req.result);
+    t.onerror=()=>rej(t.error);
+  });
+}
+const get=(db,k)=>tx(db,'readonly',s=>s.get(k));
+const put=(db,k,v)=>tx(db,'readwrite',s=>s.put(v,k));
+
+let db=null, state=null;
+
+async function boot(){
+  $('secure').textContent = window.isSecureContext ? 'ja' : 'nee — IndexedDB kan geweigerd worden';
+
+  try{
+    localStorage.setItem('hourhound-probe','1');
+    $('ls').textContent = localStorage.getItem('hourhound-probe')==='1' ? 'beschikbaar' : 'leest niet terug';
+  }catch(e){ $('ls').textContent='geblokkeerd — '+e.name; }
+
+  try{
+    db=await open();
+    $('idb').textContent='beschikbaar';
+  }catch(e){
+    $('idb').textContent='geblokkeerd — '+e.name;
+    verdict('IndexedDB is niet beschikbaar. De app moet volledig om een exportbestand heen worden gebouwd.','bad');
+    return;
+  }
+
+  state = await get(db,KEY) || { first: now(), count: 0, prev: null, rows: 0 };
+  const returning = state.count > 0;
+  $('first').textContent = state.first;
+  $('prev').textContent = state.prev || 'geen';
+  $('sid').textContent = Math.random().toString(36).slice(2,8);
+
+  state.prev = now();
+  state.count++;
+  await put(db,KEY,state);
+  $('count').textContent = state.count;
+
+  if(returning){
+    verdict('Data teruggevonden uit een eerdere sessie. Sluit de browser volledig af en kom terug om de echte test te doen.','ok');
+  }else{
+    verdict('Nieuw record aangemaakt. Herlaad de pagina om te bevestigen dat het blijft staan.','');
+  }
+  log('gelezen en bijgewerkt, '+state.rows+' testregels aanwezig');
+
+  await refreshQuota();
+  navigator.storage?.persisted?.().then(p=>{
+    $('persist').textContent = p ? 'ja' : 'nee (nog niet aangevraagd)';
+  });
+}
+
+function verdict(text,cls){ const v=$('verdict'); v.textContent=text; v.className=cls; }
+
+async function refreshQuota(){
+  if(!navigator.storage?.estimate){ $('quota').textContent='onbekend'; return; }
+  const {usage=0,quota=0}=await navigator.storage.estimate();
+  const mb=n=>(n/1048576).toFixed(1)+' MB';
+  $('quota').textContent = mb(usage)+' van '+mb(quota);
+}
+
+$('btn-persist').onclick=async()=>{
+  if(!navigator.storage?.persist){ log('persist() niet ondersteund'); return; }
+  const ok=await navigator.storage.persist();
+  $('persist').textContent = ok ? 'ja' : 'geweigerd';
+  log('persist() gaf '+ok);
+};
+
+$('btn-bulk').onclick=async()=>{
+  const rows=[];
+  for(let i=0;i<500;i++) rows.push({i,t:now(),note:'testregel '+i});
+  await put(db,'bulk',rows);
+  state.rows=rows.length;
+  await put(db,KEY,state);
+  const back=await get(db,'bulk');
+  log('500 regels geschreven, '+ (back?.length ?? 0) +' teruggelezen');
+  refreshQuota();
+};
+
+$('btn-export').onclick=async()=>{
+  const dump={ session: await get(db,KEY), bulk: await get(db,'bulk') };
+  const url=URL.createObjectURL(new Blob([JSON.stringify(dump,null,2)],{type:'application/json'}));
+  const a=document.createElement('a');
+  a.href=url; a.download='hourhound-probe.json'; a.click();
+  URL.revokeObjectURL(url);
+  log('export gedownload');
+};
+
+$('btn-reset').onclick=async()=>{
+  await tx(db,'readwrite',s=>s.clear());
+  try{ localStorage.removeItem('hourhound-probe'); }catch(e){}
+  log('alles gewist — herlaad de pagina');
+};
+
+boot().catch(e=>{ verdict('Onverwachte fout: '+e,'bad'); });
+</script>
+</body>
+</html>

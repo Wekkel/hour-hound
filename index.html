@@ -3,194 +3,470 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>hourhound — opslagtest</title>
+<meta name="theme-color" content="#A8ADB5">
+<title>hourhound</title>
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icon.svg" type="image/svg+xml">
 <style>
-  :root{
-    --ink:#1b1d1c; --paper:#f6f4ef; --line:#d8d4c9;
-    --moss:#4a6b47; --rust:#9c4a2c; --mute:#6f6b61;
-    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  }
-  @media (prefers-color-scheme:dark){
-    :root{ --ink:#e8e5dc; --paper:#16181a; --line:#33373a; --moss:#8fb684; --rust:#d98a63; --mute:#8e8a80; }
-  }
-  *{box-sizing:border-box}
-  body{margin:0;padding:2.5rem 1.25rem;background:var(--paper);color:var(--ink);
-       font:400 15px/1.6 var(--mono);}
-  main{max-width:640px;margin:0 auto}
-  h1{font-size:15px;font-weight:400;letter-spacing:.14em;text-transform:uppercase;
-     color:var(--mute);margin:0 0 .25rem}
-  .lede{margin:0 0 2rem;color:var(--mute);font-size:13px}
-  #verdict{border-left:3px solid var(--line);padding:.9rem 1rem;margin:0 0 2rem;
-           font-size:17px;line-height:1.45}
-  #verdict.ok{border-color:var(--moss)}
-  #verdict.bad{border-color:var(--rust)}
-  dl{display:grid;grid-template-columns:auto 1fr;gap:.4rem 1.5rem;margin:0 0 2rem;font-size:13px}
-  dt{color:var(--mute)}
-  dd{margin:0;word-break:break-word}
-  .buttons{display:flex;flex-wrap:wrap;gap:.5rem;margin:0 0 2rem}
-  button{font:inherit;font-size:13px;padding:.5rem .85rem;background:transparent;
-         color:var(--ink);border:1px solid var(--line);border-radius:3px;cursor:pointer}
-  button:hover{border-color:var(--mute)}
-  button:focus-visible{outline:2px solid var(--moss);outline-offset:2px}
-  #log{font-size:12px;color:var(--mute);white-space:pre-wrap;border-top:1px solid var(--line);
-       padding-top:1rem;margin:0}
-  .protocol{font-size:13px;color:var(--mute);border-top:1px solid var(--line);
-            padding-top:1rem;margin-top:2rem}
-  .protocol ol{padding-left:1.2rem;margin:.5rem 0 0}
-  .protocol li{margin-bottom:.35rem}
+:root{
+  --paper:#f7f5f0; --card:#ffffff; --ink:#1b1d1c; --mute:#6f6b61; --line:#dedad0;
+  --moss:#4a6b47; --rust:#9c4a2c; --gapc:#e8ddd2;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root{--paper:#141618;--card:#1c1f22;--ink:#e8e5dc;--mute:#8e8a80;--line:#2e3336;--gapc:#3a322c;}
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 15px/1.55 var(--sans);
+     -webkit-user-select:none;user-select:none}
+main{max-width:1080px;margin:0 auto;padding:1rem 1rem 4rem}
+h2{font:400 12px/1 var(--sans);letter-spacing:.16em;text-transform:uppercase;
+   color:var(--mute);margin:0 0 .6rem}
+header{display:flex;align-items:center;gap:.75rem;padding:.25rem 0 1rem}
+header svg{width:38px;height:38px;flex:none}
+.brand{font:500 17px/1 var(--sans);letter-spacing:.02em}
+.spacer{flex:1}
+.badge{font:400 11px/1 var(--mono);color:var(--mute);border:1px solid var(--line);
+       border-radius:99px;padding:.3rem .6rem;display:inline-block;margin-top:.3rem}
+button{font:inherit;font-size:13px;padding:.42rem .7rem;background:var(--card);color:var(--ink);
+       border:1px solid var(--line);border-radius:5px;cursor:pointer}
+button:hover{border-color:var(--mute)}
+button:focus-visible{outline:2px solid var(--moss);outline-offset:2px}
+button.go{background:var(--moss);border-color:var(--moss);color:#fff}
+button.warn{color:var(--rust)}
+kbd{font:400 10px/1 var(--mono);color:var(--mute);border:1px solid var(--line);
+    border-radius:3px;padding:.15rem .28rem}
+input,select{font:inherit;font-size:13px;padding:.42rem .55rem;background:var(--card);
+       color:var(--ink);border:1px solid var(--line);border-radius:5px}
+input:focus,select:focus{outline:2px solid var(--moss);outline-offset:1px}
+section{background:var(--card);border:1px solid var(--line);border-radius:9px;
+        padding:1rem;margin:0 0 1rem}
+.nowrow{display:flex;align-items:center;gap:1rem;flex-wrap:wrap}
+.nowlabel{font:500 21px/1.2 var(--sans);flex:1;min-width:220px}
+.nowlabel small{display:block;font:400 13px/1.4 var(--sans);color:var(--mute);margin-top:.2rem}
+.stat{font:400 12px/1.3 var(--mono);color:var(--mute);text-align:right}
+.stat b{display:block;font:500 20px/1.1 var(--mono);color:var(--ink)}
+.scroll{overflow-x:auto;padding-bottom:.4rem}
+.hours{display:flex;min-width:940px;margin-bottom:3px}
+.hours span{flex:1;font:400 11px/1 var(--mono);color:var(--mute)}
+.band{display:flex;min-width:940px;gap:1px;height:52px}
+.slot{flex:1;border-radius:2px;background:var(--gapc);cursor:pointer}
+.slot.future{background:transparent;box-shadow:inset 0 0 0 1px var(--line)}
+.slot.hour{margin-left:4px}
+.slot.now{box-shadow:inset 0 0 0 2px var(--ink)}
+.slot.sel{box-shadow:inset 0 0 0 2px var(--moss)}
+.legend{display:flex;flex-wrap:wrap;gap:.9rem;margin-top:.7rem;font:400 12px/1.6 var(--sans);color:var(--mute)}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:.35rem;vertical-align:-1px}
+.assign{margin-top:.9rem;padding-top:.9rem;border-top:1px solid var(--line);display:none}
+.assign.on{display:block}
+.assign .row{display:flex;gap:.5rem;flex-wrap:wrap;align-items:center;margin-bottom:.6rem}
+.assign input[type=text]{flex:1;min-width:220px}
+.chips{display:flex;flex-wrap:wrap;gap:.4rem}
+.chip{display:flex;align-items:center;gap:.45rem;font-size:13px;padding:.4rem .65rem;
+      border:1px solid var(--line);border-radius:5px;background:var(--card);cursor:pointer}
+.chip i{width:10px;height:10px;border-radius:2px;display:inline-block}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{font:400 11px/1 var(--sans);letter-spacing:.1em;text-transform:uppercase;color:var(--mute);
+   text-align:left;padding:0 .5rem .4rem 0}
+td{padding:.4rem .5rem .4rem 0;border-top:1px solid var(--line);vertical-align:top}
+td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+tr.gap td{color:var(--rust)}
+.empty{color:var(--mute);font-size:13px;padding:.5rem 0}
+.mrow{display:flex;gap:.5rem;align-items:center;padding:.4rem 0;border-top:1px solid var(--line);
+      font-size:13px;flex-wrap:wrap}
+.mrow .nm{flex:1;min-width:160px}
+.mrow .no{font-family:var(--mono);color:var(--mute)}
+.help{font-size:12px;color:var(--mute);line-height:2}
+.toast{position:fixed;left:50%;bottom:1.2rem;transform:translateX(-50%);background:var(--ink);
+       color:var(--paper);font-size:13px;padding:.55rem .9rem;border-radius:6px;opacity:0;
+       transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:.94}
 </style>
 </head>
 <body>
 <main>
-  <h1>hourhound — fase 0</h1>
-  <p class="lede">Overleeft IndexedDB het afsluiten van de browser op deze laptop?</p>
 
-  <div id="verdict">Bezig met lezen…</div>
-
-  <dl>
-    <dt>Eerste bezoek</dt><dd id="first">—</dd>
-    <dt>Vorige sessie</dt><dd id="prev">—</dd>
-    <dt>Aantal sessies</dt><dd id="count">—</dd>
-    <dt>Sessie-id</dt><dd id="sid">—</dd>
-    <dt>IndexedDB</dt><dd id="idb">—</dd>
-    <dt>localStorage</dt><dd id="ls">—</dd>
-    <dt>Persistent</dt><dd id="persist">—</dd>
-    <dt>Quota</dt><dd id="quota">—</dd>
-    <dt>Secure context</dt><dd id="secure">—</dd>
-  </dl>
-
-  <div class="buttons">
-    <button id="btn-persist">Vraag persistente opslag</button>
-    <button id="btn-bulk">Schrijf 500 testregels</button>
-    <button id="btn-export">Exporteer JSON</button>
-    <button id="btn-reset">Wis alles</button>
+<header>
+  <svg viewBox="0 0 100 100" aria-hidden="true">
+    <path d="M26,58 Q28,42 32,34 Q22,44 20,60 Q19,74 27,80 L31,71 L35,82 L40,70 Q28,66 26,58 Z" fill="#8D939C"/>
+    <path d="M74,58 Q72,42 68,34 Q78,44 80,60 Q81,74 73,80 L69,71 L65,82 L60,70 Q72,66 74,58 Z" fill="#8D939C"/>
+    <ellipse cx="50" cy="52" rx="34" ry="30" fill="#A8ADB5"/>
+    <path d="M36,58 Q37,50 42,54 Q47,57 50,44 Q53,57 58,54 Q63,50 64,58 Q66,74 50,80 Q34,74 36,58 Z" fill="#F4F5F7"/>
+    <ellipse cx="50" cy="60" rx="7" ry="5.5" fill="#232629"/>
+    <circle cx="39" cy="50" r="5.2" fill="#1C1F22"/><circle cx="61" cy="50" r="5.2" fill="#1C1F22"/>
+    <path d="M20,44 Q20,26 34,18 Q50,9 66,18 Q80,26 80,45 L74,54 L70,44 L65,57 L60,45 L55,58 L49,46 L44,58 L38,45 L33,55 L28,45 Z" fill="#C3C8CE"/>
+  </svg>
+  <div>
+    <div class="brand">hourhound</div>
+    <div class="badge" id="ver">versie —</div>
   </div>
+  <div class="spacer"></div>
+  <button id="btn-update" class="go" style="display:none">Nieuwe versie laden</button>
+  <button id="btn-export">Export</button>
+</header>
 
-  <pre id="log"></pre>
-
-  <div class="protocol">
-    Protocol
-    <ol>
-      <li>Open deze pagina, klik <em>Vraag persistente opslag</em>, klik <em>Schrijf 500 testregels</em>.</li>
-      <li>Herlaad. Het aantal sessies moet oplopen.</li>
-      <li>Sluit de browser volledig af (alle vensters), open opnieuw.</li>
-      <li>Herhaal na een nachtelijke herstart en na een dag normaal werken.</li>
-      <li>Blijft "Eerste bezoek" staan, dan is IndexedDB bruikbaar. Springt het terug naar vandaag, dan wist het beleid site data en moet de app om een exportbestand heen worden gebouwd.</li>
-    </ol>
+<section>
+  <div class="nowrow">
+    <div class="nowlabel" id="now-label">Niets loopt<small>Kies een dossier om te starten</small></div>
+    <div class="stat"><b id="s-claim">0,0</b>geclaimd</div>
+    <div class="stat"><b id="s-gap">0,0</b>gaten</div>
+    <div class="stat"><b id="s-pct">—</b>volledig</div>
+    <button id="btn-phone">Telefoon <kbd>T</kbd></button>
+    <button id="btn-pause">Pauze <kbd>P</kbd></button>
   </div>
+</section>
+
+<section>
+  <h2>Dagband <span id="daylabel" style="text-transform:none;letter-spacing:0"></span></h2>
+  <div class="scroll">
+    <div class="hours" id="hours"></div>
+    <div class="band" id="band"></div>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--gapc)"></i>ongeclaimd</span>
+    <span><i style="box-shadow:inset 0 0 0 1px var(--line)"></i>nog te gaan</span>
+    <span>Sleep of shift-klik voor een reeks · <kbd>G</kbd> springt naar het eerste gat</span>
+  </div>
+  <div class="assign" id="assign">
+    <div class="row">
+      <strong id="sel-info"></strong>
+      <input type="text" id="sel-narr" placeholder="Werkomschrijving">
+      <button id="btn-clear" class="warn">Leegmaken</button>
+      <button id="btn-cancel">Annuleren</button>
+    </div>
+    <div class="chips" id="chips-assign"></div>
+  </div>
+</section>
+
+<section>
+  <h2>Dossiers</h2>
+  <div class="chips" id="chips-start"></div>
+</section>
+
+<section>
+  <h2>Regels van vandaag</h2>
+  <div id="ledger"></div>
+</section>
+
+<section>
+  <h2>Dossierbeheer</h2>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:.6rem">
+    <input type="text" id="m-alias" placeholder="Alias" style="width:130px">
+    <input type="text" id="m-number" placeholder="Nummer" style="width:140px">
+    <input type="text" id="m-name" placeholder="Dossiernaam" style="flex:1;min-width:180px">
+    <select id="m-lang"><option value="nl">NL</option><option value="en">EN</option></select>
+    <button id="btn-addmatter">Toevoegen</button>
+  </div>
+  <div id="matters"></div>
+</section>
+
+<section>
+  <h2>Sneltoetsen</h2>
+  <div class="help">
+    <kbd>1</kbd>–<kbd>9</kbd> start dossier, of wijs de selectie eraan toe ·
+    <kbd>0</kbd> tiende dossier · <kbd>T</kbd> telefoon-interruptie · <kbd>P</kbd> pauze ·
+    <kbd>G</kbd> naar het eerste gat · <kbd>E</kbd> export · <kbd>Esc</kbd> selectie los
+  </div>
+</section>
+
 </main>
+<div class="toast" id="toast"></div>
 
 <script>
-const DB='hourhound-probe', STORE='probe', KEY='session';
+"use strict";
+const CFG={start:7*60,end:19*60,block:6};
+const N=(CFG.end-CFG.start)/CFG.block;
+const PAL=["#4a6b47","#9c4a2c","#3f5f7a","#7a5b8f","#8a6b2c","#2f6f6b","#8f3f5c","#5a6b2c","#6b4a3f","#455a64"];
 const $=id=>document.getElementById(id);
-const now=()=>new Date().toISOString().replace('T',' ').slice(0,19);
-const log=m=>{$('log').textContent+=now()+'  '+m+'\n';};
+const pad=n=>String(n).padStart(2,"0");
+const hrs=n=>(n*CFG.block/60).toFixed(1).replace(".",",");
+const slotTime=i=>{const m=CFG.start+i*CFG.block;return pad(Math.floor(m/60))+":"+pad(m%60);};
+const today=()=>{const d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-function open(){
-  return new Promise((res,rej)=>{
-    const r=indexedDB.open(DB,1);
-    r.onupgradeneeded=()=>r.result.createObjectStore(STORE);
-    r.onsuccess=()=>res(r.result);
-    r.onerror=()=>rej(r.error);
-  });
-}
-function tx(db,mode,fn){
-  return new Promise((res,rej)=>{
-    const t=db.transaction(STORE,mode), s=t.objectStore(STORE);
-    const req=fn(s);
-    t.oncomplete=()=>res(req&&req.result);
-    t.onerror=()=>rej(t.error);
-  });
-}
-const get=(db,k)=>tx(db,'readonly',s=>s.get(k));
-const put=(db,k,v)=>tx(db,'readwrite',s=>s.put(v,k));
+let db=null,matters=[],day=null,active=null,prevActive=null,sel=null,dragging=false;
 
-let db=null, state=null;
+function openDB(){return new Promise((res,rej)=>{
+  const r=indexedDB.open("hourhound",1);
+  r.onupgradeneeded=()=>{const d=r.result;
+    if(!d.objectStoreNames.contains("days"))d.createObjectStore("days",{keyPath:"date"});
+    if(!d.objectStoreNames.contains("matters"))d.createObjectStore("matters",{keyPath:"id"});
+    if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta");};
+  r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);});}
+function tx(store,mode,fn){return new Promise((res,rej)=>{
+  const t=db.transaction(store,mode),req=fn(t.objectStore(store));
+  t.oncomplete=()=>res(req&&req.result); t.onerror=()=>rej(t.error);});}
+const getAll=s=>tx(s,"readonly",o=>o.getAll());
+const get=(s,k)=>tx(s,"readonly",o=>o.get(k));
+const put=(s,v)=>tx(s,"readwrite",o=>o.put(v));
+const del=(s,k)=>tx(s,"readwrite",o=>o.delete(k));
 
-async function boot(){
-  $('secure').textContent = window.isSecureContext ? 'ja' : 'nee — IndexedDB kan geweigerd worden';
+let saveTimer=null;
+function save(){clearTimeout(saveTimer);
+  saveTimer=setTimeout(()=>put("days",day).catch(e=>toast("Opslaan mislukt: "+e)),300);}
 
-  try{
-    localStorage.setItem('hourhound-probe','1');
-    $('ls').textContent = localStorage.getItem('hourhound-probe')==='1' ? 'beschikbaar' : 'leest niet terug';
-  }catch(e){ $('ls').textContent='geblokkeerd — '+e.name; }
+const curSlot=()=>{const d=new Date(),m=d.getHours()*60+d.getMinutes();
+  if(m<CFG.start)return -1; if(m>=CFG.end)return N; return Math.floor((m-CFG.start)/CFG.block);};
+const matter=id=>matters.find(m=>m.id===id);
+const colorOf=id=>{const m=matter(id);return m?PAL[m.c%PAL.length]:"#888";};
 
-  try{
-    db=await open();
-    $('idb').textContent='beschikbaar';
-  }catch(e){
-    $('idb').textContent='geblokkeerd — '+e.name;
-    verdict('IndexedDB is niet beschikbaar. De app moet volledig om een exportbestand heen worden gebouwd.','bad');
-    return;
+function toast(msg){const t=$("toast");t.textContent=msg;t.classList.add("on");
+  clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),1900);}
+
+function tick(){
+  const cur=curSlot();
+  if(active&&cur>=0&&cur<N){
+    for(let i=Math.max(0,active.from);i<=cur;i++)
+      if(!day.slots[i]) day.slots[i]={m:active.m,n:active.n};
+    save();
   }
+  render();
+}
 
-  state = await get(db,KEY) || { first: now(), count: 0, prev: null, rows: 0 };
-  const returning = state.count > 0;
-  $('first').textContent = state.first;
-  $('prev').textContent = state.prev || 'geen';
-  $('sid').textContent = Math.random().toString(36).slice(2,8);
+function startActive(mid,narr,isPhone){
+  const cur=curSlot();
+  active={m:mid,n:narr||"",from:cur<0?0:Math.min(cur,N-1),phone:!!isPhone};
+  tick();
+}
 
-  state.prev = now();
-  state.count++;
-  await put(db,KEY,state);
-  $('count').textContent = state.count;
+function assignSel(mid){
+  if(!sel)return;
+  const n=$("sel-narr").value.trim();
+  const a=Math.min(sel.a,sel.b),b=Math.max(sel.a,sel.b);
+  for(let i=a;i<=b;i++) day.slots[i]={m:mid,n};
+  save(); clearSel(); render();
+  toast(hrs(b-a+1)+" uur toegewezen");
+}
+function clearSlots(){
+  if(!sel)return;
+  const a=Math.min(sel.a,sel.b),b=Math.max(sel.a,sel.b);
+  for(let i=a;i<=b;i++) day.slots[i]=null;
+  save(); clearSel(); render();
+}
+function clearSel(){sel=null;$("assign").classList.remove("on");$("sel-narr").value="";}
+function showSel(){
+  if(!sel){$("assign").classList.remove("on");return;}
+  const a=Math.min(sel.a,sel.b),b=Math.max(sel.a,sel.b);
+  $("sel-info").textContent=slotTime(a)+"–"+slotTime(b+1)+" · "+hrs(b-a+1)+" u";
+  $("assign").classList.add("on");
+  const ex=day.slots[a];
+  if(ex&&ex.n&&!$("sel-narr").value)$("sel-narr").value=ex.n;
+}
+function firstGap(){const cur=curSlot();
+  for(let i=0;i<Math.min(cur,N);i++) if(!day.slots[i]) return i; return -1;}
 
-  if(returning){
-    verdict('Data teruggevonden uit een eerdere sessie. Sluit de browser volledig af en kom terug om de echte test te doen.','ok');
-  }else{
-    verdict('Nieuw record aangemaakt. Herlaad de pagina om te bevestigen dat het blijft staan.','');
+function renderBand(){
+  const cur=curSlot(),h=[],b=[];
+  for(let i=0;i<N;i+=10) h.push("<span>"+slotTime(i)+"</span>");
+  $("hours").innerHTML=h.join("");
+  const selA=sel?Math.min(sel.a,sel.b):-1, selB=sel?Math.max(sel.a,sel.b):-2;
+  for(let i=0;i<N;i++){
+    const s=day.slots[i],cls=["slot"];
+    if(i%10===0&&i>0)cls.push("hour");
+    if(!s&&cur>=0&&i>=cur)cls.push("future");
+    if(i===cur)cls.push("now");
+    if(i>=selA&&i<=selB)cls.push("sel");
+    const m=s?matter(s.m):null;
+    const tip=slotTime(i)+"–"+slotTime(i+1)+(m?" · "+m.alias+(s.n?" · "+s.n:""):" · ongeclaimd");
+    b.push('<div class="'+cls.join(" ")+'"'+(s?' style="background:'+colorOf(s.m)+'"':"")+
+      ' data-i="'+i+'" title="'+esc(tip)+'"></div>');
   }
-  log('gelezen en bijgewerkt, '+state.rows+' testregels aanwezig');
+  $("band").innerHTML=b.join("");
+}
 
-  await refreshQuota();
-  navigator.storage?.persisted?.().then(p=>{
-    $('persist').textContent = p ? 'ja' : 'nee (nog niet aangevraagd)';
+function renderStats(){
+  const cur=Math.max(0,Math.min(curSlot(),N));
+  let filled=0,gaps=0;
+  for(let i=0;i<N;i++){ if(day.slots[i])filled++; else if(i<cur)gaps++; }
+  $("s-claim").textContent=hrs(filled);
+  $("s-gap").textContent=hrs(gaps);
+  $("s-pct").textContent=cur?Math.round(filled/cur*100)+"%":"—";
+}
+
+function renderNow(){
+  const el=$("now-label");
+  if(!active){el.innerHTML="Niets loopt<small>Kies een dossier om te starten</small>";return;}
+  const m=matter(active.m);
+  el.innerHTML='<span style="border-left:4px solid '+colorOf(active.m)+';padding-left:.5rem">'+
+    esc(m?m.alias:"?")+"</span><small>"+esc(active.n||"geen omschrijving")+
+    " · sinds "+slotTime(active.from)+"</small>";
+}
+
+function runs(){
+  const out=[],cur=curSlot();let i=0;
+  while(i<N){
+    const s=day.slots[i];
+    if(!s){const a=i;while(i<N&&!day.slots[i])i++;
+      if(a<cur)out.push({gap:true,a,b:Math.min(i,cur)-1});continue;}
+    const a=i,k=s.m+"\u0000"+(s.n||"");
+    while(i<N&&day.slots[i]&&day.slots[i].m+"\u0000"+(day.slots[i].n||"")===k)i++;
+    out.push({gap:false,a,b:i-1,m:s.m,n:s.n});
+  }
+  return out;
+}
+
+function renderLedger(){
+  const rs=runs();
+  if(!rs.length){$("ledger").innerHTML='<div class="empty">Nog niets vastgelegd vandaag.</div>';return;}
+  const totals={};
+  rs.forEach(r=>{if(!r.gap)totals[r.m]=(totals[r.m]||0)+(r.b-r.a+1);});
+  let h='<table><thead><tr><th>Tijd</th><th>Dossier</th><th>Omschrijving</th>'+
+        '<th style="text-align:right">Uren</th></tr></thead><tbody>';
+  rs.forEach(r=>{
+    const n=r.b-r.a+1; if(n<=0)return;
+    if(r.gap) h+='<tr class="gap"><td class="num">'+slotTime(r.a)+"–"+slotTime(r.b+1)+
+      '</td><td colspan="2">ongeclaimd</td><td class="num">'+hrs(n)+"</td></tr>";
+    else{const m=matter(r.m);
+      h+='<tr><td class="num">'+slotTime(r.a)+"–"+slotTime(r.b+1)+"</td><td>"+
+        '<i style="display:inline-block;width:9px;height:9px;border-radius:2px;background:'+
+        colorOf(r.m)+';margin-right:.4rem"></i>'+esc(m?m.alias:"?")+"</td><td>"+
+        esc(r.n||"—")+'</td><td class="num">'+hrs(n)+"</td></tr>";}
   });
+  h+='</tbody></table><h2 style="margin:1.2rem 0 .5rem">Dagtotaal per dossier</h2><table><tbody>';
+  Object.keys(totals).forEach(id=>{const m=matter(id);
+    h+="<tr><td>"+(m?esc(m.alias)+' <span style="color:var(--mute);font-family:var(--mono)">'+
+      esc(m.number)+"</span>":esc(id))+'</td><td class="num">'+hrs(totals[id])+"</td></tr>";});
+  h+="</tbody></table>";
+  $("ledger").innerHTML=h;
 }
 
-function verdict(text,cls){ const v=$('verdict'); v.textContent=text; v.className=cls; }
-
-async function refreshQuota(){
-  if(!navigator.storage?.estimate){ $('quota').textContent='onbekend'; return; }
-  const {usage=0,quota=0}=await navigator.storage.estimate();
-  const mb=n=>(n/1048576).toFixed(1)+' MB';
-  $('quota').textContent = mb(usage)+' van '+mb(quota);
+function renderChips(){
+  const mk=(m,i,attr)=>'<button class="chip" data-'+attr+'="'+esc(m.id)+'">'+
+    '<i style="background:'+PAL[m.c%PAL.length]+'"></i>'+esc(m.alias)+
+    (i<10?"<kbd>"+(i===9?0:i+1)+"</kbd>":"")+"</button>";
+  $("chips-start").innerHTML=matters.map((m,i)=>mk(m,i,"start")).join("")||
+    '<div class="empty">Voeg hieronder een dossier toe.</div>';
+  $("chips-assign").innerHTML=matters.map((m,i)=>mk(m,i,"assign")).join("");
+  $("matters").innerHTML=matters.map(m=>
+    '<div class="mrow"><span class="nm">'+esc(m.alias)+" — "+esc(m.name)+"</span>"+
+    '<span class="no">'+esc(m.number)+'</span><span class="no">'+m.lang.toUpperCase()+"</span>"+
+    '<button class="warn" data-del="'+esc(m.id)+'">Verwijderen</button></div>').join("")||
+    '<div class="empty">Nog geen dossiers.</div>';
 }
 
-$('btn-persist').onclick=async()=>{
-  if(!navigator.storage?.persist){ log('persist() niet ondersteund'); return; }
-  const ok=await navigator.storage.persist();
-  $('persist').textContent = ok ? 'ja' : 'geweigerd';
-  log('persist() gaf '+ok);
-};
+function render(){renderBand();renderStats();renderNow();renderLedger();showSel();}
 
-$('btn-bulk').onclick=async()=>{
-  const rows=[];
-  for(let i=0;i<500;i++) rows.push({i,t:now(),note:'testregel '+i});
-  await put(db,'bulk',rows);
-  state.rows=rows.length;
-  await put(db,KEY,state);
-  const back=await get(db,'bulk');
-  log('500 regels geschreven, '+ (back?.length ?? 0) +' teruggelezen');
-  refreshQuota();
-};
+$("band").addEventListener("mousedown",e=>{
+  const t=e.target.closest(".slot"); if(!t)return;
+  const i=+t.dataset.i;
+  if(e.shiftKey&&sel){sel.b=i;} else {sel={a:i,b:i};dragging=true;}
+  render(); e.preventDefault();});
+$("band").addEventListener("mouseover",e=>{
+  if(!dragging||!sel)return; const t=e.target.closest(".slot"); if(!t)return;
+  sel.b=+t.dataset.i; render();});
+window.addEventListener("mouseup",()=>{dragging=false;});
 
-$('btn-export').onclick=async()=>{
-  const dump={ session: await get(db,KEY), bulk: await get(db,'bulk') };
-  const url=URL.createObjectURL(new Blob([JSON.stringify(dump,null,2)],{type:'application/json'}));
-  const a=document.createElement('a');
-  a.href=url; a.download='hourhound-probe.json'; a.click();
-  URL.revokeObjectURL(url);
-  log('export gedownload');
-};
+document.addEventListener("click",e=>{
+  const s=e.target.closest("[data-start]"); if(s){startActive(s.dataset.start,"");return;}
+  const a=e.target.closest("[data-assign]"); if(a){assignSel(a.dataset.assign);return;}
+  const d=e.target.closest("[data-del]"); if(d){
+    if(confirm("Dossier verwijderen? Bestaande regels blijven staan."))
+      del("matters",d.dataset.del).then(load);
+  }});
 
-$('btn-reset').onclick=async()=>{
-  await tx(db,'readwrite',s=>s.clear());
-  try{ localStorage.removeItem('hourhound-probe'); }catch(e){}
-  log('alles gewist — herlaad de pagina');
-};
+$("btn-clear").onclick=clearSlots;
+$("btn-cancel").onclick=()=>{clearSel();render();};
+$("btn-pause").onclick=()=>{active=null;prevActive=null;render();};
+$("btn-phone").onclick=phone;
+$("btn-export").onclick=exportAll;
+$("btn-addmatter").onclick=addMatter;
 
-boot().catch(e=>{ verdict('Onverwachte fout: '+e,'bad'); });
+function phone(){
+  if(active&&active.phone){active=prevActive;prevActive=null;toast("Terug naar vorige taak");}
+  else{
+    const i7=matters.find(m=>/^i7/i.test(m.alias))||matters[0];
+    if(!i7){toast("Voeg eerst een dossier toe");return;}
+    prevActive=active; startActive(i7.id,"Telefonisch overleg",true);
+    toast("Telefoon loopt — druk T om terug te keren");
+  }
+  render();
+}
+
+document.addEventListener("keydown",e=>{
+  if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName))return;
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const k=e.key.toLowerCase();
+  if(k>="0"&&k<="9"){
+    const m=matters[k==="0"?9:(+k-1)]; if(!m)return;
+    if(sel)assignSel(m.id); else startActive(m.id,"");
+    e.preventDefault(); return;}
+  if(k==="t"){phone();e.preventDefault();}
+  else if(k==="p"){active=null;prevActive=null;render();}
+  else if(k==="g"){const g=firstGap();
+    if(g<0){toast("Geen gaten — goed bezig");return;}
+    sel={a:g,b:g};render();$("sel-narr").focus();}
+  else if(k==="e"){exportAll();}
+  else if(e.key==="Escape"){clearSel();render();}
+});
+
+async function addMatter(){
+  const alias=$("m-alias").value.trim();
+  if(!alias){toast("Alias is verplicht");return;}
+  await put("matters",{id:"m"+Date.now(),alias,number:$("m-number").value.trim()||"—",
+    name:$("m-name").value.trim()||alias,lang:$("m-lang").value,c:matters.length});
+  ["m-alias","m-number","m-name"].forEach(i=>$(i).value="");
+  await load();
+}
+
+async function exportAll(){
+  const dump={app:"hourhound",exported:new Date().toISOString(),
+    matters:await getAll("matters"),days:await getAll("days")};
+  const url=URL.createObjectURL(new Blob([JSON.stringify(dump,null,2)],{type:"application/json"}));
+  const a=document.createElement("a");a.href=url;a.download="hourhound-"+today()+".json";a.click();
+  URL.revokeObjectURL(url);toast("Export gedownload");
+}
+
+async function load(){
+  matters=(await getAll("matters")).sort((a,b)=>a.c-b.c);
+  if(!matters.length){
+    await put("matters",{id:"m-i7",alias:"i7",number:"I700000000",name:"Indirecte uren",lang:"nl",c:0});
+    matters=await getAll("matters");
+  }
+  const d=today();
+  day=await get("days",d)||{date:d,slots:new Array(N).fill(null)};
+  if(day.slots.length!==N){const s=new Array(N).fill(null);
+    day.slots.forEach((v,i)=>{if(i<N)s[i]=v;});day.slots=s;}
+  $("daylabel").textContent=new Date().toLocaleDateString("nl-NL",
+    {weekday:"long",day:"numeric",month:"long"});
+  renderChips();render();
+}
+
+(async function(){
+  try{db=await openDB();}
+  catch(e){document.body.innerHTML="<main><section>IndexedDB is niet beschikbaar: "+esc(e)+"</section></main>";return;}
+  if(navigator.storage&&navigator.storage.persist){
+    try{ if(!(await navigator.storage.persisted())) await navigator.storage.persist(); }catch(e){}
+  }
+  await load();
+  setInterval(tick,5000);
+})();
+
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("./sw.js").then(reg=>{
+    const check=()=>{if(reg.waiting)$("btn-update").style.display="";};
+    check();
+    reg.addEventListener("updatefound",()=>{
+      const w=reg.installing; if(!w)return;
+      w.addEventListener("statechange",()=>{
+        if(w.state==="installed"&&navigator.serviceWorker.controller)check();});
+    });
+    $("btn-update").onclick=()=>{if(reg.waiting)reg.waiting.postMessage({type:"SKIP_WAITING"});};
+    setInterval(()=>reg.update(),15*60*1000);
+  }).catch(()=>{});
+
+  let reloaded=false;
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{
+    if(reloaded)return;reloaded=true;location.reload();});
+  navigator.serviceWorker.ready.then(askVersion);
+}
+function askVersion(){
+  const c=navigator.serviceWorker.controller;
+  if(!c){$("ver").textContent="versie — (geen sw)";return;}
+  const ch=new MessageChannel();
+  ch.port1.onmessage=e=>{$("ver").textContent="versie "+e.data.version;};
+  c.postMessage({type:"GET_VERSION"},[ch.port2]);
+}
 </script>
 </body>
 </html>

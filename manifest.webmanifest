@@ -1,0 +1,15 @@
+{
+  "name": "hourhound",
+  "short_name": "hourhound",
+  "description": "Snelle, volledige tijdregistratie in blokken van zes minuten.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f5f0",
+  "theme_color": "#A8ADB5",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}
