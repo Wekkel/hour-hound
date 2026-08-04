@@ -45,15 +45,15 @@ input,select{font:inherit;font-size:15px;padding:.45rem .55rem;background:var(--
 input:focus,select:focus{outline:2px solid var(--moss);outline-offset:1px}
 input.miss{border-color:var(--rust)}
 section{background:var(--card);border:1px solid var(--line);border-radius:11px;
-        padding:1rem 1.1rem;margin:0 0 1rem}
-h2{font:500 15px/1.2 var(--sans);margin:0 0 .8rem}
+        padding:.75rem .9rem;margin:0 0 .6rem}
+h2{font:500 14px/1.2 var(--sans);margin:0 0 .5rem}
 .view{display:none}.view.on{display:block}
 .hint{font-size:13px;color:var(--soft)}
 .mono{font-family:var(--mono)}
 .bad{color:var(--rust)}
 
 .live{background:var(--card);border:1px solid var(--line);border-left:8px solid var(--line);
-  border-radius:11px;padding:1rem 1.1rem;margin-bottom:.7rem}
+  border-radius:11px;padding:.7rem .9rem;margin-bottom:.55rem}
 .live.werk{border-left-color:var(--moss)}
 .live.telefoon,.live.onderbreking{border-left-color:var(--rust)}
 .live.pauze{border-left-color:var(--amber)}
@@ -61,24 +61,45 @@ h2{font:500 15px/1.2 var(--sans);margin:0 0 .8rem}
 .live .who{font:500 25px/1.2 var(--sans)}
 .live .uu{font:500 27px/1 var(--mono);margin-left:auto}
 .live .run{font:400 14px/1.6 var(--mono);color:var(--soft);width:100%;margin-top:.15rem}
-.live .fields{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-top:.8rem}
-.live input{font-size:16px;padding:.5rem .6rem}
+.live .fields{display:grid;grid-template-columns:1fr 1fr;gap:.35rem .5rem;margin-top:.5rem}
+.live label{display:block;font:500 10px/1.5 var(--sans);color:var(--soft);
+  text-transform:uppercase;letter-spacing:.07em}
+.live label input{width:100%}
+.live input{font-size:16px;padding:.42rem .55rem}
 .live .wide{grid-column:1/-1}
+.live .who{font:500 23px/1.15 var(--sans)}
+.live .uu{font:500 25px/1 var(--mono);margin-left:auto}
+.live .run{font:400 13px/1.5 var(--mono);color:var(--soft);width:100%;margin-top:.1rem}
 .idle{color:var(--soft)}
 .wake{margin-top:.8rem;padding:.7rem .8rem;border:1px solid var(--rust);border-radius:8px;
       font-size:15px;display:none;align-items:center;gap:.6rem;flex-wrap:wrap}
 .wake.on{display:flex}
-.bar{display:flex;gap:.5rem;flex-wrap:wrap;margin-bottom:1rem}
-.bar button{flex:1;min-width:128px;padding:.7rem}
-.strip{margin-bottom:1rem}
-.strip .rg{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:.45rem}
-.strip button{display:flex;align-items:center;gap:.5rem;padding:.6rem;text-align:left;
-  min-height:46px;font-size:15px}
-.strip button span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.strip button i{width:10px;height:10px;border-radius:3px;flex:none}
-.tot{display:flex;gap:1.5rem;align-items:baseline;flex-wrap:wrap}
-.tot b{font:500 24px/1 var(--mono)}
-.tot small{color:var(--soft);font-size:14px}
+.bar{display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.6rem}
+.bar button{flex:1;min-width:124px;padding:.5rem .6rem;font-size:15px}
+.strip button.taak{display:flex;align-items:center;gap:.45rem;width:100%;padding:.3rem .5rem;
+  text-align:left;font-size:14px;margin-bottom:.25rem;min-height:30px}
+.strip button.taak i{width:9px;height:9px;border-radius:2px;flex:none}
+.strip .dn{font-weight:500;white-space:nowrap;max-width:44%;overflow:hidden;
+  text-overflow:ellipsis}
+.strip .cd{font:400 12px/1 var(--mono);color:var(--soft);white-space:nowrap}
+.strip .om{flex:1;color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.strip .ur{font-family:var(--mono);white-space:nowrap}
+.i7wrap{display:flex;align-items:center;gap:.5rem;margin-top:.45rem;
+  padding-top:.45rem;border-top:1px solid var(--line)}
+.i7wrap .cap{font:500 10px/1 var(--sans);color:var(--soft);letter-spacing:.08em;
+  text-transform:uppercase}
+.i7wrap .rg{display:flex;flex-wrap:wrap;gap:.35rem;flex:1}
+.i7wrap button{display:flex;align-items:center;gap:.35rem;padding:.25rem .5rem;font-size:13px}
+.i7wrap button i{width:8px;height:8px;border-radius:2px}
+.walk .path{position:relative;height:58px;margin-bottom:.35rem}
+.walk .ground{position:absolute;left:0;right:0;bottom:12px;height:2px;background:var(--line)}
+.walk .marks{position:absolute;left:0;right:0;bottom:0;display:flex;
+  justify-content:space-between;font:400 10px/1 var(--mono);color:var(--soft)}
+.walk .hond{position:absolute;bottom:8px;width:86px;height:50px;
+  transition:left .6s ease-out;left:0}
+.tot{display:flex;gap:1.3rem;align-items:baseline;flex-wrap:wrap}
+.tot b{font:500 20px/1 var(--mono)}
+.tot small{color:var(--soft);font-size:13px}
 .tot .isbad b{color:var(--rust)}
 
 .tw{overflow-x:auto}
@@ -148,6 +169,23 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
   @keyframes wag{from{transform:rotate(-8deg)}to{transform:rotate(10deg)}}
   body[data-run="werk"] #dogtail{transform-box:view-box;transform-origin:74px 62px;
     animation:wag .5s ease-in-out infinite alternate}
+  @keyframes stapA{0%{transform:rotate(-11deg)}50%{transform:rotate(10deg)}100%{transform:rotate(-11deg)}}
+  @keyframes stapB{0%{transform:rotate(10deg)}50%{transform:rotate(-11deg)}100%{transform:rotate(10deg)}}
+  @keyframes lope{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+  @keyframes zwaai{from{transform:skewX(-2.4deg)}to{transform:skewX(2.4deg)}}
+  @keyframes pluim{from{transform:rotate(-5deg)}to{transform:rotate(6deg)}}
+  #hond g{transform-box:view-box}
+  body[data-run="werk"] #hond{animation:lope .74s ease-in-out infinite}
+  body[data-run="werk"] #h-bl{transform-origin:248px 168px;animation:stapB .74s ease-in-out infinite}
+  body[data-run="werk"] #h-fl{transform-origin:392px 164px;animation:stapA .74s ease-in-out infinite}
+  body[data-run="werk"] #h-br{transform-origin:272px 168px;animation:stapA .74s ease-in-out infinite}
+  body[data-run="werk"] #h-fr{transform-origin:416px 164px;animation:stapB .74s ease-in-out infinite}
+  body[data-run="werk"] #h-coat{transform-origin:310px 178px;
+    animation:zwaai .74s ease-in-out infinite alternate}
+  body[data-run="werk"] #h-tail{transform-origin:208px 140px;
+    animation:pluim .74s ease-in-out infinite alternate}
+  body[data-run="pauze"] #h-tail{transform-origin:208px 140px;
+    animation:pluim 2.4s ease-in-out infinite alternate}
 }
 </style>
 </head>
@@ -185,15 +223,15 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
       <span class="run" id="l-run">Druk <b>N</b> of kies hieronder waar je mee begint</span>
     </div>
     <div class="fields" id="l-fields" style="display:none">
-      <input id="l-dossier" placeholder="Dossier — nummer of naam" autocomplete="off">
-      <input id="l-code" placeholder="Werkcode" autocomplete="off">
-      <input id="l-omschr" class="wide" placeholder="Omschrijving" autocomplete="off">
+      <label>Dossier<input id="l-dossier" placeholder="nummer of naam" autocomplete="off"></label>
+      <label>Werkcode<input id="l-code" placeholder="alleen bij i7 verplicht" autocomplete="off"></label>
+      <label class="wide">Omschrijving<input id="l-omschr" placeholder="waar werk je aan?" autocomplete="off"></label>
     </div>
     <div class="wake" id="l-wake">
       <span id="wake-txt"></span>
       <div class="spacer"></div>
-      <button class="sm" id="wake-ja">Ja, liep door</button>
-      <button class="sm warn" id="wake-nee">Nee, kap af</button>
+      <button class="sm" id="wake-ja">Ja, klopt</button>
+      <button class="sm warn" id="wake-nee">Nee, sluit af</button>
     </div>
   </div>
 
@@ -208,15 +246,42 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
   </div>
 
   <section class="strip">
-    <h2>Recente dossiers</h2>
-    <div class="rg" id="recent"></div>
-    <h2 style="margin:1rem 0 .8rem">Indirecte uren</h2>
-    <div class="rg" id="i7row"></div>
+    <h2>Verder op een taak van vandaag</h2>
+    <div id="recent"></div>
+    <div class="i7wrap"><span class="cap">i7</span><div class="rg" id="i7row"></div></div>
   </section>
 
-  <section>
+  <section class="walk">
+    <div class="path">
+      <svg class="hond" id="hond" viewBox="150 20 470 250" aria-hidden="true">
+        <g id="h-tail"><path d="M208,136 Q182,148 166,174 Q154,194 152,216 L160,194 L163,224 L173,196 L177,226 L188,198 L192,220 L203,194 Q206,168 216,150 Z" fill="#8D939C"/></g>
+        <g id="h-bl"><path d="M240,150 Q232,196 236,232 L244,248 L262,248 L266,230 Q262,194 264,150 Z" fill="#8D939C"/><ellipse cx="252" cy="250" rx="20" ry="9" fill="#C3C8CE"/></g>
+        <g id="h-fl"><path d="M384,146 Q378,194 382,230 L390,246 L406,246 L410,228 Q406,192 408,148 Z" fill="#8D939C"/><ellipse cx="396" cy="248" rx="19" ry="9" fill="#C3C8CE"/></g>
+        <path d="M204,144 Q204,112 246,104 Q322,92 386,104 Q422,110 442,126 L446,160 Q440,186 406,194 L300,196 L238,192 Q206,182 204,144 Z" fill="#A8ADB5"/>
+        <path d="M226,116 Q296,100 364,106 Q412,112 438,130 Q400,116 348,114 Q284,110 226,116 Z" fill="#B7BCC3"/>
+        <g id="h-br"><path d="M262,150 Q254,198 258,234 L266,250 L286,250 L290,232 Q286,196 288,150 Z" fill="#9AA0A9"/><ellipse cx="274" cy="252" rx="21" ry="10" fill="#F4F5F7"/></g>
+        <g id="h-fr"><path d="M406,146 Q400,196 404,232 L412,248 L430,248 L434,230 Q430,194 432,148 Z" fill="#9AA0A9"/><ellipse cx="419" cy="250" rx="20" ry="10" fill="#F4F5F7"/></g>
+        <g id="h-coat"><path d="M210,168 L218,232 L227,186 L236,240 L245,192 L254,234 L263,184 L272,238 L281,192 L290,230 L299,182 L308,236 L317,190 L326,232 L335,184 L344,238 L353,190 L362,230 L371,182 L380,234 L389,188 L398,228 L407,184 L414,172 Q380,192 300,194 Q240,192 210,168 Z" fill="#9AA0A9"/></g>
+        <path d="M414,140 Q444,146 448,168 Q448,196 428,214 L423,192 L416,218 L408,190 L401,212 Q396,178 402,156 Z" fill="#F4F5F7"/>
+        <g id="h-head">
+          <path d="M416,106 Q452,98 486,110 L494,168 Q452,178 420,164 Z" fill="#A8ADB5"/>
+          <path d="M474,124 Q460,140 462,166 Q464,186 478,194 L483,178 L488,196 L495,176 Q504,160 500,136 Z" fill="#8D939C"/>
+          <ellipse cx="502" cy="136" rx="52" ry="44" fill="#A8ADB5"/>
+          <ellipse cx="506" cy="140" rx="43" ry="36" fill="#B7BCC3"/>
+          <path d="M516,140 Q524,124 544,126 Q572,128 586,140 Q596,150 591,163 Q585,177 562,182 L554,166 L544,186 L534,166 L524,184 Q511,176 508,160 Q506,148 516,140 Z" fill="#F4F5F7"/>
+          <path d="M518,168 Q514,200 530,210 L538,196 L546,214 L554,196 L562,208 Q580,194 576,168 Q548,186 518,168 Z" fill="#F4F5F7"/>
+          <path d="M590,134 Q608,136 608,149 Q608,162 590,166 Q574,161 574,149 Q574,136 590,134 Z" fill="#232629"/>
+          <path d="M458,132 Q456,94 492,80 Q528,64 556,84 Q572,96 570,122 L560,140 L552,118 L541,146 L531,120 L520,148 L509,122 L498,146 L487,120 L475,142 L466,120 Z" fill="#B7BCC3"/>
+          <path d="M508,74 Q514,46 534,40 Q552,50 554,72 Q542,60 530,60 Q518,60 508,74 Z" fill="#C3C8CE"/>
+          <circle cx="530" cy="134" r="12" fill="#1C1F22"/>
+          <circle cx="526" cy="129" r="4.4" fill="#FFFFFF"/>
+        </g>
+      </svg>
+      <div class="ground"></div>
+      <div class="marks"><span>0</span><span>2</span><span>4</span><span>6</span><span>8&nbsp;uur</span></div>
+    </div>
     <div class="tot">
-      <span><b id="t-uren">0,0</b> <small>van 8,0 uur vandaag verantwoord</small></span>
+      <span><b id="t-uren">0,0</b> <small>van 8,0 verantwoord</small></span>
       <span id="t-voidwrap"><b id="t-void">0,0</b> <small>niet verantwoord</small></span>
       <span><b id="t-regels">0</b> <small>regels</small></span>
     </div>
@@ -296,7 +361,8 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
     </div>
     <input type="file" id="file" accept="application/json,.json" style="display:none">
     <div class="hint" style="margin-top:.5rem">Bij een volledige back-up vraagt de app of je
-      wilt terugzetten (alles vervangen) of samenvoegen.</div>
+      wilt terugzetten (alles vervangen) of samenvoegen. Regels worden onbeperkt bewaard:
+      blader onder Dag naar elke datum, ook van vorige maanden.</div>
   </section>
 </div>
 
@@ -344,7 +410,7 @@ const NORM=8.0, VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 
 let db=null,dossiers=[],templates=[],i7codes=[],alle=[],regels=[],running=null,stack=[];
 let viewDate=today(),weekAnchor=today(),tab="nu",liveId=null;
-let hiddenAt=null,bezig=false,rondMode="groep",dagEinde={};
+let hiddenAt=null,bezig=false,rondMode="groep",dagEinde={},snoozeTot=0;
 const TABID=Math.random().toString(36).slice(2);
 const bc=("BroadcastChannel" in window)?new BroadcastChannel("hourhound"):null;
 
@@ -445,6 +511,16 @@ function gapsFor(list,datum){
   return out.filter(g=>g[1]-g[0]>=6);}
 const gapHours=g=>g.reduce((s,x)=>s+Math.ceil((x[1]-x[0])/6)/10,0);
 
+function takenVandaag(){
+  const map=new Map();
+  vandaagRegels().filter(r=>r.soort==="werk").forEach(r=>{
+    const k=(r.dossierId||"-")+"|"+(r.code||"")+"|"+(r.omschrijving||"");
+    const g=map.get(k)||{k,dossierId:r.dossierId,code:r.code,oms:r.omschrijving||"",
+      u:0,laatst:""};
+    g.u+=urenOf(r);if(r.start>g.laatst)g.laatst=r.start;map.set(k,g);});
+  return [...map.values()].sort((a,b)=>a.laatst<b.laatst?1:-1);}
+const taakLabel=t=>{const d=dosOf(t.dossierId);
+  return (d?(d.nummer?d.nummer+" · ":"")+d.naam:"geen dossier");};
 function recente(){
   const grens=addD(today(),-11),seen=new Set();
   alle.filter(r=>r.datum>=grens&&r.dossierId)
@@ -483,15 +559,31 @@ function acKeys(e){
     if(e.key==="Enter")e.preventDefault();return true;}
   if(e.key==="Escape"){closeAC();e.preventDefault();return true;}
   return false;}
+function splitsDossier(q){
+  const t=(q||"").trim();if(!t)return null;
+  const m=/^([A-Za-z0-9._/\\]+)\s*[-–—:]\s*(.+)$/.exec(t);
+  if(m)return{nummer:m[1],naam:m[2].trim()};
+  if(/^[A-Za-z0-9._/\\]+$/.test(t))return{nummer:t,naam:t};
+  return null;}
 function dossierItems(q){
   const s=(q||"").toLowerCase();
   const hit=actief().filter(d=>!s||((d.nummer||"")+" "+d.naam).toLowerCase().includes(s));
   hit.sort((a,b)=>(b.used||0)-(a.used||0));
   const items=hit.slice(0,20).map(d=>({label:d.naam,sub:d.nummer||"volgt nog",value:d.id,
     group:d.voorlopig?"Dossier volgt nog":"Dossiers"}));
-  if(s)items.push({label:'Nieuw — dossiernummer volgt nog: "'+q+'"',sub:"i7",isNew:true,
-    newName:q,group:"Aanmaken"});
+  if(s){
+    const pd=splitsDossier(q);
+    if(pd&&!nummerBezet(pd.nummer,null))
+      items.push({label:"Nieuw dossier: "+pd.naam,sub:pd.nummer,isNew:true,
+        nieuwNummer:pd.nummer,nieuwNaam:pd.naam,group:"Aanmaken"});
+    items.push({label:'Dossier volgt nog: "'+q+'"',sub:"i7",isNew:true,
+      newName:q,group:"Aanmaken"});}
   return items;}
+async function uitItem(it){
+  if(!it.isNew)return it.value;
+  const d=it.nieuwNummer?await makeDossier(it.nieuwNaam,it.nieuwNummer,"nl")
+                        :await makeDossier(it.newName,null,"nl");
+  return d.id;}
 function codeItems(d,q){
   const s=(q||"").toLowerCase(),src=codesFor(d);
   const hit=src.filter(c=>!s||(c.code+" "+c.naam).toLowerCase().includes(s));
@@ -532,11 +624,13 @@ async function _start(o){
       code:o.code!==undefined?o.code:defaultCode(d),
       omschrijving:prefixVoor(d,today(),o.omschrijving||""),
       uren:0.1,urenHand:false,soort:o.soort||"werk",gemaakt:Date.now()};
+    if((o.soort||"werk")==="werk"&&!o.bewaarStack&&stack.length){
+      stack=[];await putK("meta",stack,"stack");}
     running=r;viewDate=today();await saveRegel(r);await putK("meta",r.id,"running");
     if(dagEinde[r.datum]!=null){delete dagEinde[r.datum];
       await putK("meta",dagEinde,"dagEinde");}
     if(o.dossierId)await touchDossier(o.dossierId);
-    liveId=null;hideWake();renderAll();announce();return r;
+    liveId=null;snoozeTot=0;hideWake();renderAll();announce();return r;
   }}
 async function startRegel(o){
   if(bezig)return null;bezig=true;
@@ -584,7 +678,7 @@ async function terug(){
     const back=stack.pop();await putK("meta",stack,"stack");
     if(!back){await stopRunning();renderAll();announce();leeg=true;}
     else{await _start({dossierId:back.dossierId,code:back.code,
-      omschrijving:back.omschrijving});
+      omschrijving:back.omschrijving,bewaarStack:true});
       naam=(dosOf(back.dossierId)||{}).naam||"vorige taak";}
   }finally{bezig=false;}
   if(leeg)openSwitcher();else toast("Terug bij "+naam);}
@@ -645,22 +739,24 @@ async function kenNummerToe(id){
     toast(rs.length+" regel(s) overgezet naar "+nr);
   }catch(e){toast("Overzetten mislukt: "+e);}}
 
-/* ---------- slaapdetectie ---------- */
+/* ---------- langloopmelding ----------
+   Geen vraag meer bij afwezigheid: hourhound draait de hele dag op de achtergrond.
+   Wel een rustige melding als één regel erg lang doorloopt, want dan is de kans
+   groot dat er een taakwissel is gemist.                                        */
+const LANG=180;
 function hideWake(){$("l-wake").classList.remove("on");}
-document.addEventListener("visibilitychange",()=>{
-  if(document.hidden){hiddenAt=Date.now();flushOmschr();}else checkWake();});
-window.addEventListener("focus",checkWake);
+document.addEventListener("visibilitychange",()=>{if(document.hidden)flushOmschr();});
 function checkWake(){
-  if(hiddenAt==null)return;
-  const stil=Math.round((Date.now()-hiddenAt)/60000);hiddenAt=null;
-  if(!running||running.soort==="pauze"||stil<25)return;
-  const naam=running.soort==="werk"?((dosOf(running.dossierId)||{}).naam||"deze taak"):running.soort;
-  $("wake-txt").textContent="Je was "+stil+" minuten weg terwijl "+naam+" doorliep. Klopt dat?";
-  $("l-wake").dataset.tot=m2hm(Math.max(hm2m(running.start)||0,(hm2m(nowHM())||0)-stil));
+  if(!running||running.soort!=="werk"){hideWake();return;}
+  const mins=Math.max(0,(hm2m(nowHM())||0)-(hm2m(running.start)||0));
+  if(mins<LANG||Date.now()<snoozeTot){hideWake();return;}
+  const naam=(dosOf(running.dossierId)||{}).naam||"deze taak";
+  $("wake-txt").textContent="Deze regel loopt al "+Math.floor(mins/60)+" uur "+
+    pad(mins%60)+" op "+naam+". Klopt dat nog?";
   $("l-wake").classList.add("on");}
-$("wake-ja").onclick=hideWake;
-$("wake-nee").onclick=async()=>{const t=$("l-wake").dataset.tot;hideWake();
-  await stopRunning(t);renderAll();announce();openSwitcher();};
+$("wake-ja").onclick=()=>{snoozeTot=Date.now()+60*60*1000;hideWake();};
+$("wake-nee").onclick=async()=>{hideWake();await stopRunning();
+  renderAll();announce();openSwitcher();};
 
 /* ---------- middernachtgrens ---------- */
 async function middernachtCheck(){
@@ -675,8 +771,11 @@ async function middernachtCheck(){
 let sw={items:[],hi:0,on:false};
 function openSwitcher(){
   const items=[];
+  takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,8).forEach(t=>
+    items.push({t:"taak",k:t.k,d:dosOf(t.dossierId),
+      label:taakLabel(t)+(t.oms?" — "+t.oms:""),sub:uu(t.u)+" u",grp:"Verder op vandaag"}));
   recente().forEach(d=>items.push({t:"dos",d,label:d.naam,sub:d.nummer||"volgt nog",
-    grp:"Recente dossiers"}));
+    grp:"Recente dossiers — nieuwe regel"}));
   favCodes().forEach(c=>items.push({t:"i7",code:c.code,label:c.naam,sub:c.code.split("-").pop(),
     grp:"Indirecte uren"}));
   items.push({t:"nieuw",label:"Nieuw dossier…",sub:"",grp:"Overig"});
@@ -690,7 +789,7 @@ function drawSwitcher(){
   let h="",g=null,n=0;
   sw.items.forEach((it,i)=>{
     if(it.grp!==g){g=it.grp;h+='<div class="pgrp">'+esc(g)+"</div>";}
-    const kb=it.t==="dos"?(++n<=9?"<kbd>"+n+"</kbd>":""):"";
+    const kb=(it.t==="taak"||it.t==="dos")?(++n<=9?"<kbd>"+n+"</kbd>":""):"";
     h+='<div class="pit'+(i===sw.hi?" hi":"")+'" data-s="'+i+'">'+
       '<i style="background:'+(it.d?dosColor(it.d):"var(--soft)")+'"></i>'+
       '<span class="l">'+esc(it.label)+'</span><span class="s">'+esc(it.sub)+"</span>"+kb+"</div>";});
@@ -698,6 +797,7 @@ function drawSwitcher(){
 async function chooseSwitch(i){
   const it=sw.items[i];if(!it)return;closeSwitcher();
   const ind=i7();
+  if(it.t==="taak"){await hervat(it.k);return;}
   if(it.t==="dos"){await startRegel({dossierId:it.d.id});
     setTimeout(()=>$("l-omschr").focus(),30);return;}
   if(it.t==="i7"){await startRegel({dossierId:ind?ind.id:null,code:it.code});
@@ -738,18 +838,32 @@ function renderLive(){
     if(document.activeElement!==$("l-omschr"))$("l-omschr").value=running.omschrijving||"";}
   $("l-code").classList.toggle("miss",isIndirect(d)&&!running.code);}
 function renderRecent(){
-  $("recent").innerHTML=recente().map((d,i)=>'<button data-dos="'+esc(d.id)+'">'+
-    '<i style="background:'+dosColor(d)+'"></i><span>'+esc(d.naam)+"</span>"+
-    (i<9?"<kbd>"+(i+1)+"</kbd>":"")+"</button>").join("")||
-    '<div class="hint">Nog geen dossiers gebruikt — druk N om te beginnen.</div>';
+  const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,5);
+  $("recent").innerHTML=tk.length?tk.map((t,i)=>{
+    const d=dosOf(t.dossierId);
+    return '<button class="taak" data-taak="'+esc(t.k)+'">'+
+      '<i style="background:'+dosColor(d)+'"></i>'+
+      '<span class="dn">'+esc(taakLabel(t))+"</span>"+
+      (t.code?'<span class="cd">'+esc(codeNaam(d,t.code))+"</span>":"")+
+      '<span class="om">'+esc(t.oms||"—")+"</span>"+
+      '<span class="ur">'+uu(t.u)+"</span>"+
+      (i<9?"<kbd>"+(i+1)+"</kbd>":"")+"</button>";}).join(""):
+    '<div class="hint">Nog niets vandaag — druk N om te beginnen.</div>';
   $("i7row").innerHTML=favCodes().map(c=>'<button data-i7="'+esc(c.code)+'">'+
     '<i style="background:var(--soft)"></i><span>'+esc(c.naam)+"</span></button>").join("")||
     '<div class="hint">Importeer werkcodes.json onder Beheer.</div>';}
+const taakKey=r=>(r.dossierId||"-")+"|"+(r.code||"")+"|"+(r.omschrijving||"");
+async function hervat(k){
+  const t=takenVandaag().find(x=>x.k===k);if(!t)return;
+  await startRegel({dossierId:t.dossierId,code:t.code,omschrijving:t.oms});
+  toast("Verder op "+taakLabel(t));}
 function renderTot(){
   const v=vandaagRegels(),t=totaal(v),g=gapHours(gapsFor(v,today()));
   $("t-uren").textContent=uu(t);$("t-void").textContent=uu(g);
   $("t-regels").textContent=v.filter(r=>r.soort!=="pauze").length;
-  $("t-voidwrap").className=g>0?"isbad":"";}
+  $("t-voidwrap").className=g>0?"isbad":"";
+  const pct=Math.max(0,Math.min(1,t/NORM));
+  $("hond").style.left="calc("+(pct*100).toFixed(1)+"% - "+(pct*86).toFixed(0)+"px)";}
 
 /* ---------- weergave: DAG ---------- */
 function bouwDag(){
@@ -1002,8 +1116,7 @@ function flushOmschr(){if(omsT){clearTimeout(omsT);omsT=null;
 $("l-dossier").addEventListener("input",e=>{
   if(!running)return;
   openAC(e.target,dossierItems(e.target.value),async it=>{
-    let id=it.value;
-    if(it.isNew){const nd=await makeDossier(it.newName,null,"nl");id=nd.id;}
+    const id=await uitItem(it);
     const d=dosOf(id);running.dossierId=id;
     running.code=passendeCode(d,running.code);
     running.omschrijving=prefixVoor(d,running.datum,running.omschrijving||"");
@@ -1043,8 +1156,12 @@ $("l-omschr").addEventListener("keydown",e=>{
 ["l-dossier","l-code"].forEach(id=>$(id).addEventListener("keydown",acKeys));
 $("l-dossier").addEventListener("blur",()=>setTimeout(()=>{closeAC();
   if(running)$("l-dossier").value=dosVeld(dosOf(running.dossierId));},160));
-$("l-code").addEventListener("blur",()=>setTimeout(()=>{closeAC();
-  if(running)$("l-code").value=codeNaam(dosOf(running.dossierId),running.code);},160));
+$("l-code").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
+  if(!running)return;
+  if($("l-code").value.trim()===""){
+    if(running.code!==null){running.code=null;await saveRegel(running);verversDag();}
+  }else $("l-code").value=codeNaam(dosOf(running.dossierId),running.code);
+  $("l-code").classList.toggle("miss",isIndirect(dosOf(running.dossierId))&&!running.code);},160));
 $("l-omschr").addEventListener("blur",()=>setTimeout(()=>{closeAC();flushOmschr();},160));
 window.addEventListener("beforeunload",flushOmschr);
 
@@ -1054,8 +1171,7 @@ $("d-table").addEventListener("input",e=>{
   const r=regels.find(x=>x.id===inp.closest("tr").dataset.id);if(!r)return;
   const f=inp.dataset.f,d=dosOf(r.dossierId);
   if(f==="dossier")openAC(inp,dossierItems(inp.value),async it=>{
-    let id=it.value;
-    if(it.isNew){const nd=await makeDossier(it.newName,null,"nl");id=nd.id;}
+    const id=await uitItem(it);
     const nd=dosOf(id);r.dossierId=id;r.code=passendeCode(nd,r.code);
     r.omschrijving=prefixVoor(nd,r.datum,r.omschrijving||"");
     await touchDossier(id);await saveRegel(r);
@@ -1087,7 +1203,9 @@ $("d-table").addEventListener("blur",e=>{
   const r=regels.find(x=>x.id===inp.closest("tr").dataset.id);if(!r)return;
   const d=dosOf(r.dossierId);
   if(inp.dataset.f==="dossier")inp.value=dosVeld(d);
-  if(inp.dataset.f==="code")inp.value=codeNaam(d,r.code);},true);
+  if(inp.dataset.f==="code"){
+    if(inp.value.trim()===""){if(r.code!==null){r.code=null;saveRegel(r).then(verversDag);}}
+    else inp.value=codeNaam(d,r.code);}},true);
 $("d-table").addEventListener("change",async e=>{
   const inp=e.target.closest("input[data-f]");if(!inp)return;
   const r=regels.find(x=>x.id===inp.closest("tr").dataset.id);if(!r)return;
@@ -1143,8 +1261,7 @@ $("b-volgt").onclick=markeerVolgt;
 $("b-pause").onclick=pauze;
 $("b-end").onclick=eindeWerkdag;
 $("recent").addEventListener("click",async e=>{
-  const b=e.target.closest("[data-dos]");if(!b)return;
-  await startRegel({dossierId:b.dataset.dos});setTimeout(()=>$("l-omschr").focus(),30);});
+  const b=e.target.closest("[data-taak]");if(!b)return;await hervat(b.dataset.taak);});
 $("i7row").addEventListener("click",async e=>{
   const b=e.target.closest("[data-i7]");if(!b)return;
   const ind=i7();await startRegel({dossierId:ind?ind.id:null,code:b.dataset.i7});
@@ -1160,15 +1277,20 @@ document.addEventListener("keydown",async e=>{
     else if(e.key==="Escape"){closeSwitcher();e.preventDefault();}
     else if(e.key>="1"&&e.key<="9"){
       let n=0,idx=-1;
-      sw.items.forEach((x,j)=>{if(x.t==="dos"){n++;if(n===+e.key&&idx<0)idx=j;}});
+      sw.items.forEach((x,j)=>{if(x.t==="taak"||x.t==="dos"){
+        n++;if(n===+e.key&&idx<0)idx=j;}});
       if(idx>=0)chooseSwitch(idx);e.preventDefault();}
     return;}
   if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)){
     if(e.key==="Escape"&&!ac.el)e.target.blur();return;}
   if(e.ctrlKey||e.metaKey||e.altKey||e.repeat)return;
   const k=e.key.toLowerCase();
-  if(k>="1"&&k<="9"){const d=recente()[+k-1];
-    if(!d){toast("Geen dossier op die toets");return;}
+  if(k>="1"&&k<="9"){
+    const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,5);
+    const t=tk[+k-1];
+    if(t){await hervat(t.k);e.preventDefault();return;}
+    const d=recente()[+k-1];
+    if(!d){toast("Niets op die toets");return;}
     await startRegel({dossierId:d.id});setTimeout(()=>$("l-omschr").focus(),30);
     e.preventDefault();return;}
   if(k==="n"){openSwitcher();e.preventDefault();}
@@ -1286,7 +1408,8 @@ async function boot(){
   rondMode=(await get("meta","rondMode"))||"groep";
   $("d-mode").value=rondMode;
   await herlaad();
-  setInterval(()=>{middernachtCheck();if(running){renderLive();renderTot();}},10000);}
+  setInterval(()=>{middernachtCheck();checkWake();
+    if(running){renderLive();renderTot();}},10000);}
 
 (async function(){
   try{db=await openDB();}catch(e){
