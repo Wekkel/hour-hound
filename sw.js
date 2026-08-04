@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.4"; // bug fixes
+const VERSION = "0.1.5"; // adjustments based on first full day feedback
 
 const CACHE = "hourhound-" + VERSION;
 const ASSETS = [
