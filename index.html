@@ -15,15 +15,23 @@
   --sans:system-ui,-apple-system,"Segoe UI",sans-serif;
 }
 @media (prefers-color-scheme:dark){
-  :root{--paper:#111315;--card:#1d2124;--ink:#f2efe8;--soft:#b0aca2;--line:#333a3e;
-        --warm:#2c2721;--moss:#6f9c67;--rust:#d97a58;--amber:#c1a05a;}
+  html:not(.licht){--paper:#111315;--card:#1d2124;--ink:#f2efe8;--soft:#b0aca2;
+    --line:#333a3e;--warm:#2c2721;--moss:#6f9c67;--rust:#d97a58;--amber:#c1a05a;}
 }
+html.donker{--paper:#111315;--card:#1d2124;--ink:#f2efe8;--soft:#b0aca2;--line:#333a3e;
+  --warm:#2c2721;--moss:#6f9c67;--rust:#d97a58;--amber:#c1a05a;}
+html.licht{--paper:#f5f2ec;--card:#ffffff;--ink:#17191a;--soft:#585550;--line:#dcd7cd;
+  --moss:#3f6b3a;--rust:#a8452a;--warm:#ece3d6;--amber:#8a6b2c;}
 *{box-sizing:border-box}
 body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.5 var(--sans)}
 main{max-width:1020px;margin:0 auto;padding:.75rem 1rem 1rem}
 header{display:flex;align-items:center;gap:.7rem;padding:.4rem 0 1rem;flex-wrap:wrap}
 header svg{width:44px;height:44px;flex:none}
 .brand{font:500 18px/1.1 var(--sans)}
+.foc{font:500 10px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid var(--moss);color:var(--moss);border-radius:20px;padding:.3rem .5rem}
+body[data-focus="0"] .foc{border-color:var(--line);color:var(--soft);opacity:.5}
+body[data-focus="0"] header svg{opacity:.4}
 .ver{font:400 11px/1.1 var(--mono);color:var(--soft)}
 .spacer{flex:1}
 button{font:inherit;background:var(--card);color:var(--ink);border:1px solid var(--line);
@@ -76,14 +84,16 @@ h2{font:500 14px/1.2 var(--sans);margin:0 0 .5rem}
 .wake.on{display:flex}
 .bar{display:flex;gap:.45rem;flex-wrap:wrap;margin-bottom:.6rem}
 .bar button{flex:1;min-width:124px;padding:.5rem .6rem;font-size:15px}
-.strip button.taak{display:flex;align-items:center;gap:.45rem;width:100%;padding:.3rem .5rem;
-  text-align:left;font-size:14px;margin-bottom:.25rem;min-height:30px}
-.strip button.taak i{width:9px;height:9px;border-radius:2px;flex:none}
-.strip .dn{font-weight:500;white-space:nowrap;max-width:44%;overflow:hidden;
-  text-overflow:ellipsis}
-.strip .cd{font:400 12px/1 var(--mono);color:var(--soft);white-space:nowrap}
-.strip .om{flex:1;color:var(--soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.strip .ur{font-family:var(--mono);white-space:nowrap}
+.strip button.taak{display:block;width:100%;padding:.35rem .5rem;text-align:left;
+  font-size:14px;margin-bottom:.3rem}
+.strip .r1{display:flex;align-items:center;gap:.45rem}
+.strip .r1 i{width:9px;height:9px;border-radius:2px;flex:none}
+.strip .sp{flex:1}
+.strip .dn{font-weight:500}
+.strip .cd{font:400 12px/1 var(--mono);color:var(--soft)}
+.strip .ur{font-family:var(--mono)}
+.strip .r2{display:block;color:var(--soft);font-size:13px;line-height:1.35;
+  margin-top:.12rem;white-space:normal;word-break:break-word}
 .i7wrap{display:flex;align-items:center;gap:.5rem;margin-top:.45rem;
   padding-top:.45rem;border-top:1px solid var(--line)}
 .i7wrap .cap{font:500 10px/1 var(--sans);color:var(--soft);letter-spacing:.08em;
@@ -130,7 +140,8 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
 .probs{margin:.7rem 0 0;padding:.7rem .8rem;border:1px solid var(--rust);border-radius:8px;
        font-size:14px;display:none}
 .probs.on{display:block}
-.probs div{padding:.12rem 0}
+.probs div.pb{padding:.16rem .3rem;border-radius:5px;cursor:pointer}
+.probs div.pb:hover{background:var(--warm)}
 
 #ac{position:fixed;z-index:40;background:var(--card);border:1px solid var(--line);
     border-radius:8px;box-shadow:0 8px 26px rgba(0,0,0,.18);max-height:300px;overflow-y:auto;
@@ -211,7 +222,9 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
     <button data-v="week" aria-pressed="false">Week</button>
     <button data-v="beheer" aria-pressed="false">Beheer</button>
   </div>
+  <button class="sm" id="b-thema" title="Licht of donker">&#9689;</button>
   <button id="btn-update" class="go sm" style="display:none">Update</button>
+  <span class="foc" id="foc">sneltoetsen</span>
 </header>
 
 <!-- ===== NU ===== -->
@@ -335,7 +348,10 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
     <div class="wk" id="w-grid"></div>
   </section>
   <section>
-    <h2>Dossier volgt nog</h2>
+    <h2>Dossier volgt nog — klaar om in Intapp te boeken</h2>
+    <div class="hint" style="margin-bottom:.5rem">Zodra je het dossiernummer hebt, ken je het
+      hier toe. Alle regels verhuizen mee, het voorvoegsel verdwijnt en de i7-werkcode wordt
+      gewist. Hieronder staan de uren per dag om over te typen.</div>
     <div id="w-prov"></div>
   </section>
 </div>
@@ -360,6 +376,23 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
       <span class="hint" id="libstat"></span>
     </div>
     <input type="file" id="file" accept="application/json,.json" style="display:none">
+    <div style="margin-top:.7rem">
+      <button class="sm warn" id="b-wipe">Alle opgeslagen dossiers en regels wissen</button>
+    </div>
+  </section>
+  <section>
+    <h2>Logboek voor foutanalyse</h2>
+    <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+      <button class="sm" id="b-logcopy">Kopieer logboek</button>
+      <button class="sm" id="b-logclear">Leegmaken</button>
+      <label style="display:flex;gap:.35rem;align-items:center;font-size:14px">
+        <input type="checkbox" id="b-logoms" style="width:auto;min-width:0"> omschrijvingen
+        volledig meenemen</label>
+      <span class="hint" id="logstat"></span>
+    </div>
+    <div class="hint" style="margin-top:.5rem">Legt vast wat je in hourhound doet, zodat een
+      bug na te lopen is. Zonder het vinkje staan omschrijvingen er alleen als lengte in,
+      dus zonder cliëntgegevens.</div>
     <div class="hint" style="margin-top:.5rem">Bij een volledige back-up vraagt de app of je
       wilt terugzetten (alles vervangen) of samenvoegen. Regels worden onbeperkt bewaard:
       blader onder Dag naar elke datum, ook van vorige maanden.</div>
@@ -372,7 +405,8 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
   <kbd>N</kbd> volgende taak · <kbd>1</kbd>–<kbd>9</kbd> recent dossier · <kbd>T</kbd> telefoon ·
   <kbd>O</kbd> onderbreking · <kbd>R</kbd> terug naar geparkeerde taak ·
   <kbd>V</kbd> dossier volgt nog · <kbd>P</kbd> pauze · <kbd>E</kbd> einde werkdag ·
-  <kbd>D</kbd> dag · <kbd>U</kbd> week · <kbd>Esc</kbd> sluit veld of venster
+  <kbd>D</kbd> dag · <kbd>U</kbd> week · <kbd>Ctrl</kbd>+<kbd>Z</kbd> ongedaan maken ·
+  <kbd>Esc</kbd> sluit veld of venster
 </div>
 
 <div class="ovl" id="sw"><div class="panel">
@@ -441,6 +475,33 @@ const putK=(s,v,k)=>tx(s,"readwrite",o=>o.put(v,k));
 const del=(s,k)=>tx(s,"readwrite",o=>o.delete(k));
 const replaceAll=(s,rows)=>tx(s,"readwrite",o=>{o.clear();rows.forEach(r=>o.put(r));});
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+let logboek=[],logOms=false,logT=null,appVer="?";
+const kort=(s,n)=>{s=String(s==null?"":s);
+  return s.length>(n||34)?s.slice(0,n||34)+"…":s;};
+const omsLog=s=>logOms?kort(s,60):"["+String(s||"").length+" tekens]";
+function L(k,v){
+  const d=new Date();
+  logboek.push(pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds())+
+    "  "+k+(v?"  "+v:""));
+  if(logboek.length>600)logboek.shift();
+  clearTimeout(logT);logT=setTimeout(()=>putK("meta",logboek,"log").catch(()=>{}),2000);
+  const el=$("logstat");if(el)el.textContent=logboek.length+" regels";}
+window.addEventListener("error",e=>L("FOUT",(e.message||"")+" @"+(e.lineno||"?")));
+window.addEventListener("unhandledrejection",e=>
+  L("FOUT-async",String((e.reason&&e.reason.message)||e.reason||"")));
+let undoStack=[];
+function snap(r){try{undoStack.push(JSON.parse(JSON.stringify(r)));
+  if(undoStack.length>25)undoStack.shift();}catch(e){}}
+async function undo(){
+  const r=undoStack.pop();
+  if(!r){toast("Niets om ongedaan te maken");return;}
+  await put("regels",r);
+  const i=alle.findIndex(x=>x.id===r.id);
+  if(i<0)alle.push(r);else alle[i]=r;
+  if(running&&running.id===r.id){running=r;liveId=null;}
+  refreshDay();bouwDag();renderAll();announce();
+  L("ongedaan",r.id+" hersteld");
+  toast("Ongedaan gemaakt — "+undoStack.length+" stap(pen) over");}
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");
   clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),2600);}
 let syncOpen=false;
@@ -531,10 +592,16 @@ const favCodes=()=>{const f=i7codes.filter(c=>c.favoriet);
   return (f.length?f:i7codes).slice(0,6);};
 
 /* ---------- autocomplete ---------- */
-let ac={el:null,items:[],hi:0,onPick:null};
+let ac={el:null,items:[],hi:0,onPick:null,vrij:false};
+let pickBusy=0;
 function closeAC(){$("ac").classList.remove("on");ac.el=null;ac.items=[];}
-function openAC(el,items,onPick){
-  ac={el,items,hi:0,onPick};
+function openAC(el,items,onPick,vrij){
+  const wrap=async it=>{pickBusy++;
+    try{L("kies",(el.id||el.dataset.f||"veld")+" → "+kort(it.label,50)+
+      (it.isNew?" [nieuw]":""));await onPick(it);}
+    catch(err){L("FOUT-kies",String(err));}
+    finally{pickBusy--;}};
+  ac={el,items,hi:vrij?-1:0,onPick:wrap,vrij:!!vrij};
   const r=el.getBoundingClientRect(),a=$("ac");
   a.style.left=Math.min(r.left,window.innerWidth-320)+"px";
   a.style.top=(r.bottom+3)+"px";a.style.width=Math.max(r.width,300)+"px";
@@ -554,9 +621,10 @@ function acKeys(e){
   if(!ac.el||ac.el!==e.target)return false;
   if(e.key==="ArrowDown"){ac.hi=Math.min(ac.hi+1,ac.items.length-1);drawAC();e.preventDefault();return true;}
   if(e.key==="ArrowUp"){ac.hi=Math.max(ac.hi-1,0);drawAC();e.preventDefault();return true;}
-  if((e.key==="Enter"||e.key==="Tab")&&ac.items.length){
+  if((e.key==="Enter"||e.key==="Tab")&&ac.items.length&&ac.hi>=0){
     const f=ac.onPick,it=ac.items[ac.hi];closeAC();if(f)f(it);
     if(e.key==="Enter")e.preventDefault();return true;}
+  if((e.key==="Enter"||e.key==="Tab")&&ac.vrij){closeAC();return false;}
   if(e.key==="Escape"){closeAC();e.preventDefault();return true;}
   return false;}
 function splitsDossier(q){
@@ -614,7 +682,10 @@ async function stopRunning(eindTijd){
   const r=running;r.eind=eindTijd||nowHM();
   if(hm2m(r.eind)<hm2m(r.start))r.eind="23:59";
   if(!r.urenHand)r.uren=urenOf(r);
-  running=null;await saveRegel(r);await del("meta","running");return r;}
+  running=null;await saveRegel(r);await del("meta","running");
+  L("stop-regel",r.start+"-"+r.eind+" · "+uu(urenOf(r))+" u · "+
+    (dosOf(r.dossierId)?dosVeld(dosOf(r.dossierId)):"geen dossier"));
+  return r;}
 
 async function _start(o){
   {
@@ -630,6 +701,8 @@ async function _start(o){
     if(dagEinde[r.datum]!=null){delete dagEinde[r.datum];
       await putK("meta",dagEinde,"dagEinde");}
     if(o.dossierId)await touchDossier(o.dossierId);
+    L("start-regel",r.soort+" · "+(dosOf(r.dossierId)?dosVeld(dosOf(r.dossierId)):"geen dossier")+
+      " · code "+(r.code||"-")+" · "+r.start+" · oms "+omsLog(r.omschrijving));
     liveId=null;snoozeTot=0;hideWake();renderAll();announce();return r;
   }}
 async function startRegel(o){
@@ -647,16 +720,23 @@ async function eindeWerkdag(){
     dagEinde[dag]=r?r.eind:nowHM();
     await putK("meta",dagEinde,"dagEinde");
     stack=[];await putK("meta",stack,"stack");
-    liveId=null;renderAll();announce();
-    toast("Werkdag afgesloten om "+dagEinde[dag]+" — controleer de dag onder Dag");}
-  finally{bezig=false;}}
+    liveId=null;renderAll();announce();}
+  finally{bezig=false;}
+  L("einde-werkdag",dag+" om "+dagEinde[dag]+" · "+uu(intappTotaal())+" u");
+  viewDate=dag;refreshDay();showTab("dag");
+  const tekort=Math.round((NORM-intappTotaal())*10)/10;
+  if(tekort>0.05)setTimeout(vulAanTot8,120);
+  else toast("Werkdag afgesloten om "+dagEinde[dag]+" — je zit op "+uu(intappTotaal())+" uur");}
 
 async function touchDossier(id){const d=dosOf(id);if(!d)return;
   d.used=(d.used||0)+1;await put("dossiers",d);}
 async function makeDossier(naam,nummer,lang){
   const d={id:uid(),nummer:nummer||null,naam:naam||"Zonder naam",lang:lang||"nl",
     voorlopig:!nummer,codes:[],c:dossiers.length,used:1,isI7:false,archief:false};
-  await put("dossiers",d);dossiers=await getAll("dossiers");return d;}
+  await put("dossiers",d);dossiers=await getAll("dossiers");
+  L("dossier-nieuw",(nummer||"zonder nummer")+" · "+kort(naam)+
+    (nummer?"":" · VOORLOPIG"));
+  return d;}
 
 const parkeer=()=>{if(running&&running.soort==="werk")
   stack.push({dossierId:running.dossierId,code:running.code,omschrijving:running.omschrijving});};
@@ -670,6 +750,7 @@ async function interrupt(soort,label){
     await _start({dossierId:ind?ind.id:null,omschrijving:"",soort:soort});
   }finally{bezig=false;}
   setTimeout(()=>$("l-omschr").focus(),30);
+  L("onderbreking",soort+" · stapel "+stack.length);
   toast(label+" loopt — druk R of dezelfde toets om terug te keren");}
 async function terug(){
   if(bezig)return;
@@ -681,6 +762,7 @@ async function terug(){
       omschrijving:back.omschrijving,bewaarStack:true});
       naam=(dosOf(back.dossierId)||{}).naam||"vorige taak";}
   }finally{bezig=false;}
+  L("terug",leeg?"stapel leeg":naam);
   if(leeg)openSwitcher();else toast("Terug bij "+naam);}
 async function pauze(){
   if(bezig)return;bezig=true;
@@ -736,6 +818,8 @@ async function kenNummerToe(id){
     dossiers=await getAll("dossiers");alle=await getAll("regels");refreshDay();
     if(running)running=alle.find(r=>r.id===running.id)||running;
     liveId=null;renderAll();renderWeek();announce();
+    L("nummer-toegekend",d.naam+" → "+nr+" · "+rs.length+" regels"+
+      (bestaand?" · samengevoegd":""));
     toast(rs.length+" regel(s) overgezet naar "+nr);
   }catch(e){toast("Overzetten mislukt: "+e);}}
 
@@ -838,16 +922,16 @@ function renderLive(){
     if(document.activeElement!==$("l-omschr"))$("l-omschr").value=running.omschrijving||"";}
   $("l-code").classList.toggle("miss",isIndirect(d)&&!running.code);}
 function renderRecent(){
-  const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,5);
+  const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,4);
   $("recent").innerHTML=tk.length?tk.map((t,i)=>{
     const d=dosOf(t.dossierId);
     return '<button class="taak" data-taak="'+esc(t.k)+'">'+
-      '<i style="background:'+dosColor(d)+'"></i>'+
+      '<span class="r1"><i style="background:'+dosColor(d)+'"></i>'+
       '<span class="dn">'+esc(taakLabel(t))+"</span>"+
       (t.code?'<span class="cd">'+esc(codeNaam(d,t.code))+"</span>":"")+
-      '<span class="om">'+esc(t.oms||"—")+"</span>"+
-      '<span class="ur">'+uu(t.u)+"</span>"+
-      (i<9?"<kbd>"+(i+1)+"</kbd>":"")+"</button>";}).join(""):
+      '<span class="sp"></span><span class="ur">'+uu(t.u)+"</span>"+
+      (i<9?"<kbd>"+(i+1)+"</kbd>":"")+"</span>"+
+      '<span class="r2">'+esc(t.oms||"geen omschrijving")+"</span></button>";}).join(""):
     '<div class="hint">Nog niets vandaag — druk N om te beginnen.</div>';
   $("i7row").innerHTML=favCodes().map(c=>'<button data-i7="'+esc(c.code)+'">'+
     '<i style="background:var(--soft)"></i><span>'+esc(c.naam)+"</span></button>").join("")||
@@ -855,6 +939,7 @@ function renderRecent(){
 const taakKey=r=>(r.dossierId||"-")+"|"+(r.code||"")+"|"+(r.omschrijving||"");
 async function hervat(k){
   const t=takenVandaag().find(x=>x.k===k);if(!t)return;
+  L("hervat",taakLabel(t)+" · "+uu(t.u)+" u tot nu");
   await startRegel({dossierId:t.dossierId,code:t.code,omschrijving:t.oms});
   toast("Verder op "+taakLabel(t));}
 function renderTot(){
@@ -895,6 +980,7 @@ function bouwDag(){
       '<td class="x"><button class="sm ghost warn" data-del="'+esc(r.id)+'">&#10005;</button></td></tr>';});
   $("d-table").innerHTML=h+"</tbody>";verversDag();}
 function verversDag(){
+  renderRecent();renderTot();
   $("d-tot").textContent=uu(totaal(regels));
   $("d-void").textContent=uu(gapHours(gapsFor(regels,viewDate)));
   $("d-pauze").textContent=uu(pauzeUren(regels));bouwSum();}
@@ -920,17 +1006,17 @@ function codeFout(d,r){
   if(!r.code)return true;
   return !codesFor(d).some(c=>c.code===r.code);}
 function controleer(){
-  const p=[];
+  const p=[],add=(r,tekst)=>p.push({id:r.id,tekst:r.start+"–"+(r.eind||"loopt")+" — "+tekst});
   regels.forEach(r=>{
     if(r.soort==="pauze")return;
-    const d=dosOf(r.dossierId),t=r.start+"–"+(r.eind||"loopt");
-    if(!d)p.push(t+" — geen dossier gekozen");
-    else if(isIndirect(d)&&!r.code)p.push(t+" — i7-regel zonder werkcode");
-    else if(codeFout(d,r))p.push(t+" — werkcode staat niet in de i7-werklijst");
-    if(!(r.omschrijving||"").trim())p.push(t+" — lege omschrijving");
+    const d=dosOf(r.dossierId);
+    if(!d)add(r,"geen dossier gekozen");
+    else if(isIndirect(d)&&!r.code)add(r,"i7-regel zonder werkcode");
+    else if(codeFout(d,r))add(r,"werkcode staat niet in de i7-werklijst");
+    if(!(r.omschrijving||"").trim())add(r,"lege omschrijving");
     if(r.eind&&hm2m(r.eind)!=null&&hm2m(r.start)!=null&&hm2m(r.eind)<hm2m(r.start))
-      p.push(t+" — eindtijd ligt vóór de starttijd");
-    if(!r.eind)p.push(t+" — regel is nog niet afgesloten"+
+      add(r,"eindtijd ligt vóór de starttijd");
+    if(!r.eind)add(r,"regel is nog niet afgesloten"+
       (r.datum!==today()?" (oude dag)":""));});
   const iv=regels.filter(r=>r.soort!=="pauze"&&hm2m(r.start)!=null)
     .map(r=>({a:hm2m(r.start),b:Math.max(hm2m(r.start),hm2m(eindOf(r))||hm2m(r.start)),r}))
@@ -938,8 +1024,8 @@ function controleer(){
   let tot=null;
   iv.forEach(x=>{
     if(tot&&x.a<tot.b)
-      p.push(tot.r.start+"–"+(tot.r.eind||"loopt")+" overlapt met "+
-        x.r.start+"–"+(x.r.eind||"loopt"));
+      p.push({id:x.r.id,tekst:tot.r.start+"–"+(tot.r.eind||"loopt")+" overlapt met "+
+        x.r.start+"–"+(x.r.eind||"loopt")});
     if(!tot||x.b>tot.b)tot=x;});
   return p;}
 
@@ -948,7 +1034,8 @@ function bouwSum(){
   const box=$("d-probs");
   box.className="probs"+(probs.length?" on":"");
   box.innerHTML=probs.length?"<strong>Nog te controleren</strong>"+
-    probs.map(x=>"<div>"+esc(x)+"</div>").join(""):"";
+    probs.map(x=>'<div class="pb" data-goto="'+esc(x.id)+'">'+esc(x.tekst)+
+      "</div>").join(""):"";
   if(!rs.length){$("d-sum").innerHTML='<tbody><tr><td class="hint">Nog niets.</td></tr></tbody>';return;}
   const tot=rs.reduce((s,x)=>s+x.u,0);
   $("d-sum").innerHTML='<thead><tr><th>Dag</th><th>Dossiernummer</th><th>Dossiernaam</th>'+
@@ -960,19 +1047,28 @@ function bouwSum(){
     '</tbody><tfoot><tr><td colspan="5">Totaal</td><td class="mono" style="text-align:right">'+
     uu(tot)+"</td></tr></tfoot>";}
 
+$("d-probs").addEventListener("click",e=>{
+  const b=e.target.closest("[data-goto]");if(!b)return;
+  const tr=$("d-table").querySelector('tr[data-id="'+b.dataset.goto+'"]');
+  if(!tr)return;
+  tr.scrollIntoView({block:"center",behavior:"smooth"});
+  const f=tr.querySelector('[data-f="dossier"]');if(f)f.focus();});
 $("d-mode").onchange=async e=>{rondMode=e.target.value;
   await putK("meta",rondMode,"rondMode");verversDag();};
 $("d-copy").onclick=()=>{
   const rs=sumRows(),probs=controleer();
+  if(!rs.length){toast("Niets te kopiëren");return;}
   if(probs.length&&!confirm(probs.length+" punt(en) vragen nog aandacht.\nToch kopiëren?"))return;
-  const txt=["Dag\tDossiernummer\tDossiernaam\tWerkcode\tOmschrijving\tUren"]
-    .concat(rs.map(x=>[kortDag(viewDate),schoon(x.nummer),schoon(x.naam),schoon(x.code),
-      schoon(x.oms),uu(x.u)].join("\t"))).join("\n");
-  navigator.clipboard.writeText(txt).then(
-    ()=>toast(rs.length+" regel(s) gekopieerd"),()=>toast("Kopiëren mislukt"));};
+  const kop="Dag\tDossiernummer\tDossiernaam\tWerkcode\nOmschrijving\nUren";
+  const blok=rs.map(x=>
+    [kortDag(viewDate),schoon(x.nummer),schoon(x.naam),schoon(x.code)].join("\t")+"\n"+
+    schoon(x.oms)+"\n"+uu(x.u)).join("\n\n");
+  navigator.clipboard.writeText(kop+"\n\n"+blok+"\n").then(
+    ()=>{L("kopieer-intapp",rs.length+" regels · "+uu(rs.reduce((a,x)=>a+x.u,0))+" u");
+      toast(rs.length+" regel(s) gekopieerd");},()=>toast("Kopiëren mislukt"));};
 
 const intappTotaal=()=>sumRows().reduce((s,x)=>s+x.u,0);
-$("d-fill").onclick=async()=>{
+async function vulAanTot8(){
   if(running&&running.datum===viewDate){
     toast("Sluit eerst de lopende regel af met E");return;}
   const ind=i7();if(!ind){toast("Geen i7-dossier");return;}
@@ -997,7 +1093,9 @@ $("d-fill").onclick=async()=>{
       eind:m2hm(Math.min(1439,laatst+Math.round(rest*60))),dossierId:ind.id,code,
       omschrijving:"Diversen",uren:rest,urenHand:true,soort:"werk"});}
   bouwDag();renderTot();announce();
-  toast("Aangevuld tot "+uu(intappTotaal())+" uur in de Intapp-samenvatting");};
+  L("aanvullen","gaten "+uu(g)+" · sluitregel "+uu(rest)+" · nu "+uu(intappTotaal())+" u");
+  toast("Aangevuld tot "+uu(intappTotaal())+" uur in de Intapp-samenvatting");}
+$("d-fill").onclick=vulAanTot8;
 
 /* ---------- weergave: WEEK ---------- */
 function renderWeek(){
@@ -1102,6 +1200,24 @@ $("b-list").addEventListener("click",async e=>{
       d.archief=true;await put("dossiers",d);}
     else{if(!confirm("Dossier verwijderen?"))return;await del("dossiers",d.id);}
     dossiers=await getAll("dossiers");renderAll();}});
+$("b-logoms").onchange=async e=>{logOms=e.target.checked;
+  await putK("meta",logOms,"logOms");L("instelling","omschrijvingen in log: "+logOms);};
+$("b-logcopy").onclick=()=>{
+  const kop="hourhound logboek · "+appVer+" · "+new Date().toLocaleString("nl-NL")+
+    "\n"+navigator.userAgent+"\ndossiers "+dossiers.length+" · regels "+alle.length+
+    " · vandaag "+vandaagRegels().length+"\n"+"-".repeat(60);
+  navigator.clipboard.writeText(kop+"\n"+logboek.join("\n")+"\n").then(
+    ()=>toast(logboek.length+" logregels gekopieerd"),()=>toast("Kopiëren mislukt"));};
+$("b-logclear").onclick=async()=>{logboek=[];await putK("meta",logboek,"log");
+  $("logstat").textContent="0 regels";toast("Logboek leeg");};
+$("b-wipe").onclick=async()=>{
+  if(running){toast("Sluit eerst de lopende regel af met E");return;}
+  if(!confirm("Alle dossiers en tijdregels wissen? Sjablonen en werkcodes blijven staan."))return;
+  if(!confirm("Zeker weten? Maak eerst een export als je iets wilt bewaren."))return;
+  await tx(["dossiers","regels"],"readwrite",o=>{o.dossiers.clear();o.regels.clear();});
+  await del("meta","running");await del("meta","stack");await del("meta","dagEinde");
+  stack=[];dagEinde={};undoStack=[];
+  L("alles-gewist","");await boot();toast("Gewist — hourhound begint schoon");};
 $("b-adddos").onclick=async()=>{
   const naam=$("b-naam").value.trim();if(!naam){toast("Naam is verplicht");return;}
   const nr=$("b-nr").value.trim();
@@ -1148,16 +1264,40 @@ $("l-omschr").addEventListener("input",e=>{
     $("l-omschr").value=running.omschrijving;$("l-code").value=codeNaam(d,running.code);
     const m=/\{[^}]+\}/.exec($("l-omschr").value);$("l-omschr").focus();
     if(m)$("l-omschr").setSelectionRange(m.index,m.index+m[0].length);
-    verversDag();announce();});
+    verversDag();announce();},true);
   else closeAC();});
 $("l-omschr").addEventListener("keydown",e=>{
   if(acKeys(e))return;
   if(e.key==="Enter"){e.preventDefault();e.target.blur();}});
 ["l-dossier","l-code"].forEach(id=>$(id).addEventListener("keydown",acKeys));
-$("l-dossier").addEventListener("blur",()=>setTimeout(()=>{closeAC();
-  if(running)$("l-dossier").value=dosVeld(dosOf(running.dossierId));},160));
+async function dossierBlur(inp,huidigId,setter){
+  const v=inp.value.trim(),d=dosOf(huidigId);
+  if(v===""){inp.classList.toggle("miss",!d);if(d)inp.value=dosVeld(d);return;}
+  if(d&&(v===dosVeld(d)||v===d.naam)){inp.value=dosVeld(d);inp.classList.remove("miss");return;}
+  const lv=v.toLowerCase();
+  const hit=actief().find(x=>(x.nummer||"").toLowerCase()===lv||
+    x.naam.toLowerCase()===lv||((x.nummer||"")+" - "+x.naam).toLowerCase()===lv);
+  if(hit){L("blur-dossier","gekoppeld aan bestaand "+dosVeld(hit));
+    await setter(hit.id);inp.value=dosVeld(hit);inp.classList.remove("miss");return;}
+  const pd=splitsDossier(v);
+  if(pd&&!nummerBezet(pd.nummer,null)){
+    const nd=await makeDossier(pd.naam,pd.nummer,"nl");
+    await setter(nd.id);inp.value=dosVeld(nd);inp.classList.remove("miss");
+    L("blur-dossier","aangemaakt uit vrije tekst "+pd.nummer);
+    toast("Dossier "+pd.nummer+" aangemaakt");return;}
+  inp.classList.add("miss");L("blur-dossier","NIET herkend: "+kort(v,40));
+  toast("Kies een dossier uit de lijst — deze tekst is nog niet bewaard");}
+$("l-dossier").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
+  if(pickBusy||!running)return;
+  await dossierBlur($("l-dossier"),running.dossierId,async id=>{
+    const d=dosOf(id);running.dossierId=id;running.code=passendeCode(d,running.code);
+    running.omschrijving=prefixVoor(d,running.datum,running.omschrijving||"");
+    await touchDossier(id);await saveRegel(running);
+    $("l-code").value=codeNaam(d,running.code);
+    $("l-omschr").value=running.omschrijving;
+    liveId=null;renderLive();renderRecent();renderTot();announce();});},220));
 $("l-code").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
-  if(!running)return;
+  if(pickBusy||!running)return;
   if($("l-code").value.trim()===""){
     if(running.code!==null){running.code=null;await saveRegel(running);verversDag();}
   }else $("l-code").value=codeNaam(dosOf(running.dossierId),running.code);
@@ -1171,6 +1311,7 @@ $("d-table").addEventListener("input",e=>{
   const r=regels.find(x=>x.id===inp.closest("tr").dataset.id);if(!r)return;
   const f=inp.dataset.f,d=dosOf(r.dossierId);
   if(f==="dossier")openAC(inp,dossierItems(inp.value),async it=>{
+    snap(r);
     const id=await uitItem(it);
     const nd=dosOf(id);r.dossierId=id;r.code=passendeCode(nd,r.code);
     r.omschrijving=prefixVoor(nd,r.datum,r.omschrijving||"");
@@ -1181,6 +1322,7 @@ $("d-table").addEventListener("input",e=>{
     if(running&&running.id===r.id){running=r;liveId=null;renderLive();}
     verversDag();renderRecent();renderTot();announce();});
   else if(f==="code")openAC(inp,codeItems(d,inp.value),async it=>{
+    snap(r);
     let code=it.value;
     if(it.isNew&&d){code=it.newCode;d.codes=d.codes||[];d.codes.push({code,naam:code});
       await put("dossiers",d);dossiers=await getAll("dossiers");}
@@ -1195,21 +1337,35 @@ $("d-table").addEventListener("input",e=>{
       await saveRegel(r);inp.value=r.omschrijving;
       inp.closest("tr").querySelector('[data-f="code"]').value=codeNaam(d,r.code);
       if(running&&running.id===r.id){running=r;liveId=null;renderLive();}
-      verversDag();announce();});
+      verversDag();announce();},true);
     else closeAC();}});
 $("d-table").addEventListener("keydown",acKeys);
 $("d-table").addEventListener("blur",e=>{
   const inp=e.target.closest?e.target.closest("input[data-f]"):null;if(!inp)return;
-  const r=regels.find(x=>x.id===inp.closest("tr").dataset.id);if(!r)return;
-  const d=dosOf(r.dossierId);
-  if(inp.dataset.f==="dossier")inp.value=dosVeld(d);
-  if(inp.dataset.f==="code"){
-    if(inp.value.trim()===""){if(r.code!==null){r.code=null;saveRegel(r).then(verversDag);}}
-    else inp.value=codeNaam(d,r.code);}},true);
+  const tr=inp.closest("tr");if(!tr)return;
+  const r=regels.find(x=>x.id===tr.dataset.id);if(!r)return;
+  setTimeout(async()=>{
+    if(pickBusy)return;
+    const d=dosOf(r.dossierId);
+    if(inp.dataset.f==="dossier")
+      await dossierBlur(inp,r.dossierId,async id=>{
+        snap(r);const nd=dosOf(id);r.dossierId=id;r.code=passendeCode(nd,r.code);
+        await touchDossier(id);await saveRegel(r);
+        tr.querySelector('[data-f="code"]').value=codeNaam(nd,r.code);
+        if(running&&running.id===r.id){running=r;liveId=null;renderLive();}
+        verversDag();announce();});
+    else if(inp.dataset.f==="code"){
+      if(inp.value.trim()===""){if(r.code!==null){snap(r);r.code=null;
+        await saveRegel(r);verversDag();}}
+      else inp.value=codeNaam(d,r.code);}},220);},true);
 $("d-table").addEventListener("change",async e=>{
   const inp=e.target.closest("input[data-f]");if(!inp)return;
   const r=regels.find(x=>x.id===inp.closest("tr").dataset.id);if(!r)return;
   const f=inp.dataset.f,v=inp.value.trim();
+  snap(r);
+  L("dag-bewerk",f+" · was "+kort(f==="omschrijving"?omsLog(r.omschrijving):
+    (f==="uren"?uu(urenOf(r)):(r[f]||"-")),40)+" · wordt "+
+    kort(f==="omschrijving"?omsLog(v):v,40));
   if(f==="start"){const m=hm2m(v);
     if(m==null){toast("Ongeldige tijd");inp.value=r.start;return;}r.start=m2hm(m);}
   else if(f==="eind"){
@@ -1234,6 +1390,8 @@ $("d-table").addEventListener("click",async e=>{
   const dl=e.target.closest("[data-del]");
   if(dl){const id=dl.dataset.del;
     if(!confirm("Deze regel verwijderen?"))return;
+    const oud=regels.find(x=>x.id===id);if(oud){snap(oud);
+      L("regel-weg",oud.start+"-"+(oud.eind||"loopt")+" · "+uu(urenOf(oud))+" u");}
     if(running&&running.id===id){running=null;await del("meta","running");}
     await del("regels",id);alle=alle.filter(r=>r.id!==id);refreshDay();
     bouwDag();renderAll();announce();return;}
@@ -1253,6 +1411,17 @@ $("d-add").onclick=async()=>{
     omschrijving:"",uren:0.1,urenHand:false,soort:"werk"});bouwDag();announce();};
 
 /* ---------- knoppen en toetsen ---------- */
+window.addEventListener("focus",()=>{document.body.dataset.focus="1";});
+window.addEventListener("blur",()=>{document.body.dataset.focus="0";});
+document.body.dataset.focus=document.hasFocus()?"1":"0";
+function zetThema(t){
+  document.documentElement.dataset.thema=t;
+  document.documentElement.classList.toggle("licht",t==="licht");
+  document.documentElement.classList.toggle("donker",t==="donker");}
+$("b-thema").onclick=async()=>{
+  const nu=document.documentElement.dataset.thema||"auto";
+  const v=nu==="auto"?"licht":(nu==="licht"?"donker":"auto");
+  zetThema(v);await putK("meta",v,"thema");toast("Thema: "+v);};
 $("b-switch").onclick=openSwitcher;
 $("b-back").onclick=terug;
 $("b-phone").onclick=()=>interrupt("telefoon","Telefoon");
@@ -1270,6 +1439,10 @@ $("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-v]");
   if(b)showTab(b.dataset.v);});
 
 document.addEventListener("keydown",async e=>{
+  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"&&!e.shiftKey){
+    const t=e.target;
+    if(!(/^(INPUT|TEXTAREA)$/.test(t.tagName)&&t.value!==t.defaultValue)){
+      e.preventDefault();await undo();return;}}
   if(sw.on){
     if(e.key==="ArrowDown"){sw.hi=Math.min(sw.hi+1,sw.items.length-1);drawSwitcher();e.preventDefault();}
     else if(e.key==="ArrowUp"){sw.hi=Math.max(sw.hi-1,0);drawSwitcher();e.preventDefault();}
@@ -1286,7 +1459,7 @@ document.addEventListener("keydown",async e=>{
   if(e.ctrlKey||e.metaKey||e.altKey||e.repeat)return;
   const k=e.key.toLowerCase();
   if(k>="1"&&k<="9"){
-    const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,5);
+    const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,4);
     const t=tk[+k-1];
     if(t){await hervat(t.k);e.preventDefault();return;}
     const d=recente()[+k-1];
@@ -1344,7 +1517,7 @@ async function importFile(file){
         toast("Samengevoegd: "+D.length+" dossiers, "+R.length+" regels");}}
     else{toast("Onbekend bestand");return;}
     await herlaad();announce();
-  }catch(err){toast("Import mislukt, niets gewijzigd: "+err);}}
+  }catch(err){L("FOUT-import",String(err));toast("Import mislukt, niets gewijzigd: "+err);}}
 $("b-export").onclick=async()=>{
   flushOmschr();
   const dump={app:"hourhound",schemaVersion:3,exported:new Date().toISOString(),
@@ -1352,7 +1525,8 @@ $("b-export").onclick=async()=>{
     templates:await getAll("templates"),codes:await getAll("codes")};
   const url=URL.createObjectURL(new Blob([JSON.stringify(dump,null,2)],{type:"application/json"}));
   const a=document.createElement("a");a.href=url;a.download="hourhound-"+today()+".json";a.click();
-  URL.revokeObjectURL(url);toast("Export gedownload");};
+  URL.revokeObjectURL(url);L("export",dump.regels.length+" regels");
+  toast("Export gedownload");};
 
 /* ---------- render en start ---------- */
 function renderAll(){
@@ -1405,9 +1579,16 @@ async function boot(){
   else if(!dossiers.some(d=>d.isI7)){
     const g=dossiers.find(d=>/^I7/i.test(d.nummer||""));
     if(g){g.isI7=true;await put("dossiers",g);}}
+  logboek=(await get("meta","log"))||[];
+  logOms=!!(await get("meta","logOms"));
+  $("b-logoms").checked=logOms;$("logstat").textContent=logboek.length+" regels";
+  zetThema((await get("meta","thema"))||"auto");
   rondMode=(await get("meta","rondMode"))||"groep";
   $("d-mode").value=rondMode;
   await herlaad();
+  L("app-start","dossiers "+dossiers.length+" · regels "+alle.length+
+    " · sjablonen "+templates.length+" · i7-codes "+i7codes.length+
+    " · lopend "+(running?running.start:"nee"));
   setInterval(()=>{middernachtCheck();checkWake();
     if(running){renderLive();renderTot();}},10000);}
 
@@ -1436,7 +1617,8 @@ if("serviceWorker" in navigator){
     const c=navigator.serviceWorker.controller;
     if(!c){$("ver").textContent="versie — (geen sw)";return;}
     const ch=new MessageChannel();
-    ch.port1.onmessage=e=>{$("ver").textContent="versie "+e.data.version;};
+    ch.port1.onmessage=e=>{appVer="versie "+e.data.version;
+      $("ver").textContent=appVer;L("sw",appVer);};
     c.postMessage({type:"GET_VERSION"},[ch.port2]);});}
 </script>
 </body>
