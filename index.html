@@ -154,21 +154,7 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
 .aci.new{color:var(--moss)}
 .acg{font:500 11px/1 var(--sans);color:var(--soft);padding:.6rem .6rem .25rem;
      text-transform:uppercase;letter-spacing:.08em}
-.ovl{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:flex-start;
-     justify-content:center;padding:7vh 1rem;z-index:45}
-.ovl.on{display:flex}
-.panel{background:var(--card);border-radius:12px;padding:1rem;width:100%;max-width:540px;
-       max-height:78vh;display:flex;flex-direction:column}
-.panel h3{margin:0 0 .7rem;font:500 15px/1.2 var(--sans)}
-.plist{overflow-y:auto}
-.pit{display:flex;gap:.6rem;align-items:center;padding:.6rem;border-radius:8px;
-     cursor:pointer;font-size:16px}
-.pit.hi,.pit:hover{background:var(--warm)}
-.pit i{width:10px;height:10px;border-radius:3px;flex:none}
-.pit .l{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.pit .s{font:400 12px/1 var(--mono);color:var(--soft)}
-.pgrp{font:500 11px/1 var(--sans);color:var(--soft);padding:.7rem .6rem .3rem;
-      text-transform:uppercase;letter-spacing:.08em}
+
 
 .legend{max-width:1020px;margin:0 auto;padding:.8rem 1rem 2.5rem;font-size:13px;
         color:var(--soft);line-height:2.1}
@@ -249,7 +235,7 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
   </div>
 
   <div class="bar">
-    <button class="go" id="b-switch">Volgende taak <kbd>N</kbd></button>
+    <button class="go" id="b-switch">Nieuwe taak <kbd>N</kbd></button>
     <button class="back" id="b-back" style="display:none">Terug <kbd>R</kbd></button>
     <button id="b-phone">Telefoon <kbd>T</kbd></button>
     <button id="b-brk">Onderbreking <kbd>O</kbd></button>
@@ -402,17 +388,15 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
 </main>
 
 <div class="legend">
-  <kbd>N</kbd> volgende taak · <kbd>1</kbd>–<kbd>9</kbd> recent dossier · <kbd>T</kbd> telefoon ·
+  <kbd>N</kbd> nieuwe taak — de keuzelijst opent meteen in het dossierveld ·
+  <kbd>1</kbd>–<kbd>4</kbd> verder op een taak van vandaag · <kbd>T</kbd> telefoon ·
   <kbd>O</kbd> onderbreking · <kbd>R</kbd> terug naar geparkeerde taak ·
   <kbd>V</kbd> dossier volgt nog · <kbd>P</kbd> pauze · <kbd>E</kbd> einde werkdag ·
   <kbd>D</kbd> dag · <kbd>U</kbd> week · <kbd>Ctrl</kbd>+<kbd>Z</kbd> ongedaan maken ·
   <kbd>Esc</kbd> sluit veld of venster
 </div>
 
-<div class="ovl" id="sw"><div class="panel">
-  <h3 id="sw-title">Waar ga je mee verder?</h3>
-  <div class="plist" id="sw-list"></div>
-</div></div>
+
 
 <div id="ac"></div>
 <div class="toast" id="toast"></div>
@@ -475,7 +459,7 @@ const putK=(s,v,k)=>tx(s,"readwrite",o=>o.put(v,k));
 const del=(s,k)=>tx(s,"readwrite",o=>o.delete(k));
 const replaceAll=(s,rows)=>tx(s,"readwrite",o=>{o.clear();rows.forEach(r=>o.put(r));});
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
-let logboek=[],logOms=false,logT=null,appVer="?";
+let logboek=[],logOms=false,logT=null,appVer="?",codeGebruik={};
 const kort=(s,n)=>{s=String(s==null?"":s);
   return s.length>(n||34)?s.slice(0,n||34)+"…":s;};
 const omsLog=s=>logOms?kort(s,60):"["+String(s||"").length+" tekens]";
@@ -588,8 +572,10 @@ function recente(){
     .sort((a,b)=>(a.datum+a.start)<(b.datum+b.start)?1:-1)
     .forEach(r=>seen.add(r.dossierId));
   return [...seen].map(dosOf).filter(d=>d&&!d.isI7&&!d.archief).slice(0,9);}
-const favCodes=()=>{const f=i7codes.filter(c=>c.favoriet);
-  return (f.length?f:i7codes).slice(0,6);};
+const codesGesorteerd=()=>i7codes.slice().sort((a,b)=>
+  (codeGebruik[b.code]||0)-(codeGebruik[a.code]||0)||
+  (b.favoriet?1:0)-(a.favoriet?1:0)||a.naam.localeCompare(b.naam));
+const favCodes=()=>codesGesorteerd().slice(0,6);
 
 /* ---------- autocomplete ---------- */
 let ac={el:null,items:[],hi:0,onPick:null,vrij:false};
@@ -634,24 +620,33 @@ function splitsDossier(q){
   if(/^[A-Za-z0-9._/\\]+$/.test(t))return{nummer:t,naam:t};
   return null;}
 function dossierItems(q){
-  const s=(q||"").toLowerCase();
-  const hit=actief().filter(d=>!s||((d.nummer||"")+" "+d.naam).toLowerCase().includes(s));
-  hit.sort((a,b)=>(b.used||0)-(a.used||0));
-  const items=hit.slice(0,20).map(d=>({label:d.naam,sub:d.nummer||"volgt nog",value:d.id,
-    group:d.voorlopig?"Dossier volgt nog":"Dossiers"}));
-  if(s){
-    const pd=splitsDossier(q);
+  const t=(q||"").trim(),lo=t.toLowerCase();
+  const m=x=>!lo||String(x).toLowerCase().includes(lo);
+  const it=[];
+  takenVandaag().filter(x=>(!running||x.k!==taakKey(running))&&
+      m(taakLabel(x)+" "+x.oms)).slice(0,6)
+    .forEach(x=>it.push({t:"taak",k:x.k,d:dosOf(x.dossierId),
+      label:taakLabel(x)+(x.oms?" — "+x.oms:""),sub:uu(x.u)+" u",
+      group:"Verder op vandaag"}));
+  actief().filter(d=>!d.isI7&&!d.voorlopig&&m((d.nummer||"")+" "+d.naam))
+    .sort((a,b)=>(b.used||0)-(a.used||0)).slice(0,12)
+    .forEach(d=>it.push({t:"dos",id:d.id,d,label:d.naam,sub:d.nummer||"",
+      group:"Dossiers"}));
+  codesGesorteerd().filter(c=>m("i7 indirect "+c.code+" "+c.naam))
+    .slice(0,lo?8:4)
+    .forEach(c=>it.push({t:"i7code",code:c.code,label:"i7 · "+c.naam,
+      sub:c.code.split("-").pop(),group:"Indirecte uren"}));
+  actief().filter(d=>d.voorlopig&&m(d.naam)).slice(0,6)
+    .forEach(d=>it.push({t:"dos",id:d.id,d,label:d.naam,sub:"volgt nog",
+      group:"Dossiernummer volgt nog"}));
+  if(t){
+    const pd=splitsDossier(t);
     if(pd&&!nummerBezet(pd.nummer,null))
-      items.push({label:"Nieuw dossier: "+pd.naam,sub:pd.nummer,isNew:true,
-        nieuwNummer:pd.nummer,nieuwNaam:pd.naam,group:"Aanmaken"});
-    items.push({label:'Dossier volgt nog: "'+q+'"',sub:"i7",isNew:true,
-      newName:q,group:"Aanmaken"});}
-  return items;}
-async function uitItem(it){
-  if(!it.isNew)return it.value;
-  const d=it.nieuwNummer?await makeDossier(it.nieuwNaam,it.nieuwNummer,"nl")
-                        :await makeDossier(it.newName,null,"nl");
-  return d.id;}
+      it.push({t:"nieuw",nummer:pd.nummer,naam:pd.naam,isNew:true,
+        label:"Nieuw dossier: "+pd.naam,sub:pd.nummer,group:"Aanmaken"});
+    it.push({t:"volgt",naam:t,isNew:true,label:'Dossier volgt nog: "'+t+'"',
+      sub:"i7",group:"Aanmaken"});}
+  return it;}
 function codeItems(d,q){
   const s=(q||"").toLowerCase(),src=codesFor(d);
   const hit=src.filter(c=>!s||(c.code+" "+c.naam).toLowerCase().includes(s));
@@ -701,6 +696,8 @@ async function _start(o){
     if(dagEinde[r.datum]!=null){delete dagEinde[r.datum];
       await putK("meta",dagEinde,"dagEinde");}
     if(o.dossierId)await touchDossier(o.dossierId);
+    if(r.code){codeGebruik[r.code]=(codeGebruik[r.code]||0)+1;
+      putK("meta",codeGebruik,"codeGebruik").catch(()=>{});}
     L("start-regel",r.soort+" · "+(dosOf(r.dossierId)?dosVeld(dosOf(r.dossierId)):"geen dossier")+
       " · code "+(r.code||"-")+" · "+r.start+" · oms "+omsLog(r.omschrijving));
     liveId=null;snoozeTot=0;hideWake();renderAll();announce();return r;
@@ -763,7 +760,7 @@ async function terug(){
       naam=(dosOf(back.dossierId)||{}).naam||"vorige taak";}
   }finally{bezig=false;}
   L("terug",leeg?"stapel leeg":naam);
-  if(leeg)openSwitcher();else toast("Terug bij "+naam);}
+  if(leeg)await nieuweTaak();else toast("Terug bij "+naam);}
 async function pauze(){
   if(bezig)return;bezig=true;
   try{
@@ -840,7 +837,7 @@ function checkWake(){
   $("l-wake").classList.add("on");}
 $("wake-ja").onclick=()=>{snoozeTot=Date.now()+60*60*1000;hideWake();};
 $("wake-nee").onclick=async()=>{hideWake();await stopRunning();
-  renderAll();announce();openSwitcher();};
+  renderAll();announce();await nieuweTaak();};
 
 /* ---------- middernachtgrens ---------- */
 async function middernachtCheck(){
@@ -851,48 +848,42 @@ async function middernachtCheck(){
   liveId=null;renderAll();announce();
   toast("Regel van "+dmy(d)+" is om 23:59 afgesloten");}
 
-/* ---------- wisselaar ---------- */
-let sw={items:[],hi:0,on:false};
-function openSwitcher(){
-  const items=[];
-  takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,8).forEach(t=>
-    items.push({t:"taak",k:t.k,d:dosOf(t.dossierId),
-      label:taakLabel(t)+(t.oms?" — "+t.oms:""),sub:uu(t.u)+" u",grp:"Verder op vandaag"}));
-  recente().forEach(d=>items.push({t:"dos",d,label:d.naam,sub:d.nummer||"volgt nog",
-    grp:"Recente dossiers — nieuwe regel"}));
-  favCodes().forEach(c=>items.push({t:"i7",code:c.code,label:c.naam,sub:c.code.split("-").pop(),
-    grp:"Indirecte uren"}));
-  items.push({t:"nieuw",label:"Nieuw dossier…",sub:"",grp:"Overig"});
-  items.push({t:"volgt",label:"Dossier volgt nog…",sub:"i7",grp:"Overig"});
-  items.push({t:"schakel",label:"Schakelen / voorbereiden",sub:"i7",grp:"Overig"});
-  sw={items,hi:0,on:true};
-  $("sw-title").textContent=running?"Waar ga je mee verder?":"Waar begin je mee?";
-  drawSwitcher();$("sw").classList.add("on");}
-function closeSwitcher(){$("sw").classList.remove("on");sw.on=false;}
-function drawSwitcher(){
-  let h="",g=null,n=0;
-  sw.items.forEach((it,i)=>{
-    if(it.grp!==g){g=it.grp;h+='<div class="pgrp">'+esc(g)+"</div>";}
-    const kb=(it.t==="taak"||it.t==="dos")?(++n<=9?"<kbd>"+n+"</kbd>":""):"";
-    h+='<div class="pit'+(i===sw.hi?" hi":"")+'" data-s="'+i+'">'+
-      '<i style="background:'+(it.d?dosColor(it.d):"var(--soft)")+'"></i>'+
-      '<span class="l">'+esc(it.label)+'</span><span class="s">'+esc(it.sub)+"</span>"+kb+"</div>";});
-  $("sw-list").innerHTML=h;}
-async function chooseSwitch(i){
-  const it=sw.items[i];if(!it)return;closeSwitcher();
-  const ind=i7();
-  if(it.t==="taak"){await hervat(it.k);return;}
-  if(it.t==="dos"){await startRegel({dossierId:it.d.id});
-    setTimeout(()=>$("l-omschr").focus(),30);return;}
-  if(it.t==="i7"){await startRegel({dossierId:ind?ind.id:null,code:it.code});
-    setTimeout(()=>$("l-omschr").focus(),30);return;}
-  if(it.t==="nieuw"){await startRegel({});setTimeout(()=>$("l-dossier").focus(),30);return;}
-  if(it.t==="volgt"){await startRegel({dossierId:ind?ind.id:null});await markeerVolgt();return;}
-  if(it.t==="schakel"){await startRegel({dossierId:ind?ind.id:null,
-    omschrijving:"Schakelen / voorbereiden"});return;}}
-$("sw-list").addEventListener("click",e=>{const it=e.target.closest("[data-s]");
-  if(it)chooseSwitch(+it.dataset.s);});
-$("sw").addEventListener("mousedown",e=>{if(e.target.id==="sw")closeSwitcher();});
+/* ---------- één ingang: nieuwe regel met open keuzelijst ---------- */
+async function nieuweTaak(){
+  await startRegel({});
+  setTimeout(()=>{const el=$("l-dossier");el.focus();
+    openAC(el,dossierItems(""),kiesDossierItem);},40);}
+
+async function itemNaarWaarden(it){
+  if(it.t==="dos")return{dossierId:it.id};
+  if(it.t==="taak"){const t=takenVandaag().find(x=>x.k===it.k);
+    return t?{dossierId:t.dossierId,code:t.code,omschrijving:t.oms}:{};}
+  if(it.t==="i7code"){const ind=i7();return{dossierId:ind?ind.id:null,code:it.code};}
+  if(it.t==="nieuw"){const d=await makeDossier(it.naam,it.nummer,"nl");return{dossierId:d.id};}
+  if(it.t==="volgt"){
+    let d=actief().find(x=>x.voorlopig&&x.naam.toLowerCase()===it.naam.toLowerCase());
+    if(!d)d=await makeDossier(it.naam,null,"nl");
+    return{dossierId:d.id};}
+  return{};}
+
+async function kiesDossierItem(it){
+  if(!running)return;
+  const w=await itemNaarWaarden(it);
+  if(!w.dossierId)return;
+  const d=dosOf(w.dossierId);
+  running.dossierId=w.dossierId;
+  running.code=w.code!==undefined?w.code:passendeCode(d,running.code);
+  if(w.omschrijving!==undefined)running.omschrijving=w.omschrijving;
+  running.omschrijving=prefixVoor(d,running.datum,running.omschrijving||"");
+  await touchDossier(w.dossierId);await saveRegel(running);
+  $("l-dossier").value=dosVeld(d);
+  $("l-code").value=codeNaam(d,running.code);
+  $("l-omschr").value=running.omschrijving;
+  liveId=null;renderLive();renderRecent();renderTot();announce();
+  setTimeout(()=>{const el=$("l-omschr");el.focus();
+    const m=/\{[^}]+\}/.exec(el.value);
+    if(m)el.setSelectionRange(m.index,m.index+m[0].length);
+    else el.setSelectionRange(el.value.length,el.value.length);},10);}
 
 /* ---------- weergave: NU ---------- */
 function renderLive(){
@@ -1231,16 +1222,10 @@ function flushOmschr(){if(omsT){clearTimeout(omsT);omsT=null;
   if(running)saveRegel(running);}}
 $("l-dossier").addEventListener("input",e=>{
   if(!running)return;
-  openAC(e.target,dossierItems(e.target.value),async it=>{
-    const id=await uitItem(it);
-    const d=dosOf(id);running.dossierId=id;
-    running.code=passendeCode(d,running.code);
-    running.omschrijving=prefixVoor(d,running.datum,running.omschrijving||"");
-    await touchDossier(id);await saveRegel(running);
-    $("l-dossier").value=dosVeld(d);$("l-code").value=codeNaam(d,running.code);
-    $("l-omschr").value=running.omschrijving;liveId=null;
-    renderLive();renderRecent();renderTot();announce();
-    setTimeout(()=>$("l-omschr").focus(),10);});});
+  openAC(e.target,dossierItems(e.target.value),kiesDossierItem);});
+$("l-dossier").addEventListener("focus",e=>{
+  if(running&&!running.dossierId&&!e.target.value)
+    openAC(e.target,dossierItems(""),kiesDossierItem);});
 $("l-code").addEventListener("input",e=>{
   if(!running)return;
   const d=dosOf(running.dossierId);
@@ -1312,10 +1297,13 @@ $("d-table").addEventListener("input",e=>{
   const f=inp.dataset.f,d=dosOf(r.dossierId);
   if(f==="dossier")openAC(inp,dossierItems(inp.value),async it=>{
     snap(r);
-    const id=await uitItem(it);
-    const nd=dosOf(id);r.dossierId=id;r.code=passendeCode(nd,r.code);
+    const w=await itemNaarWaarden(it);
+    if(!w.dossierId)return;
+    const nd=dosOf(w.dossierId);r.dossierId=w.dossierId;
+    r.code=w.code!==undefined?w.code:passendeCode(nd,r.code);
+    if(w.omschrijving!==undefined)r.omschrijving=w.omschrijving;
     r.omschrijving=prefixVoor(nd,r.datum,r.omschrijving||"");
-    await touchDossier(id);await saveRegel(r);
+    await touchDossier(w.dossierId);await saveRegel(r);
     const tr=inp.closest("tr");inp.value=dosVeld(nd);
     tr.querySelector('[data-f="code"]').value=codeNaam(nd,r.code);
     tr.querySelector('[data-f="omschrijving"]').value=r.omschrijving;
@@ -1422,7 +1410,7 @@ $("b-thema").onclick=async()=>{
   const nu=document.documentElement.dataset.thema||"auto";
   const v=nu==="auto"?"licht":(nu==="licht"?"donker":"auto");
   zetThema(v);await putK("meta",v,"thema");toast("Thema: "+v);};
-$("b-switch").onclick=openSwitcher;
+$("b-switch").onclick=nieuweTaak;
 $("b-back").onclick=terug;
 $("b-phone").onclick=()=>interrupt("telefoon","Telefoon");
 $("b-brk").onclick=()=>interrupt("onderbreking","Onderbreking");
@@ -1443,17 +1431,7 @@ document.addEventListener("keydown",async e=>{
     const t=e.target;
     if(!(/^(INPUT|TEXTAREA)$/.test(t.tagName)&&t.value!==t.defaultValue)){
       e.preventDefault();await undo();return;}}
-  if(sw.on){
-    if(e.key==="ArrowDown"){sw.hi=Math.min(sw.hi+1,sw.items.length-1);drawSwitcher();e.preventDefault();}
-    else if(e.key==="ArrowUp"){sw.hi=Math.max(sw.hi-1,0);drawSwitcher();e.preventDefault();}
-    else if(e.key==="Enter"){chooseSwitch(sw.hi);e.preventDefault();}
-    else if(e.key==="Escape"){closeSwitcher();e.preventDefault();}
-    else if(e.key>="1"&&e.key<="9"){
-      let n=0,idx=-1;
-      sw.items.forEach((x,j)=>{if(x.t==="taak"||x.t==="dos"){
-        n++;if(n===+e.key&&idx<0)idx=j;}});
-      if(idx>=0)chooseSwitch(idx);e.preventDefault();}
-    return;}
+
   if(/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)){
     if(e.key==="Escape"&&!ac.el)e.target.blur();return;}
   if(e.ctrlKey||e.metaKey||e.altKey||e.repeat)return;
@@ -1466,7 +1444,7 @@ document.addEventListener("keydown",async e=>{
     if(!d){toast("Niets op die toets");return;}
     await startRegel({dossierId:d.id});setTimeout(()=>$("l-omschr").focus(),30);
     e.preventDefault();return;}
-  if(k==="n"){openSwitcher();e.preventDefault();}
+  if(k==="n"){await nieuweTaak();e.preventDefault();}
   else if(k==="t"){await interrupt("telefoon","Telefoon");e.preventDefault();}
   else if(k==="o"){await interrupt("onderbreking","Onderbreking");e.preventDefault();}
   else if(k==="r"){if(stack.length)await terug();else toast("Niets geparkeerd");e.preventDefault();}
@@ -1579,6 +1557,7 @@ async function boot(){
   else if(!dossiers.some(d=>d.isI7)){
     const g=dossiers.find(d=>/^I7/i.test(d.nummer||""));
     if(g){g.isI7=true;await put("dossiers",g);}}
+  codeGebruik=(await get("meta","codeGebruik"))||{};
   logboek=(await get("meta","log"))||[];
   logOms=!!(await get("meta","logOms"));
   $("b-logoms").checked=logOms;$("logstat").textContent=logboek.length+" regels";
