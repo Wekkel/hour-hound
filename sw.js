@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.8"; // bug fixes new task UI
+const VERSION = "0.1.9"; // bug fixes
 
 const CACHE = "hourhound-" + VERSION;
 const ASSETS = [
