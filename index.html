@@ -515,6 +515,58 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
 
 <script>
 "use strict";
+/* ============================================================================
+   hourhound — VASTE ONTWERPAFSPRAKEN
+   Lees dit voordat je iets wijzigt. Onderstaande punten zijn bewuste keuzes en zijn
+   in het verleden meer dan eens per ongeluk teruggedraaid bij losse aanpassingen.
+   Verandert er iets aan deze regels, pas dan ook dit blok aan.
+
+   WERKCODES
+   W1. De i7-werklijst is een VASTE lijst van kantoor (werkcodes.json). De app en de
+       gebruiker maken daar nooit codes bij aan. codeItems() biedt "Nieuwe code"
+       daarom alleen aan bij een gewoon dossier.
+   W2. werkcodes.json wordt bij iedere start opnieuw ingelezen uit dezelfde map als
+       index.html — zie laadWerkcodes(). Handmatig importeren onder Beheer blijft
+       bestaan als terugval voor file:// en offline.
+   W3. Op het i7-dossier is een werkcode VERPLICHT, maar er is GEEN stille standaard.
+       defaultCode() geeft daar bewust null terug, eisCode() vraagt de code op en
+       controleer() maakt het een blokkerende fout. Nooit automatisch invullen.
+   W4. Bij een dossier in de categorie "dossier volgt nog" is de werkcode ALTIJD
+       Commercieel. Geen keuze, veld read-only, keuzelijst toont één regel.
+       Zie codeVoor() en VAST_VOORLOPIG.
+   W5. Bij een GEWOON dossier is een werkcode OPTIONEEL en VRIJ van vorm. Wat de
+       gebruiker intypt wordt overgenomen én bij het dossier onthouden (d.codes),
+       zodat het de volgende keer in de keuzelijst staat als beschikbare optie.
+       Daar is een werkcode nooit verplicht en nooit blokkerend.
+
+   TIJD EN TIMER
+   T1. Elke toestandsovergang van de timer gaat door timerOp() en wordt in één
+       transactie geschreven (txAll). Geheugen pas bijwerken ná succes.
+   T2. Invariant: hooguit één open regel, en meta.running wijst precies daarnaar.
+       Alleen een eenduidige situatie wordt automatisch hersteld; bij meerdere open
+       regels komt het herstelvenster en liggen timeracties stil (opBlok).
+   T3. N schrijft geen regel maar zet een pending switch met wisseltijdstip in
+       meta.pending. Bevestigen sluit de vorige taak en opent de nieuwe op dat
+       tijdstip, in één transactie. Escape verwijdert alleen de pending switch.
+   T4. Een lopende regel heeft nooit urenHand=true en de eindtijd ervan wordt alleen
+       via een echte stopactie gezet. Een eindtijd leegmaken kan niet; daarvoor is
+       de knop "maak dit de lopende timer".
+   T5. Undo is gesplitst: gegevensstappen komen nooit aan meta.running; timerstappen
+       herstellen die alleen als de huidige status nog is wat die actie achterliet.
+
+   BOEKEN EN UREN
+   B1. Iedere losse tijdregel wordt naar boven afgerond op 0,1 uur. Dat is bewust.
+   B2. De norm is hard 8,0 uur per dag en maximaal 24,0 uur per datum.
+   B3. Blokkerende fouten (open regel, lopende timer, ontbrekend dossier, ontbrekende
+       verplichte i7-code, lege omschrijving, ongeldige tijd) kunnen niet met
+       "toch boeken" worden gepasseerd. Waarschuwingen wel.
+   B4. De boekstatus hangt aan een vingerafdruk van de inhoud; wijzigt er iets aan
+       uren, bronregels of afrondingsmodus, dan vervalt de status vanzelf.
+
+   LOGBOEK
+   L1. Standaard komen er uitsluitend technische gegevens in het logboek. Vrije tekst,
+       dossiernamen en dossiernummers alleen via dosLog() en omsLog().
+   ========================================================================== */
 const $=id=>document.getElementById(id);
 const pad=n=>String(n).padStart(2,"0");
 const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>
@@ -809,11 +861,34 @@ function i7CodeOp(patroon,suffix){
   const opCode=i7codes.find(c=>(c.code||"").endsWith(suffix));
   if(opCode)return opCode.code;
   return i7codes[0]?i7codes[0].code:null;}
+/* Op het i7-dossier zelf is er géén stille standaard: de gebruiker moet de werkcode
+   zelf kiezen, anders komt er vanzelf een code in Intapp die niemand heeft bedoeld.
+   Alleen "dossier volgt nog" heeft een vaste code, want daar valt niets te kiezen. */
 function defaultCode(d){
   if(!isIndirect(d))return null;
   if(d.voorlopig)return i7CodeOp(VAST_VOORLOPIG,"-704");
+  return null;}
+/* Alleen de automatisch gegenereerde aanvulregels ("Diversen") hebben een vaste code
+   nodig; daar is geen gebruiker die kiest.                                      */
+function i7Standaard(){
   const hit=i7codes.find(c=>(c.code||"").endsWith("-701"));
   return hit?hit.code:(i7codes[0]?i7codes[0].code:null);}
+/* Vraagt de ontbrekende werkcode meteen op, met de keuzelijst open en de cursor erin. */
+let codeGevraagd=null;
+function eisCode(){
+  if(!running||pending)return false;
+  const d=dosOf(running.dossierId);
+  if(!isIndirect(d)||d.voorlopig||running.code)return false;
+  if(!i7codes.length){geenCodes();return false;}
+  codeGevraagd=running.id;
+  setTimeout(()=>{if(!running||running.code)return;
+    const el=$("l-code");el.value="";el.focus();
+    openAC(el,codeItems(d,""),kiesCodeItem);},40);
+  return true;}
+/* Na een start: eerst de verplichte werkcode, pas daarna de omschrijving. */
+function naStart(){
+  if(eisCode())return;
+  setTimeout(()=>$("l-omschr").focus(),30);}
 const geenCodes=()=>{
   toast("Er zijn nog geen i7-werkcodes — importeer werkcodes.json onder Beheer");};
 function eindOf(r){return r.eind||(running&&r.id===running.id?nowHM():r.start);}
@@ -1087,7 +1162,7 @@ async function _start(o){
   L("start-regel",nieuw.soort+" · "+dosIdLog(nieuw.dossierId)+" · code "+
     (nieuw.code||"-")+" · "+nieuw.start+" · oms "+omsLog(nieuw.omschrijving));
   liveId=null;snoozeTot=0;hideWake();renderAll();announce();
-  if(isIndirect(d)&&!nieuw.code)geenCodes();
+  if(isIndirect(d)&&!i7codes.length)geenCodes();
   return nieuw;}
 
 function startRegel(o){
@@ -1219,7 +1294,7 @@ async function interrupt(soort,label){
     return !!await _start({dossierId:ind?ind.id:null,omschrijving:"",soort:soort,
       stackNa:parkeerLijst()});});
   if(!ok)return;
-  setTimeout(()=>$("l-omschr").focus(),30);
+  naStart();
   L("onderbreking",soort+" · stapel "+stack.length);
   toast(label+" loopt — druk R of dezelfde toets om terug te keren");}
 async function terug(){
@@ -1241,6 +1316,15 @@ async function pauze(){
     await _start({dossierId:null,code:null,omschrijving:"Pauze",soort:"pauze",
       stackNa:parkeerLijst()});});}
 
+async function kiesCodeItem(it){
+  if(!running)return;
+  const d=dosOf(running.dossierId);
+  const uit=await koppelRegel(running,it.isNew&&d?{nieuweCode:it.newCode}:{code:it.value});
+  const nd=uit?uit.dossier:dosOf(running.dossierId);
+  $("l-code").value=codeNaam(nd,running.code);
+  $("l-code").classList.toggle("miss",isIndirect(nd)&&!running.code);
+  liveId=null;verversDag();announce();
+  setTimeout(()=>$("l-omschr").focus(),20);}
 async function markeerVolgt(){
   if(!running&&!pending){toast("Er loopt niets om te markeren");return;}
   const naam=prompt("Werknaam voor dit dossier (nummer volgt nog):",
@@ -1252,10 +1336,10 @@ async function markeerVolgt(){
     {nieuwDossier:{naam:naam.trim(),nummer:null,lang:"nl"},telUsed:true};
   /* Ook deze route maakt een taakwissel op precies dezelfde manier definitief. */
   if(pending){await bevestigPending(op);
-    setTimeout(()=>$("l-omschr").focus(),30);
+    naStart();
     toast("Gemarkeerd als dossier volgt nog");return;}
   if(!await koppelRegel(running,op))return;
-  liveId=null;renderAll();announce();setTimeout(()=>$("l-omschr").focus(),30);
+  liveId=null;renderAll();announce();naStart();
   toast("Gemarkeerd als dossier volgt nog");}
 /* Vrije tekst in het dossierveld terwijl er een taakwissel klaarstaat. */
 async function pendingBlur(v){
@@ -1444,14 +1528,14 @@ function bevestigPending(w){
     L("taak-gewisseld","vanaf "+vanaf+" · "+dosIdLog(nieuw.dossierId)+" · code "+
       (nieuw.code||"-")+" · oms "+omsLog(nieuw.omschrijving));
     liveId=null;snoozeTot=0;hideWake();renderAll();announce();
-    if(isIndirect(d)&&!nieuw.code)geenCodes();
+    if(isIndirect(d)&&!i7codes.length)geenCodes();
     return nieuw;});}
 
 async function kiesDossierItem(it){
   const w=itemNaarOpdracht(it);
   if(!w)return;
   if(pending){await bevestigPending(w);
-    setTimeout(()=>{const el=$("l-omschr");el.focus();
+    if(!eisCode())setTimeout(()=>{const el=$("l-omschr");el.focus();
       const m=/\{[^}]+\}/.exec(el.value);
       if(m)el.setSelectionRange(m.index,m.index+m[0].length);
       else el.setSelectionRange(el.value.length,el.value.length);},10);
@@ -1517,11 +1601,18 @@ function renderLive(){
     if(document.activeElement!==$("l-code"))$("l-code").value=codeNaam(d,running.code);
     if(document.activeElement!==$("l-omschr"))$("l-omschr").value=running.omschrijving||"";}
   $("l-code").classList.toggle("miss",isIndirect(d)&&!running.code);
+  /* Vangnet: welke route de regel ook heeft gestart, een i7-regel zonder werkcode
+     vraagt hier eenmalig om die code. Zo hangt de verplichting niet af van de
+     afzonderlijke aanroepplaatsen.                                             */
+  if(running.code)codeGevraagd=null;
+  else if(isIndirect(d)&&!d.voorlopig&&codeGevraagd!==running.id)eisCode();
   /* Vast bij een voorlopig dossier: dan is het veld alleen ter informatie. */
   $("l-code").readOnly=!!(d&&d.voorlopig);
+  $("l-code").placeholder=isIndirect(d)&&!d.voorlopig?"verplicht":"—";
   $("l-code").title=d&&d.voorlopig?
     "Een dossier waarvan het nummer nog volgt boekt altijd op "+
-      codeNaam(d,defaultCode(d)):"";}
+      codeNaam(d,defaultCode(d)):
+    (isIndirect(d)?"Een i7-regel moet een werkcode hebben":"");}
 function renderRecent(){
   const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,4);
   $("recent").innerHTML=tk.length?tk.map((t,i)=>{
@@ -1544,6 +1635,7 @@ async function hervat(k){
   L("hervat",dosIdLog(t.dossierId)+" · "+uu(t.u)+" u tot nu");
   /* urenHand wordt bewust niet overgenomen: de nieuwe regel telt live door. */
   await kiesTaak({dossierId:t.dossierId,code:t.code,omschrijving:t.oms});
+  naStart();
   toast("Verder op "+taakLabel(t));}
 function renderTot(){
   const v=vandaagRegels(),t=totaal(v),g=gapHours(gapsFor(v,today()));
@@ -1577,7 +1669,8 @@ function bouwDag(){
         '" placeholder="'+(run?"loopt":"")+'"></td>'+
       '<td><input data-f="dossier" value="'+esc(dosVeld(d))+'" placeholder="&mdash;" autocomplete="off"></td>'+
       '<td><input data-f="code" class="'+(codeFout(d,r)?"miss":"")+'" value="'+
-        esc(codeNaam(d,r.code))+'" placeholder="&mdash;" autocomplete="off"'+
+        esc(codeNaam(d,r.code))+'" placeholder="'+
+        (isIndirect(d)&&!d.voorlopig?"verplicht":"&mdash;")+'" autocomplete="off"'+
         (d&&d.voorlopig?' readonly title="Vast op '+esc(codeNaam(d,defaultCode(d)))+
           '"':"")+"></td>"+
       '<td><input data-f="omschrijving" value="'+esc(r.omschrijving)+'" autocomplete="off"></td>'+
@@ -1767,7 +1860,7 @@ function gapUren(g){return Math.ceil((g[1]-g[0])/6)/10;}
 function maakAanvulPlan(kiesGaten){
   const ind=i7();
   if(!ind)return{fout:"Geen i7-dossier — maak er eerst een aan onder Beheer"};
-  const code=defaultCode(ind);
+  const code=i7Standaard();
   if(!code)return{fout:"Geen geldige i7-werkcode — importeer eerst werkcodes.json "+
     "onder Beheer"};
   const nu=Math.round(intappTotaal()*10)/10;
@@ -1914,14 +2007,15 @@ function renderBeheer(){
         (inGebruik?"Archiveren":"Verwijderen")+"</button>")+
       "</div>"+
       (isIndirect(d)?'<div class="hint" style="margin-top:.4rem">Gebruikt de i7-werklijst ('+
-        i7codes.length+" codes), "+(d.voorlopig?"vast op ":"standaard ")+
-        esc(codeNaam(d,defaultCode(d)))+"</div>":
+        i7codes.length+" codes), "+(d.voorlopig?
+          "vast op "+esc(codeNaam(d,defaultCode(d))):
+          "per regel te kiezen")+"</div>":
       '<div style="margin-top:.45rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">'+
       cs+'<input placeholder="code" data-nc="'+esc(d.id)+'" style="width:110px" class="mono">'+
       '<input placeholder="naam" data-ncn="'+esc(d.id)+'" style="width:180px">'+
       '<button class="sm" data-addcode="'+esc(d.id)+'">+</button></div>')+"</div>";}).join("");
-  $("libstat").textContent=templates.length+" sjablonen · "+i7codes.length+" i7-codes · "+
-    alle.length+" regels";}
+  $("libstat").textContent=templates.length+" sjablonen · "+i7codes.length+
+    " i7-codes (vaste lijst uit werkcodes.json) · "+alle.length+" regels";}
 $("b-list").addEventListener("change",async e=>{
   const t=e.target;
   if(t.dataset.dn){const d=dosOf(t.dataset.dn);const nr=t.value.trim();
@@ -2000,16 +2094,15 @@ $("l-dossier").addEventListener("input",e=>{
 $("l-dossier").addEventListener("focus",e=>{
   if((pending||(running&&!running.dossierId))&&!e.target.value)
     openAC(e.target,dossierItems(""),kiesDossierItem);});
+$("l-code").addEventListener("focus",e=>{
+  /* W5: laat meteen zien welke codes voor dit dossier al bekend zijn. */
+  if(!running||pending||e.target.value.trim())return;
+  const d=dosOf(running.dossierId);
+  if(codeItems(d,"").length)openAC(e.target,codeItems(d,""),kiesCodeItem);});
 $("l-code").addEventListener("input",e=>{
   if(!running||pending)return;
   const d=dosOf(running.dossierId);
-  openAC(e.target,codeItems(d,e.target.value),async it=>{
-    const op=it.isNew&&d?{nieuweCode:it.newCode}:{code:it.value};
-    const uit=await koppelRegel(running,op);
-    const nd=uit?uit.dossier:dosOf(running.dossierId);
-    $("l-code").value=codeNaam(nd,running.code);
-    $("l-code").classList.toggle("miss",isIndirect(nd)&&!running.code);
-    liveId=null;verversDag();announce();});});
+  openAC(e.target,codeItems(d,e.target.value),kiesCodeItem);});
 $("l-omschr").addEventListener("input",e=>{
   if(!running||pending)return;
   running.omschrijving=e.target.value;
@@ -2070,19 +2163,41 @@ $("l-dossier").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
     $("l-omschr").value=running.omschrijving;
     liveId=null;renderLive();renderRecent();renderTot();verversDag();announce();
     return uit;});},220));
+/* W5: op een gewoon dossier is de werkcode vrij. Wat er wordt ingetypt hoort te
+   blijven staan én bij het dossier bewaard te worden — niet stilzwijgend te
+   verdwijnen omdat er niet uit de lijst is gekozen. W1: op i7 kan dat juist niet,
+   want die lijst ligt vast.                                                     */
+async function codeUitVeld(r,v){
+  const d=dosOf(r.dossierId);
+  const bekend=codesFor(d).find(c=>c.code.toLowerCase()===v.toLowerCase()||
+    (c.naam||"").toLowerCase()===v.toLowerCase());
+  if(bekend){
+    if(r.code!==bekend.code)return !!await koppelRegel(r,{code:bekend.code});
+    return true;}
+  if(isIndirect(d)){
+    toast('"'+kort(v,22)+'" staat niet in de vaste i7-werklijst — kies er een uit');
+    return false;}
+  const uit=await koppelRegel(r,{nieuweCode:v});
+  if(uit)toast("Werkcode "+kort(v,22)+" onthouden bij "+dosVeld(uit.dossier));
+  return !!uit;}
 $("l-code").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
   if(pickBusy||!running||pending)return;
   const d=dosOf(running.dossierId);
-  if($("l-code").value.trim()===""){
+  const ingetypt=$("l-code").value.trim();
+  if(ingetypt&&ingetypt!==codeNaam(d,running.code)&&!(d&&d.voorlopig)){
+    await codeUitVeld(running,ingetypt);}
+  else if($("l-code").value.trim()===""){
     /* Leegmaken mag niet op een indirecte regel: de code is daar verplicht. */
-    if(isIndirect(d)){
+    if(d&&d.voorlopig){
       const vast=codeVoor(d,null);
       if(!vast)geenCodes();
       else{if(running.code!==vast)await koppelRegel(running,{code:vast});
-        toast(d.voorlopig?
-          "Een dossier waarvan het nummer nog volgt boekt altijd op "+
-            codeNaam(d,vast):
-          "Een i7-regel moet een werkcode hebben — "+codeNaam(d,vast)+" ingevuld");}}
+        toast("Een dossier waarvan het nummer nog volgt boekt altijd op "+
+          codeNaam(d,vast));}}
+    else if(isIndirect(d)){
+      if(running.code!==null)await koppelRegel(running,{code:null});
+      toast("Een i7-regel moet een werkcode hebben — kies er een uit de lijst");
+      eisCode();}
     else if(running.code!==null){running.code=null;await saveRegel(running);}}
   const nd=dosOf(running.dossierId);
   $("l-code").value=codeNaam(nd,running.code);
@@ -2109,6 +2224,21 @@ async function herstelOmschr(){
   toast("Laatst getypte omschrijving is alsnog opgeslagen");}
 
 /* ---------- dagtabel ---------- */
+$("d-table").addEventListener("focusin",e=>{
+  const inp=e.target.closest?e.target.closest('input[data-f="code"]'):null;
+  if(!inp||inp.value.trim()||inp.readOnly)return;
+  const tr=inp.closest("tr");if(!tr)return;
+  const r=regels.find(x=>x.id===tr.dataset.id);if(!r)return;
+  const d=dosOf(r.dossierId);
+  if(!codeItems(d,"").length)return;
+  openAC(inp,codeItems(d,""),async it=>{
+    const voor=kopie1(r);
+    const uit=await koppelRegel(r,it.isNew&&d?{nieuweCode:it.newCode}:{code:it.value});
+    if(!uit){inp.value=codeNaam(d,r.code);return;}
+    undoData("werkcode wijzigen",[voor]);
+    inp.value=codeNaam(uit.dossier,r.code);inp.classList.remove("miss");
+    if(running&&running.id===r.id){running=r;liveId=null;renderLive();}
+    verversDag();announce();});});
 $("d-table").addEventListener("input",e=>{
   const inp=e.target.closest("input[data-f]");if(!inp)return;
   const r=regels.find(x=>x.id===inp.closest("tr").dataset.id);if(!r)return;
@@ -2164,17 +2294,23 @@ $("d-table").addEventListener("blur",e=>{
         return uit;});
     else if(inp.dataset.f==="code"){
       if(inp.value.trim()===""){
-        if(isIndirect(d)){
+        if(d&&d.voorlopig){
           const vast=codeVoor(d,null);
           if(!vast)geenCodes();
           else{if(r.code!==vast){const voor=kopie1(r);
               if(await koppelRegel(r,{code:vast}))undoData("werkcode hersteld",[voor]);}
-            toast(d.voorlopig?
-              "Een dossier waarvan het nummer nog volgt boekt altijd op "+
-                codeNaam(d,vast):
-              "Een i7-regel moet een werkcode hebben — "+codeNaam(d,vast)+" ingevuld");}}
+            toast("Een dossier waarvan het nummer nog volgt boekt altijd op "+
+              codeNaam(d,vast));}}
+        else if(isIndirect(d)){
+          if(r.code!==null){const voor=kopie1(r);
+            if(await koppelRegel(r,{code:null}))undoData("werkcode wissen",[voor]);}
+          toast("Een i7-regel moet een werkcode hebben — kies er een uit de lijst");}
         else if(r.code!==null){undoData("werkcode wissen",[r]);
           r.code=null;await saveRegel(r);}}
+      else if(inp.value.trim()!==codeNaam(d,r.code)&&!(d&&d.voorlopig)){
+        const voor=kopie1(r);
+        if(await codeUitVeld(r,inp.value.trim()))
+          undoData("werkcode wijzigen",[voor]);}
       inp.value=codeNaam(dosOf(r.dossierId),r.code);
       verversDag();}},220);},true);
 $("d-table").addEventListener("change",async e=>{
@@ -2348,7 +2484,7 @@ $("recent").addEventListener("click",async e=>{
 $("i7row").addEventListener("click",async e=>{
   const b=e.target.closest("[data-i7]");if(!b)return;
   const ind=i7();await kiesTaak({dossierId:ind?ind.id:null,code:b.dataset.i7});
-  setTimeout(()=>$("l-omschr").focus(),30);});
+  naStart();});
 $("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-v]");
   if(b)showTab(b.dataset.v);});
 
@@ -2375,7 +2511,7 @@ document.addEventListener("keydown",async e=>{
     if(!c){toast("Niets op die toets");e.preventDefault();return;}
     const ind=i7();
     await kiesTaak({dossierId:ind?ind.id:null,code:c.code});
-    setTimeout(()=>$("l-omschr").focus(),30);e.preventDefault();return;}
+    naStart();e.preventDefault();return;}
   if(k==="n"){await nieuweTaak();e.preventDefault();}
   else if(k==="t"){await interrupt("telefoon","Telefoon");e.preventDefault();}
   else if(k==="o"){await interrupt("onderbreking","Onderbreking");e.preventDefault();}
@@ -2971,6 +3107,29 @@ async function herlaad(){
   setTimeout(middernachtCheck,0);
   liveId=null;renderAll();}
 
+/* W2: de vaste i7-werklijst komt uit werkcodes.json naast index.html en wordt bij
+   iedere start gesynchroniseerd. Lukt dat niet (file://, offline, bestand ontbreekt),
+   dan blijft de eerder ingelezen lijst staan en kan er onder Beheer handmatig worden
+   geïmporteerd.                                                                 */
+async function laadWerkcodes(){
+  let d=null;
+  try{
+    const r=await fetch("werkcodes.json",{cache:"no-cache"});
+    if(!r.ok){L("werkcodes-json",r.status+" bij ophalen");return false;}
+    d=await r.json();
+  }catch(e){L("werkcodes-json","niet opgehaald: "+String(e).slice(0,50));return false;}
+  const rij=keurCodes(d&&Array.isArray(d.codes)?d.codes:d);
+  if(!rij.goed.length){L("werkcodes-json","geen bruikbare codes");return false;}
+  const nu=await getAll("codes");
+  const gelijk=nu.length===rij.goed.length&&rij.goed.every(c=>
+    nu.some(x=>x.code===c.code&&x.naam===c.naam&&!!x.favoriet===!!c.favoriet));
+  if(gelijk){L("werkcodes-json","ongewijzigd · "+nu.length+" codes");return false;}
+  await replaceAll("codes",rij.goed);
+  i7codes=await getAll("codes");
+  L("werkcodes-json","gesynchroniseerd · "+rij.goed.length+" codes"+
+    (rij.fout.length?" · "+rij.fout.length+" afgekeurd":""));
+  toast("Werkcodelijst bijgewerkt uit werkcodes.json — "+rij.goed.length+" codes");
+  return true;}
 async function zorgVoorI7(){
   const ds=await getAll("dossiers");
   if(ds.some(d=>d.isI7))return;
@@ -2992,6 +3151,7 @@ async function laadInstellingen(){
 let tick=null;
 async function boot(){
   await zorgVoorI7();
+  await laadWerkcodes();
   await laadInstellingen();
   await herlaad();
   await herstelOmschr();
