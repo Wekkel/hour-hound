@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.9"; // bug fixes
+const VERSION = "0.1.10"; // bug fixes - new commit due to Github outage
 
 const CACHE = "hourhound-" + VERSION;
 const ASSETS = [
