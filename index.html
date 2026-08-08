@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- new commmit because of Github outage -->
-<html lang="nl">
+<html lang="nl" class="donker">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -76,6 +76,71 @@ h2{font:500 14px/1.2 var(--sans);margin:0 0 .5rem}
 .live label input{width:100%}
 .live input{font-size:16px;padding:.42rem .55rem}
 .live .wide{grid-column:1/-1}
+
+/* ---------- Nieuwe taak focus-wizard ----------
+   De wizard woont bewust in het bestaande live-eiland. De timer staat bovenaan,
+   gekozen waarden blijven zichtbaar en na afronding komen de gewone bewerkbare
+   live-velden terug. */
+.ntsum{display:none;grid-template-columns:1.1fr 1.8fr 1.35fr 2.2fr;gap:.35rem .45rem;
+  margin-top:.65rem}
+.ntsum.on{display:grid}
+.ntcell{min-width:0;border:1px solid var(--line);border-radius:7px;padding:.38rem .48rem;
+  background:var(--card)}
+.ntcell.active{border-color:var(--moss);box-shadow:inset 0 0 0 1px var(--moss)}
+.ntlab{font:500 9px/1.3 var(--sans);color:var(--soft);text-transform:uppercase;
+  letter-spacing:.08em;margin-bottom:.12rem}
+.ntval{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ntsub{font:400 10px/1.35 var(--mono);color:var(--soft);white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.ntwiz{display:none;margin-top:.65rem;padding-top:.65rem;border-top:1px solid var(--line)}
+.ntwiz.on{display:block}
+.nttimer{display:inline-flex;align-items:center;gap:.35rem;font:500 11px/1 var(--mono);
+  color:var(--moss);margin-bottom:.45rem}
+.nttimer::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--moss)}
+.ntq{font:500 19px/1.25 var(--sans);margin-bottom:.18rem}
+.nthint{font-size:13px;color:var(--soft);margin-bottom:.55rem}
+.ntcats{display:grid;grid-template-columns:repeat(3,1fr);gap:.45rem}
+.ntcat{min-height:84px;text-align:left;padding:.65rem .7rem;border-radius:9px}
+.ntcat.hi,.ntcat:focus{border-color:var(--moss);box-shadow:inset 0 0 0 1px var(--moss);
+  background:var(--warm)}
+.ntcat .k{float:right;font:500 11px/1 var(--mono);color:var(--soft)}
+.ntcat .n{font-weight:500;font-size:16px}
+.ntcat .d{font-size:12px;color:var(--soft);margin-top:.22rem}
+.ntfield{width:100%;font-size:16px;padding:.55rem .62rem}
+.ntlist{border:1px solid var(--line);border-radius:8px;margin-top:.35rem;overflow:auto;
+  max-height:300px}
+.ntgroup{font:500 10px/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;
+  color:var(--soft);padding:.55rem .6rem .28rem}
+.ntitem{display:grid;grid-template-columns:minmax(112px,.8fr) minmax(180px,2fr) auto;
+  gap:.55rem;align-items:baseline;padding:.5rem .6rem;cursor:pointer}
+.ntitem:hover,.ntitem.hi{background:var(--warm)}
+.ntitem .nr{font:500 15px/1.25 var(--mono)}
+.ntitem .nm{font-size:14px;min-width:0}
+.ntitem .meta{font:400 11px/1.2 var(--mono);color:var(--soft);white-space:nowrap}
+.ntitem.new{color:var(--moss)}
+.nttwocol{display:grid;grid-template-columns:minmax(150px,.8fr) minmax(220px,2fr);gap:.5rem}
+.ntwrap label{display:block;font:500 10px/1.5 var(--sans);color:var(--soft);
+  text-transform:uppercase;letter-spacing:.07em}
+.ntauto{display:grid;grid-template-columns:1fr 1fr;gap:.45rem;margin-top:.5rem}
+.ntauto>div{border:1px solid var(--line);border-radius:7px;padding:.45rem .55rem}
+.ntauto .a{font:500 10px/1.3 var(--sans);color:var(--soft);text-transform:uppercase;
+  letter-spacing:.07em}
+.ntauto .v{font-size:14px;margin-top:.1rem}
+.ntauto .s{font:400 10px/1.3 var(--mono);color:var(--soft)}
+.ntordinary{display:grid;grid-template-columns:minmax(150px,.85fr) minmax(240px,2fr);gap:.5rem}
+.ntopt{font-size:10px;color:var(--soft);text-transform:none;letter-spacing:0}
+.ntremember{font-size:11px;color:var(--soft);margin-top:.18rem}
+.nthelp{display:flex;gap:.8rem;flex-wrap:wrap;margin-top:.55rem;font-size:12px;color:var(--soft)}
+.ntnotice{margin-top:.5rem;padding:.5rem .6rem;border:1px solid var(--line);border-radius:7px;
+  background:var(--warm);font-size:12.5px;color:var(--soft)}
+@media(max-width:760px){
+  .ntsum{grid-template-columns:1fr 1fr}
+  .ntcats{grid-template-columns:1fr}
+  .nttwocol,.ntordinary{grid-template-columns:1fr}
+}
+@media(max-width:480px){.ntsum{grid-template-columns:1fr}.ntitem{grid-template-columns:1fr auto}
+  .ntitem .nm{grid-column:1/-1}.ntitem .meta{grid-column:2}}
+
 .live .who{font:500 23px/1.15 var(--sans)}
 .live .uu{font:500 25px/1 var(--mono);margin-left:auto}
 .live .run{font:400 13px/1.5 var(--mono);color:var(--soft);width:100%;margin-top:.1rem}
@@ -269,6 +334,13 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
       <span class="uu" id="l-uren"></span>
       <span class="run" id="l-run">Druk <b>N</b> of kies hieronder waar je mee begint</span>
     </div>
+    <div class="ntsum" id="nt-summary" aria-live="polite">
+      <div class="ntcell" id="nt-s-soort"><div class="ntlab">Soort</div><div class="ntval" id="nt-v-soort">—</div><div class="ntsub" id="nt-x-soort"></div></div>
+      <div class="ntcell" id="nt-s-dos"><div class="ntlab">Dossier</div><div class="ntval" id="nt-v-dos">—</div><div class="ntsub" id="nt-x-dos"></div></div>
+      <div class="ntcell" id="nt-s-code"><div class="ntlab">Werkcode</div><div class="ntval" id="nt-v-code">—</div><div class="ntsub" id="nt-x-code"></div></div>
+      <div class="ntcell" id="nt-s-oms"><div class="ntlab">Omschrijving</div><div class="ntval" id="nt-v-oms">—</div><div class="ntsub" id="nt-x-oms"></div></div>
+    </div>
+    <div class="ntwiz" id="nt-wizard"></div>
     <div class="fields" id="l-fields" style="display:none">
       <label>Dossier<input id="l-dossier" placeholder="nummer of naam" autocomplete="off"></label>
       <label>Werkcode<input id="l-code" placeholder="alleen bij i7 verplicht" autocomplete="off"></label>
@@ -454,17 +526,18 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
 </main>
 
 <div class="legend">
-  <kbd>N</kbd> nieuwe taak — de keuzelijst opent meteen in het dossierveld ·
+  <kbd>N</kbd> nieuwe taak — timer start direct, daarna kies je één van drie soorten ·
   <kbd>1</kbd>–<kbd>4</kbd> verder op een taak van vandaag ·
   <kbd>5</kbd>–<kbd>9</kbd> i7-werkcode uit de rij eronder · <kbd>T</kbd> telefoon ·
   <kbd>O</kbd> onderbreking · <kbd>R</kbd> terug naar geparkeerde taak ·
-  <kbd>V</kbd> dossier volgt nog · <kbd>P</kbd> pauze · <kbd>E</kbd> einde werkdag ·
-  <kbd>B</kbd> boeken in Intapp · <kbd>D</kbd> dag · <kbd>U</kbd> week ·
-  <kbd>Esc</kbd> in het dossierveld annuleert een taakwissel ·
-  <kbd>Ctrl</kbd>+<kbd>Z</kbd> ongedaan maken · <kbd>Esc</kbd> sluit veld of venster<br>
+  <kbd>V</kbd> lopende taak markeren als dossier volgt nog · <kbd>P</kbd> pauze ·
+  <kbd>E</kbd> einde werkdag · <kbd>B</kbd> boeken in Intapp · <kbd>D</kbd> dag ·
+  <kbd>U</kbd> week · <kbd>Ctrl</kbd>+<kbd>Z</kbd> ongedaan maken ·
+  <kbd>Esc</kbd> stap terug / invoer sluiten; een met N gestarte timer blijft lopen<br>
   In het boekvenster: <kbd>C</kbd> of <kbd>spatie</kbd> kopieert de omschrijving ·
-  <kbd>&#9166;</kbd> markeert geboekt en gaat door · <kbd>&#8592;</kbd> <kbd>&#8594;</kbd>
-  bladeren · <kbd>L</kbd> hele lijst · <kbd>Esc</kbd> sluiten
+  <kbd>&#9166;</kbd> markeert geboekt en gaat door; na de laatste regel sluit
+  <kbd>&#9166;</kbd> het venster · <kbd>&#8592;</kbd> <kbd>&#8594;</kbd> bladeren ·
+  <kbd>L</kbd> hele lijst · <kbd>Esc</kbd> sluiten
 </div>
 
 
@@ -536,9 +609,11 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
        Commercieel. Geen keuze, veld read-only, keuzelijst toont één regel.
        Zie codeVoor() en VAST_VOORLOPIG.
    W5. Bij een GEWOON dossier is een werkcode OPTIONEEL en VRIJ van vorm. Wat de
-       gebruiker intypt wordt overgenomen én bij het dossier onthouden (d.codes),
-       zodat het de volgende keer in de keuzelijst staat als beschikbare optie.
-       Daar is een werkcode nooit verplicht en nooit blokkerend.
+       gebruiker zélf intypt wordt overgenomen én bij het dossier onthouden (d.codes),
+       zodat het de volgende keer uitsluitend als suggestie beschikbaar is. Een
+       onthouden code wordt NOOIT automatisch of stilzwijgend ingevuld.
+   W6. De NT-wizard heeft altijd drie gelijkwaardige hoofdcategorieën: gewoon dossier,
+       indirect (i7) en dossier volgt nog (i7). Geen daarvan is de default.
 
    TIJD EN TIMER
    T1. Elke toestandsovergang van de timer gaat door timerOp() en wordt in één
@@ -546,13 +621,16 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
    T2. Invariant: hooguit één open regel, en meta.running wijst precies daarnaar.
        Alleen een eenduidige situatie wordt automatisch hersteld; bij meerdere open
        regels komt het herstelvenster en liggen timeracties stil (opBlok).
-   T3. N schrijft geen regel maar zet een pending switch met wisseltijdstip in
-       meta.pending. Bevestigen sluit de vorige taak en opent de nieuwe op dat
-       tijdstip, in één transactie. Escape verwijdert alleen de pending switch.
-   T4. Een lopende regel heeft nooit urenHand=true en de eindtijd ervan wordt alleen
+   T3. N maakt de tijdknip ONMIDDELLIJK: de lopende regel wordt gesloten en in
+       dezelfde transactie wordt een lege nieuwe werkregel gestart. Dossier, code en
+       omschrijving zijn metadata die daarna via de NT-wizard mogen worden ingevuld.
+       Escape uit de wizard draait de tijdknip nooit terug; de nieuwe timer loopt door.
+   T4. Een onvolledige NT-regel mag bestaan en later worden aangevuld. Hij blijft wel
+       een blokkerende fout voor boeken in Intapp totdat de vereiste metadata compleet is.
+   T5. Een lopende regel heeft nooit urenHand=true en de eindtijd ervan wordt alleen
        via een echte stopactie gezet. Een eindtijd leegmaken kan niet; daarvoor is
        de knop "maak dit de lopende timer".
-   T5. Undo is gesplitst: gegevensstappen komen nooit aan meta.running; timerstappen
+   T6. Undo is gesplitst: gegevensstappen komen nooit aan meta.running; timerstappen
        herstellen die alleen als de huidige status nog is wat die actie achterliet.
 
    BOEKEN EN UREN
@@ -594,6 +672,8 @@ const NORM=8.0, VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 let db=null,dossiers=[],templates=[],i7codes=[],alle=[],regels=[],running=null,stack=[];
 let viewDate=today(),weekAnchor=today(),tab="nu",liveId=null;
 let hiddenAt=null,rondMode="groep",dagEinde={},snoozeTot=0;
+let ntWizard=null;   // UI-state; N heeft de nieuwe timer dan al werkelijk gestart
+let pending=null;    // alleen voor het opruimen van oude versies; nieuwe code gebruikt dit niet
 const TABID=Math.random().toString(36).slice(2);
 const bc=("BroadcastChannel" in window)?new BroadcastChannel("hourhound"):null;
 
@@ -849,7 +929,9 @@ function codeVoor(d,gewenst){
   return defaultCode(d);}
 function passendeCode(nieuw,huidig){
   if(isIndirect(nieuw))return codeVoor(nieuw,huidig);
-  return (huidig&&codesFor(nieuw).some(c=>c.code===huidig))?huidig:null;}
+  /* W5: bij een gewoon dossier nooit een code uit de vorige dossiercontext meenemen.
+     Bekende codes zijn suggesties; alleen expliciete invoer/keuze mag er één zetten. */
+  return null;}
 function nummerBezet(nr,exclId){
   const n=(nr||"").trim().toLowerCase();
   return !!n&&dossiers.some(d=>d.id!==exclId&&(d.nummer||"").toLowerCase()===n);}
@@ -861,7 +943,9 @@ function i7CodeOp(patroon,suffix){
   if(opNaam)return opNaam.code;
   const opCode=i7codes.find(c=>(c.code||"").endsWith(suffix));
   if(opCode)return opCode.code;
-  return i7codes[0]?i7codes[0].code:null;}
+  /* Voor een verplichte vaste code is een willekeurige eerste i7-code géén veilige
+     terugval. Ontbreekt Commercieel, dan moet de gebruiker dat eerst herstellen. */
+  return null;}
 /* Op het i7-dossier zelf is er géén stille standaard: de gebruiker moet de werkcode
    zelf kiezen, anders komt er vanzelf een code in Intapp die niemand heeft bedoeld.
    Alleen "dossier volgt nog" heeft een vaste code, want daar valt niets te kiezen. */
@@ -877,7 +961,7 @@ function i7Standaard(){
 /* Vraagt de ontbrekende werkcode meteen op, met de keuzelijst open en de cursor erin. */
 let codeGevraagd=null;
 function eisCode(){
-  if(!running||pending)return false;
+  if(!running||ntWizard)return false;
   const d=dosOf(running.dossierId);
   if(!isIndirect(d)||d.voorlopig||running.code)return false;
   if(!i7codes.length){geenCodes();return false;}
@@ -925,7 +1009,9 @@ const gapHours=g=>g.reduce((s,x)=>s+Math.ceil((x[1]-x[0])/6)/10,0);
 
 function takenVandaag(){
   const map=new Map();
-  vandaagRegels().filter(r=>r.soort==="werk").forEach(r=>{
+  /* Onvolledige NT-regels zonder dossier horen wel in Dag/controle, maar niet in
+     "Verder op": daar kun je inhoudelijk niets zinnigs op hervatten. */
+  vandaagRegels().filter(r=>r.soort==="werk"&&r.dossierId).forEach(r=>{
     const k=(r.dossierId||"-")+"|"+(r.code||"")+"|"+(r.omschrijving||"");
     const g=map.get(k)||{k,dossierId:r.dossierId,code:r.code,oms:r.omschrijving||"",
       u:0,laatst:""};
@@ -1021,10 +1107,11 @@ function acKeys(e){
   return false;}
 function splitsDossier(q){
   const t=(q||"").trim();if(!t)return null;
-  const m=/^([A-Za-z0-9._/\\]+)\s*[-–—:]\s*(.+)$/.exec(t);
-  if(m)return{nummer:m[1],naam:m[2].trim()};
-  if(/^[A-Za-z0-9._/\\]+$/.test(t))return{nummer:t,naam:t};
-  return null;}
+  /* In de praktijk zijn dossiernummers negen aaneengesloten cijfers, maar hourhound
+     valideert dat bewust niet. Alleen de expliciete vorm "nummer - naam" maakt
+     automatisch een nieuw dossier aan. */
+  const m=/^(.+?)\s+[-–—]\s+(.+)$/.exec(t);
+  return m?{nummer:m[1].trim(),naam:m[2].trim()}:null;}
 function dossierItems(q){
   const t=(q||"").trim(),lo=t.toLowerCase();
   const m=x=>!lo||String(x).toLowerCase().includes(lo);
@@ -1141,7 +1228,7 @@ async function _start(o){
   if(nieuw.code)nwCode[nieuw.code]=(nwCode[nieuw.code]||0)+1;
   await rustig([nieuw.id,dicht?dicht.id:null]);
   await txAll(s=>{
-    if(pending)s.meta.delete("pending");
+    s.meta.delete("pending"); /* opruimen van oude T3-versies */
     if(dicht)s.regels.put(dicht);
     s.regels.put(nieuw);
     s.meta.put(nieuw.id,"running");
@@ -1149,7 +1236,7 @@ async function _start(o){
     if(dagEindeWeg)s.meta.put(nwDagEinde,"dagEinde");
     if(dosNw)s.dossiers.put(dosNw);
     if(nieuw.code)s.meta.put(nwCode,"codeGebruik");});
-  if(pending)pending=null;
+  pending=null;
   vergeetTimerUndo("nieuwe timerwissel");
   if(dicht)memRegel(dicht);
   memRegel(nieuw);
@@ -1170,14 +1257,14 @@ function startRegel(o){
   return timerOp("starten",async t=>{
     if(!opGeldig(t,running?running.id:null))return null;
     return await _start(o||{});});}
-/* Elke route die een taakidentiteit vaststelt loopt hierlangs: staat er een
-   taakwissel klaar, dan wordt die op het wisseltijdstip bevestigd; anders is het een
-   gewone nieuwe start op dit moment.                                           */
-function kiesTaak(w){return pending?bevestigPending(w):startRegel(w);}
+/* Elke directe route naar een andere taak (hervatten, i7-snelkeuze, enz.) maakt
+   net als N meteen een echte timerwissel. Alleen de NT-wizard start bewust leeg en
+   vult de identiteit daarna op de reeds lopende regel aan.                      */
+function kiesTaak(w){return startRegel(w);}
 
 async function eindeWerkdag(){
   const dag=today();
-  if(!running&&!pending&&!stack.length&&dagEinde[dag]!=null){
+  if(!running&&!stack.length&&dagEinde[dag]!=null){
     toast("Deze werkdag is al afgesloten om "+dagEinde[dag]);return;}
   const klaar=await timerOp("einde werkdag",async t=>{
     if(!opGeldig(t,running?running.id:null))return false;
@@ -1240,6 +1327,12 @@ async function koppelRegel(r,op){
     const d=dosOf(dosId);
     if(!d){toast("Dat dossier bestaat niet meer");return null;}
     dosK=Object.assign({},d,{codes:(d.codes||[]).map(c=>Object.assign({},c))});}
+  /* DVN mag nooit stilzwijgend op een willekeurige i7-code vallen. Als de vaste
+     code Commercieel ontbreekt, blijft de lopende timer intact maar wordt de
+     dossierkoppeling geweigerd totdat de werklijst is hersteld. */
+  if(dosK&&dosK.voorlopig&&!defaultCode(dosK)){
+    toast("Werkcode Commercieel ontbreekt in de i7-werklijst — herstel werkcodes.json eerst");
+    return null;}
   if(dosK&&op.telUsed){dosK.used=(dosK.used||0)+1;stempel(dosK);}
   if(op.nieuweCode&&dosK&&!isIndirect(dosK)&&
     !dosK.codes.some(c=>c.code===op.nieuweCode))
@@ -1247,7 +1340,10 @@ async function koppelRegel(r,op){
   const nw=Object.assign({},r);
   if(dosId!==undefined)nw.dossierId=dosId||null;
   if(op.code!==undefined)nw.code=op.code;
-  else if(dosK)nw.code=passendeCode(dosK,nw.code);
+  /* Alleen een echte dossierwissel mag bepalen of de oude code nog past. Bij een
+     gewone metadata-update op hetzelfde dossier moet een handmatig gekozen vrije
+     code uiteraard blijven staan. */
+  else if(dosK&&dosId!==r.dossierId)nw.code=passendeCode(dosK,nw.code);
   if(op.nieuweCode)nw.code=op.nieuweCode;
   /* Sluitstuk: welke route hier ook binnenkomt, een indirecte regel krijgt altijd een
      geldige code en een voorlopig dossier altijd de vaste code.                */
@@ -1255,15 +1351,23 @@ async function koppelRegel(r,op){
   if(op.omschrijving!==undefined)nw.omschrijving=op.omschrijving;
   nw.omschrijving=prefixVoor(dosK,nw.datum,nw.omschrijving||"");
   nw.gewijzigd=Date.now();
+  /* De NT-wizard start bewust zonder code. Een later expliciet gekozen i7-code moet
+     daarom hier óók meetellen voor de sortering op meest gebruikt; vroeger gebeurde
+     dat alleen wanneer de code al bij _start() bekend was. */
+  const telCode=!!(dosK&&isIndirect(dosK)&&nw.code&&nw.code!==r.code);
+  const nwCode=Object.assign({},codeGebruik);
+  if(telCode)nwCode[nw.code]=(nwCode[nw.code]||0)+1;
   try{
     await rustig([r.id]);
-    await tx(["dossiers","regels"],"readwrite",o=>{
+    await tx(["dossiers","regels","meta"],"readwrite",o=>{
       if(dosK)o.dossiers.put(dosK);
-      o.regels.put(nw);});
+      o.regels.put(nw);
+      if(telCode)o.meta.put(nwCode,"codeGebruik");});
   }catch(e){L("FOUT-koppelen",String(e));
     toast("Koppelen mislukt — er is niets gewijzigd: "+e);
     return null;}
   if(dosK)memDossier(dosK);
+  if(telCode)codeGebruik=nwCode;
   if(maak)L("dossier-nieuw","dos"+idKort(maak.id)+(maak.nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(maak.naam):""));
   Object.keys(r).forEach(k=>{delete r[k];});
@@ -1273,7 +1377,8 @@ async function koppelRegel(r,op){
   return{regel:r,dossier:dosK};}
 async function makeDossier(naam,nummer,lang){
   const d={id:uid(),nummer:nummer||null,naam:naam||"Zonder naam",lang:lang||"nl",
-    voorlopig:!nummer,codes:[],c:dossiers.length,used:1,isI7:false,archief:false};
+    voorlopig:!nummer,codes:[],c:dossiers.length,used:1,isI7:false,archief:false,
+    gewijzigd:Date.now()};
   await put("dossiers",d);dossiers=await getAll("dossiers");
   L("dossier-nieuw","dos"+idKort(d.id)+(nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(naam):""));
@@ -1287,7 +1392,7 @@ const parkeerLijst=()=>{const st=stack.slice();
       omschrijving:running.omschrijving});
   return st;};
 async function interrupt(soort,label){
-  if(pending)await annuleerPending(true);
+  ntWizard=null;
   if(running&&running.soort===soort){await terug();return;}
   const ok=await timerOp("onderbreken",async t=>{
     if(!opGeldig(t,running?running.id:null))return false;
@@ -1299,7 +1404,7 @@ async function interrupt(soort,label){
   L("onderbreking",soort+" · stapel "+stack.length);
   toast(label+" loopt — druk R of dezelfde toets om terug te keren");}
 async function terug(){
-  if(pending)await annuleerPending(true);
+  ntWizard=null;
   const uit=await timerOp("terugkeren",async t=>{
     if(!opGeldig(t,running?running.id:null))return null;
     const st=stack.slice(),back=st.pop();
@@ -1311,7 +1416,9 @@ async function terug(){
   L("terug",uit.leeg?"stapel leeg":"stapel "+stack.length);
   if(uit.leeg)await nieuweTaak();else toast("Terug bij "+uit.naam);}
 async function pauze(){
-  if(pending)await annuleerPending(true);
+  ntWizard=null;
+  /* P is een toggle, net als T en O: nogmaals P keert terug naar de geparkeerde taak. */
+  if(running&&running.soort==="pauze"){await terug();return;}
   await timerOp("pauzeren",async t=>{
     if(!opGeldig(t,running?running.id:null))return;
     await _start({dossierId:null,code:null,omschrijving:"Pauze",soort:"pauze",
@@ -1327,36 +1434,21 @@ async function kiesCodeItem(it){
   liveId=null;verversDag();announce();
   setTimeout(()=>$("l-omschr").focus(),20);}
 async function markeerVolgt(){
-  if(!running&&!pending){toast("Er loopt niets om te markeren");return;}
+  if(!running){toast("Er loopt niets om te markeren");return;}
+  if(running.soort==="pauze"){toast("Een pauzeregel kan geen dossier krijgen");return;}
+  if(!i7CodeOp(VAST_VOORLOPIG,"-704")){
+    toast("Werkcode Commercieel ontbreekt — herstel werkcodes.json onder Beheer");return;}
+  ntWizard=null;
   const naam=prompt("Werknaam voor dit dossier (nummer volgt nog):",
-    (running&&!pending?(dosOf(running.dossierId)||{}).naam:"")||"");
+    ((dosOf(running.dossierId)||{}).naam)||"");
   if(!naam)return;
   const best=actief().find(x=>x.voorlopig&&
     x.naam.toLowerCase()===naam.trim().toLowerCase());
   const op=best?{dossierId:best.id,telUsed:true}:
     {nieuwDossier:{naam:naam.trim(),nummer:null,lang:"nl"},telUsed:true};
-  /* Ook deze route maakt een taakwissel op precies dezelfde manier definitief. */
-  if(pending){await bevestigPending(op);
-    naStart();
-    toast("Gemarkeerd als dossier volgt nog");return;}
   if(!await koppelRegel(running,op))return;
   liveId=null;renderAll();announce();naStart();
   toast("Gemarkeerd als dossier volgt nog");}
-/* Vrije tekst in het dossierveld terwijl er een taakwissel klaarstaat. */
-async function pendingBlur(v){
-  const lv=v.toLowerCase();
-  const hit=actief().find(x=>(x.nummer||"").toLowerCase()===lv||
-    x.naam.toLowerCase()===lv||((x.nummer||"")+" - "+x.naam).toLowerCase()===lv);
-  if(hit){await bevestigPending({dossierId:hit.id});return;}
-  const pd=splitsDossier(v);
-  if(pd&&!nummerBezet(pd.nummer,null)){
-    await bevestigPending({nieuwDossier:{naam:pd.naam,nummer:pd.nummer,lang:"nl"},
-      telUsed:true});
-    toast("Dossier "+pd.nummer+" aangemaakt");return;}
-  $("l-dossier").value="";
-  L("pending-blur","niet herkend ["+v.length+" tekens]");
-  toast('"'+kort(v,22)+'" is geen bestaand dossier — kies er een uit de lijst');}
-
 /* ---------- voorlopig dossier definitief maken ---------- */
 async function kenNummerToe(id){
   const d=dosOf(id);if(!d)return;
@@ -1429,119 +1521,375 @@ async function middernachtCheck(){
     if(!opGeldig(t,verwacht))return;
     if(!running||running.datum===today())return;
     await _stop("23:59");
-    if(pending)await wisPending(true);
+    ntWizard=null;pending=null;
+    try{await del("meta","pending");}catch(e){}
     liveId=null;renderAll();announce();
     toast("Regel van "+dmy(d)+" is om 23:59 afgesloten");});}
 
-/* ---------- één ingang: nieuwe regel met open keuzelijst ---------- */
-/* ---------- taakwissel in behandeling ----------
-   N schrijft geen regel. De vorige taak blijft officieel doorlopen; er wordt alleen
-   een wisseltijdstip in meta.pending vastgelegd. Wordt er een dossier gekozen, dan
-   worden de vorige taak en de nieuwe taak in één transactie op dat tijdstip
-   afgesloten en gestart. Escape verwijdert alleen de pending switch — er is dan
-   niets veranderd, geen tijd verloren en geen lege regel ontstaan. Een pending
-   switch komt nooit op de onderbrekingsstapel terecht, want er is geen regel.
-   Iedere route die een dossier koppelt loopt via kiesTaak() en maakt de wissel dus
-   op precies dezelfde manier definitief.                                       */
-let pending=null;
-async function zetPending(){
-  const p={vanaf:nowHM(),datum:today(),vorigeId:running?running.id:null,
-    gestart:Date.now()};
-  await putK("meta",p,"pending");
-  pending=p;}
-async function wisPending(stil){
-  if(!pending)return;
-  pending=null;
-  try{await del("meta","pending");}catch(e){L("FOUT-pending-wissen",String(e));}
-  if(!stil)L("pending-geannuleerd","");}
-async function nieuweTaak(){
-  if(!pending){
-    const ok=await timerOp("nieuwe taak",async t=>{
-      if(!opGeldig(t,running?running.id:null))return false;
-      if(pending)return true;
-      await zetPending();
-      L("nieuwe-taak","vanaf "+pending.vanaf+
-        (running?" · vorige taak loopt door":" · niets liep"));
-      liveId=null;renderAll();return true;});
-    if(!ok)return;}
-  setTimeout(()=>{const el=$("l-dossier");el.value="";el.focus();
-    openAC(el,dossierItems(""),kiesDossierItem);},40);}
-async function annuleerPending(stil){
-  if(!pending)return false;
-  await wisPending(stil);
-  closeAC();liveId=null;renderAll();announce();
-  if(!stil)toast(running?"Taakwissel geannuleerd — "+
-    ((dosOf(running.dossierId)||{}).naam||"de vorige taak")+" liep gewoon door":
-    "Taakwissel geannuleerd");
-  return true;}
-/* Bevestigt de wissel: vorige taak dicht en nieuwe taak open, beide op het
-   wisseltijdstip, in één transactie.                                           */
-function bevestigPending(w){
-  return timerOp("taak wisselen",async t=>{
-    if(!pending)return await _start(w);
-    if(!opGeldig(t,running?running.id:null))return null;
-    const p=pending,dag=today();
-    const vorige=p.vorigeId?alle.find(x=>x.id===p.vorigeId):null;
-    const sluitVorige=!!(vorige&&!vorige.eind&&running&&running.id===vorige.id&&
-      vorige.datum===dag);
-    let vanaf=p.datum===dag?p.vanaf:nowHM();
-    if(sluitVorige&&hm2m(vanaf)<hm2m(vorige.start))vanaf=vorige.start;
-    if(hm2m(vanaf)>hm2m(nowHM()))vanaf=nowHM();
-    const maak=w.nieuwDossier?bouwDossier(w.nieuwDossier):null;
-    const dosId=maak?maak.id:(w.dossierId||null);
-    const d=maak||(dosId?dosOf(dosId):null);
-    const nieuw={id:uid(),datum:dag,start:vanaf,eind:null,
-      dossierId:dosId,
-      code:codeVoor(d,w.code),
-      omschrijving:prefixVoor(d,dag,w.omschrijving||""),
-      uren:0.1,urenHand:false,soort:w.soort||"werk",
-      gemaakt:Date.now(),gewijzigd:Date.now()};
-    const dicht=sluitVorige?sluitObj(running,vanaf):null;
-    const nwStack=stack.length?[]:null;
-    const nwDagEinde=Object.assign({},dagEinde);
-    const dagEindeWeg=nwDagEinde[dag]!=null;
-    if(dagEindeWeg)delete nwDagEinde[dag];
-    const dos=maak||(nieuw.dossierId?dosOf(nieuw.dossierId):null);
-    const dosNw=dos?stempel(Object.assign({},dos,{used:(dos.used||0)+1})):null;
-    const nwCode=Object.assign({},codeGebruik);
-    if(nieuw.code)nwCode[nieuw.code]=(nwCode[nieuw.code]||0)+1;
-    await rustig([nieuw.id,dicht?dicht.id:null]);
-    await txAll(s=>{
-      if(dicht)s.regels.put(dicht);
-      s.regels.put(nieuw);
-      s.meta.put(nieuw.id,"running");
-      s.meta.delete("pending");
-      if(nwStack)s.meta.put(nwStack,"stack");
-      if(dagEindeWeg)s.meta.put(nwDagEinde,"dagEinde");
-      if(dosNw)s.dossiers.put(dosNw);
-      if(nieuw.code)s.meta.put(nwCode,"codeGebruik");});
-    pending=null;
-    vergeetTimerUndo("taakwissel bevestigd");
-    if(dicht)memRegel(dicht);
-    memRegel(nieuw);
-    running=nieuw;viewDate=dag;
-    if(nwStack)stack=nwStack;
-    if(dagEindeWeg)dagEinde=nwDagEinde;
-    if(dosNw)memDossier(dosNw);
-    if(maak)L("dossier-nieuw","dos"+idKort(maak.id)+(maak.nummer?"":" · VOORLOPIG")+
-      (logOms?" · "+kort(maak.naam):""));
-    codeGebruik=nwCode;
-    L("taak-gewisseld","vanaf "+vanaf+" · "+dosIdLog(nieuw.dossierId)+" · code "+
-      (nieuw.code||"-")+" · oms "+omsLog(nieuw.omschrijving));
-    liveId=null;snoozeTot=0;hideWake();renderAll();announce();
-    if(isIndirect(d)&&!i7codes.length)geenCodes();
-    return nieuw;});}
+/* ---------- Nieuwe taak: timer eerst, metadata daarna ----------
+   N sluit de vorige regel en opent ONMIDDELLIJK een lege nieuwe werkregel. De
+   focus-wizard die daarna in het live-eiland verschijnt, wijzigt uitsluitend de
+   metadata van die reeds lopende regel. Daardoor kan invoer nooit de tijdknip
+   uitstellen.                                                                  */
+function ntNieuwState(){
+  return{id:running?running.id:null,step:"kind",kind:null,hi:0,query:"",
+    newNr:"",newNaam:"",dvnNaam:"",i7q:"",descHi:-1,codeOpen:false,codeHi:0};}
+const ntRauw=()=>running?(running.omschrijving||"").replace(VOOR,"").trim():"";
+function ntSoort(){
+  const d=running?dosOf(running.dossierId):null,k=ntWizard&&ntWizard.kind;
+  if(k==="gewoon"||(!k&&d&&!isIndirect(d)))return["Gewoon dossier","declarabel"];
+  if(k==="i7"||(!k&&d&&d.isI7))return["Indirect (i7)","werkcode verplicht"];
+  if(k==="volgt"||(!k&&d&&d.voorlopig))return["Dossier volgt nog","i7 · Commercieel"];
+  return["—","nog niet gekozen"];}
+function ntActiefVak(){
+  if(!ntWizard)return"";
+  if(ntWizard.step==="kind")return"soort";
+  if(ntWizard.step==="dossier"||ntWizard.step==="nieuw"||ntWizard.step==="volgt")return"dos";
+  if(ntWizard.step==="i7")return"code";
+  return"oms";}
+function ntRenderSamenvatting(){
+  const box=$("nt-summary");if(!box)return;
+  box.classList.toggle("on",!!ntWizard);
+  if(!ntWizard)return;
+  const d=running?dosOf(running.dossierId):null,s=ntSoort(),vak=ntActiefVak();
+  $("nt-v-soort").textContent=s[0];$("nt-x-soort").textContent=s[1];
+  $("nt-v-dos").textContent=d?d.naam:"—";
+  $("nt-x-dos").textContent=d?(d.nummer||"nummer volgt nog"):"nog niet gekozen";
+  const dvnVast=ntWizard.kind==="volgt"?i7CodeOp(VAST_VOORLOPIG,"-704"):null;
+  const dvnCode=dvnVast?i7codes.find(c=>c.code===dvnVast):null;
+  $("nt-v-code").textContent=running&&running.code?codeNaam(d,running.code):
+    (ntWizard.kind==="volgt"?(dvnCode?dvnCode.naam:"Commercieel"):"—");
+  $("nt-x-code").textContent=running&&running.code?running.code:
+    (ntWizard.kind==="volgt"?(dvnVast?"automatisch":"ontbreekt in werklijst"):
+      (d&&d.isI7?"verplicht":"optioneel"));
+  $("nt-v-oms").textContent=ntRauw()||"—";
+  $("nt-x-oms").textContent=ntRauw()?"":"mag tijdens de lopende timer worden aangevuld";
+  ["soort","dos","code","oms"].forEach(x=>$("nt-s-"+x).classList.toggle("active",x===vak));}
+function ntGewoneDossiers(q){
+  const lo=schoon(q).toLowerCase();
+  return actief().filter(d=>!d.isI7&&!d.voorlopig&&
+    (!lo||((d.nummer||"")+" "+d.naam).toLowerCase().includes(lo)))
+    .sort((a,b)=>(b.used||0)-(a.used||0)||a.naam.localeCompare(b.naam)).slice(0,10);}
+function ntI7Codes(q){
+  const lo=schoon(q).toLowerCase();
+  return codesGesorteerd().filter(c=>!lo||(c.code+" "+c.naam).toLowerCase().includes(lo))
+    .slice(0,20);}
+function ntOmsSuggesties(){
+  const q=ntRauw();if(q.length<2)return[];
+  const d=dosOf(running&&running.dossierId);
+  return omschrItems(d,q).slice(0,6);}
+function ntNieuweVoorinvulling(){
+  const q=schoon(ntWizard.query),p=splitsDossier(q);
+  if(p)return{nummer:p.nummer,naam:p.naam};
+  /* Alleen als voorinvulheuristiek (niet als validatie): een uitsluitend numerieke
+     losse invoer is waarschijnlijk het dossiernummer; tekst is waarschijnlijk naam. */
+  if(/^\d+$/.test(q))return{nummer:q,naam:""};
+  return{nummer:"",naam:q};}
+function ntHtml(){
+  if(!ntWizard||!running)return"";
+  const t=ntWizard.step;
+  if(t==="kind")return '<span class="nttimer">timer loopt al</span>'+
+    '<div class="ntq">Waar schrijf je op?</div>'+
+    '<div class="nthint">Alle drie zijn gelijkwaardige keuzes. De focus staat op de eerste kaart; één keer <kbd>→</kbd> gaat direct naar i7.</div>'+
+    '<div class="ntcats">'+[
+      ["gewoon","Gewoon dossier","Declarabel · werkcode meestal leeg"],
+      ["i7","Indirect (i7)","Kies een verplichte kantoorwerkcode"],
+      ["volgt","Dossier volgt nog (i7)","Zaaknaam nu · Commercieel automatisch"]
+    ].map((x,i)=>'<button class="ntcat'+(i===ntWizard.hi?" hi":"")+'" data-ntkind="'+x[0]+'">'+
+      '<span class="k">'+(i+1)+'</span><div class="n">'+x[1]+'</div><div class="d">'+x[2]+
+      '</div></button>').join("")+'</div>'+
+    '<div class="nthelp"><span><kbd>←</kbd>/<kbd>→</kbd> kiezen</span><span><kbd>Enter</kbd> bevestigen</span>'+
+    '<span><kbd>Esc</kbd> sluit alleen de invoer; timer blijft lopen</span></div>';
 
+  if(t==="dossier"){
+    const rows=ntGewoneDossiers(ntWizard.query),p=splitsDossier(schoon(ntWizard.query));
+    return '<span class="nttimer">timer loopt</span><div class="ntq">Welk dossier?</div>'+
+      '<div class="nthint">Zoek op nummer óf naam. Dossiernummer staat bewust prominent. Nieuw dossier: typ desgewenst meteen <span class="mono">123456789 - Levering Kerkstraat</span>.</div>'+
+      '<input class="ntfield mono" id="nt-dos-q" autocomplete="off" value="'+esc(ntWizard.query)+
+      '" placeholder="123456789 - dossiernaam · of zoek nummer/naam">'+
+      '<div class="ntlist" id="nt-dos-list">'+
+      (rows.length?'<div class="ntgroup">'+(ntWizard.query?"Gevonden":"Veel gebruikt")+'</div>':"")+
+      rows.map((d,i)=>'<div class="ntitem'+(i===ntWizard.hi?" hi":"")+'" data-ntdos="'+esc(d.id)+'">'+
+        '<div class="nr">'+esc(d.nummer||"—")+'</div><div class="nm">'+esc(d.naam)+'</div>'+
+        '<div class="meta">'+(d.used||0)+'×</div></div>').join("")+
+      '<div class="ntitem new'+(ntWizard.hi===rows.length?" hi":"")+'" data-ntnieuw="1">'+
+        '<div class="nr">'+(p?esc(p.nummer):"＋ NIEUW")+'</div>'+
+        '<div class="nm">'+(p?"Nieuw dossier: "+esc(p.naam):"Nieuw dossier toevoegen")+'</div>'+
+        '<div class="meta">'+(p?"nummer + naam herkend":"Enter")+'</div></div></div>'+
+      '<div class="nthelp"><span><kbd>↑</kbd>/<kbd>↓</kbd> kiezen</span>'+
+      '<span><kbd>Enter</kbd> → omschrijving</span><span><kbd>Tab</kbd> → optionele werkcode</span>'+
+      '<span><kbd>Esc</kbd> terug</span></div>';}
+
+  if(t==="nieuw"){
+    const klaar=schoon(ntWizard.newNr)&&schoon(ntWizard.newNaam);
+    return '<span class="nttimer">timer loopt</span><div class="ntq">Nieuw dossier</div>'+
+      '<div class="nthint">'+(klaar?
+        'Nummer en naam zijn uit je invoer gesplitst. Controleer ze; er wordt bewust niet gevalideerd of het nummer negen cijfers heeft.':
+        'Vul alleen aan wat nog ontbreekt. Dossiernummers worden bewust niet op formaat gevalideerd.')+'</div>'+
+      '<div class="nttwocol"><div class="ntwrap"><label>Dossiernummer</label>'+
+      '<input class="ntfield mono" id="nt-new-nr" value="'+esc(ntWizard.newNr)+'" placeholder="123456789"></div>'+
+      '<div class="ntwrap"><label>Dossiernaam</label>'+
+      '<input class="ntfield" id="nt-new-naam" value="'+esc(ntWizard.newNaam)+'" placeholder="Levering Kerkstraat"></div></div>'+
+      '<div class="nthelp"><span><kbd>Tab</kbd> volgend veld</span><span><kbd>Enter</kbd> bevestigen</span><span><kbd>Esc</kbd> terug</span></div>';}
+
+  if(t==="i7"){
+    const rows=ntI7Codes(ntWizard.i7q);
+    return '<span class="nttimer">timer loopt</span><div class="ntq">Welke i7-werkcode?</div>'+
+      '<div class="nthint">De tekst is leidend; de technische code staat kleiner ter controle. Meest gebruikt staat bovenaan.</div>'+
+      '<input class="ntfield" id="nt-i7-q" autocomplete="off" value="'+esc(ntWizard.i7q)+'" placeholder="typen mag, maar hoeft niet">'+
+      '<div class="ntlist">'+(rows.length?rows.map((c,i)=>'<div class="ntitem'+(i===ntWizard.hi?" hi":"")+
+        '" data-nti7="'+esc(c.code)+'"><div class="nr">'+esc(c.code.split("-").pop())+
+        '</div><div class="nm">'+esc(c.naam)+'</div><div class="meta">i7</div></div>').join(""):
+        '<div class="ntnotice bad">Geen i7-werkcodes beschikbaar — importeer werkcodes.json onder Beheer.</div>')+
+      '</div><div class="nthelp"><span><kbd>↑</kbd>/<kbd>↓</kbd> kiezen</span>'+
+      '<span><kbd>Enter</kbd> of <kbd>Tab</kbd> bevestigen</span><span><kbd>Esc</kbd> terug</span></div>';}
+
+  if(t==="volgt"){
+    const vast=i7CodeOp(VAST_VOORLOPIG,"-704"),vc=i7codes.find(c=>c.code===vast);
+    return '<span class="nttimer">timer loopt</span><div class="ntq">Welke zaak (cliënt + aanduiding)?</div>'+
+      '<div class="nthint">Typ alleen een herkenbare werknaam. Hourhound regelt de i7-boeking eromheen.</div>'+
+      '<input class="ntfield" id="nt-volgt-naam" autocomplete="off" value="'+esc(ntWizard.dvnNaam)+
+      '" placeholder="bijv. Bouwfonds - project Zuid">'+
+      '<div class="ntauto"><div><div class="a">Dossier</div><div class="v">Indirecte uren</div>'+
+      '<div class="s">'+esc((i7()&&i7().nummer)||"I700000000")+'</div></div>'+
+      '<div><div class="a">Werkcode</div><div class="v">'+esc(vc?vc.naam:"Commercieel ontbreekt")+
+      '</div><div class="s">'+(vc?"automatisch":"herstel werkcodes.json")+'</div></div></div>'+
+      '<div class="ntnotice'+(vc?"":" bad")+'">'+(vc?
+        'Ook het Intapp-voorvoegsel wordt automatisch opgebouwd; jij typt hier alleen cliënt + aanduiding.':
+        'DVN kan pas worden gekoppeld zodra de vaste werkcode Commercieel weer in de i7-werklijst staat.')+'</div>'+
+      '<div class="nthelp"><span><kbd>Enter</kbd> of <kbd>Tab</kbd> verder</span><span><kbd>Esc</kbd> terug</span></div>';}
+
+  const d=dosOf(running.dossierId),gewoon=d&&!isIndirect(d),codes=gewoon?codesFor(d):[];
+  const sugs=ntOmsSuggesties();
+  return '<span class="nttimer">timer loopt</span><div class="ntq">Wat heb je gedaan?</div>'+
+    '<div class="nthint">De tijd liep al vanaf NT. '+(gewoon?
+      'Werkcode is optioneel en wordt nooit automatisch ingevuld. <kbd>Shift</kbd>+<kbd>Tab</kbd> brengt je erheen.':
+      '')+'</div>'+
+    (gewoon?'<div class="ntordinary"><div class="ntwrap"><label>Werkcode <span class="ntopt">optioneel · vrij veld</span></label>'+
+      '<input class="ntfield mono" id="nt-code" autocomplete="off" value="'+esc(running.code||"")+
+      '" placeholder="meestal leeg">'+(codes.length?'<div class="ntremember">'+codes.length+
+      ' eerder zelf gebruikte '+(codes.length===1?"code":"codes")+' beschikbaar met ↓</div>':"")+
+      '</div><div class="ntwrap"><label>Omschrijving</label>'+
+      '<input class="ntfield" id="nt-oms" autocomplete="off" value="'+esc(ntRauw())+
+      '" placeholder="korte omschrijving"></div></div>':
+      '<div class="ntwrap"><label>Omschrijving</label><input class="ntfield" id="nt-oms" autocomplete="off" value="'+
+      esc(ntRauw())+'" placeholder="korte omschrijving"></div>')+
+    (gewoon&&ntWizard.codeOpen&&codes.length?'<div class="ntlist" id="nt-code-list"><div class="ntgroup">Eerder zelf gebruikt bij dit dossier</div>'+
+      codes.map((c,i)=>'<div class="ntitem'+(i===ntWizard.codeHi?" hi":"")+'" data-ntcode="'+esc(c.code)+
+        '"><div class="nr">'+esc(c.code)+'</div><div class="nm">'+esc(c.naam||c.code)+'</div><div class="meta">onthouden</div></div>').join("")+
+      '</div>':"")+
+    (sugs.length&&ntWizard.descHi>=0?'<div class="ntlist">'+sugs.map((x,i)=>
+      '<div class="ntitem'+(i===ntWizard.descHi?" hi":"")+'" data-ntoms="'+i+'"><div class="nr">suggestie</div>'+
+      '<div class="nm">'+esc(x.value)+'</div><div class="meta">'+esc(x.sub||"")+'</div></div>').join("")+'</div>':"")+
+    '<div class="nthelp"><span><kbd>Enter</kbd> of <kbd>Tab</kbd> gegevens gereed — timer loopt door</span>'+
+    '<span><kbd>Esc</kbd> stap terug</span>'+(gewoon?'<span><kbd>Shift</kbd>+<kbd>Tab</kbd> naar werkcode</span>':"")+'</div>';
+}
+function ntFocus(wat){
+  if(!ntWizard)return;
+  setTimeout(()=>{
+    if(!ntWizard)return;
+    if(ntWizard.step==="kind"){
+      const bs=[...$("nt-wizard").querySelectorAll("[data-ntkind]")];
+      (bs[Math.max(0,Math.min(ntWizard.hi,bs.length-1))]||bs[0])?.focus();return;}
+    let id=wat==="code"?"nt-code":null;
+    if(!id)id=ntWizard.step==="dossier"?"nt-dos-q":ntWizard.step==="nieuw"?
+      (schoon(ntWizard.newNr)?"nt-new-naam":"nt-new-nr"):
+      ntWizard.step==="i7"?"nt-i7-q":ntWizard.step==="volgt"?"nt-volgt-naam":"nt-oms";
+    const el=$(id);if(el){el.focus();if(el.setSelectionRange)el.setSelectionRange(el.value.length,el.value.length);}
+  },20);}
+function ntRender(){
+  const box=$("nt-wizard");if(!box)return;
+  box.classList.toggle("on",!!ntWizard);
+  if(!ntWizard){box.innerHTML="";box.dataset.sig="";ntRenderSamenvatting();return;}
+  const sig=[ntWizard.id,ntWizard.step,ntWizard.hi,ntWizard.query,ntWizard.newNr,
+    ntWizard.newNaam,ntWizard.dvnNaam,ntWizard.i7q,ntWizard.descHi,
+    ntWizard.codeOpen?1:0,ntWizard.codeHi].join("|");
+  if(box.dataset.sig===sig){ntRenderSamenvatting();return;}
+  box.dataset.sig=sig;box.innerHTML=ntHtml();ntRenderSamenvatting();ntBind();}
+async function ntWisIdentiteit(){
+  if(!running)return null;
+  return await koppelRegel(running,{dossierId:null,code:null,omschrijving:ntRauw()});}
+async function ntKiesSoort(k){
+  if(!running||!ntWizard)return;
+  if(!await ntWisIdentiteit())return;
+  ntWizard.kind=k;ntWizard.hi=0;ntWizard.codeOpen=false;ntWizard.descHi=-1;
+  if(k==="gewoon"){ntWizard.step="dossier";ntRender();ntFocus();return;}
+  if(k==="volgt"){ntWizard.step="volgt";ntRender();ntFocus();return;}
+  const ind=i7();
+  if(!ind){toast("Het i7-dossier ontbreekt");ntWizard.step="kind";ntRender();ntFocus();return;}
+  if(!await koppelRegel(running,{dossierId:ind.id,code:null,telUsed:true}))return;
+  ntWizard.step="i7";ntRender();ntFocus();}
+async function ntKiesDossier(id,naarCode){
+  if(!running||!ntWizard)return;
+  const d=dosOf(id);if(!d)return;
+  if(!await koppelRegel(running,{dossierId:id,code:null,telUsed:true,omschrijving:ntRauw()}))return;
+  ntWizard.step="omschrijving";ntWizard.hi=0;ntWizard.descHi=-1;ntWizard.codeOpen=!!naarCode;
+  ntRender();ntFocus(naarCode?"code":null);}
+function ntOpenNieuw(){
+  const p=ntNieuweVoorinvulling();
+  ntWizard.newNr=p.nummer;ntWizard.newNaam=p.naam;ntWizard.step="nieuw";ntWizard.hi=0;
+  ntRender();ntFocus();}
+async function ntBevestigNieuw(){
+  const nr=schoon(ntWizard.newNr),naam=schoon(ntWizard.newNaam);
+  if(!nr||!naam){toast("Dossiernummer en dossiernaam zijn beide nodig");ntFocus();return;}
+  if(nummerBezet(nr,null)){toast("Dat dossiernummer bestaat al — kies het bestaande dossier");return;}
+  const uit=await koppelRegel(running,{nieuwDossier:{naam,nummer:nr,lang:"nl"},code:null,
+    omschrijving:ntRauw(),telUsed:true});
+  if(!uit)return;
+  ntWizard.step="omschrijving";ntWizard.codeOpen=false;ntWizard.descHi=-1;
+  ntRender();ntFocus();}
+async function ntKiesI7(code){
+  if(!running||!ntWizard)return;
+  if(!await koppelRegel(running,{code}))return;
+  ntWizard.step="omschrijving";ntWizard.descHi=-1;ntRender();ntFocus();}
+async function ntHernoemVoorlopig(d,naam){
+  const nwD=stempel(Object.assign({},d,{naam}));
+  const nwR=Object.assign({},running,{omschrijving:prefixVoor(nwD,running.datum,ntRauw()),
+    gewijzigd:Date.now()});
+  try{
+    await rustig([running.id]);
+    await tx(["dossiers","regels"],"readwrite",o=>{o.dossiers.put(nwD);o.regels.put(nwR);});
+  }catch(e){L("FOUT-voorlopig-hernoemen",String(e));toast("Werknaam wijzigen mislukt");return null;}
+  memDossier(nwD);Object.keys(running).forEach(k=>delete running[k]);Object.assign(running,nwR);
+  memRegel(running);return{regel:running,dossier:nwD};}
+async function ntBevestigVolgt(){
+  const naam=schoon(ntWizard.dvnNaam);if(!naam){toast("Vul de zaak in");ntFocus();return;}
+  if(!i7CodeOp(VAST_VOORLOPIG,"-704")){
+    toast("Werkcode Commercieel ontbreekt — herstel werkcodes.json onder Beheer");return;}
+  const huidig=dosOf(running.dossierId);
+  const best=actief().find(x=>x.voorlopig&&x.naam.toLowerCase()===naam.toLowerCase());
+  let uit=null;
+  if(best)uit=await koppelRegel(running,{dossierId:best.id,telUsed:true,omschrijving:ntRauw()});
+  else if(huidig&&huidig.voorlopig&&!huidig.isI7)uit=await ntHernoemVoorlopig(huidig,naam);
+  else uit=await koppelRegel(running,{nieuwDossier:{naam,nummer:null,lang:"nl"},
+    telUsed:true,omschrijving:ntRauw()});
+  if(!uit)return;
+  ntWizard.step="omschrijving";ntWizard.descHi=-1;ntRender();ntFocus();}
+async function ntBewaarGewoneCode(){
+  if(!running)return true;
+  const d=dosOf(running.dossierId);if(!d||isIndirect(d))return true;
+  const el=$("nt-code"),v=schoon(el?el.value:(running.code||""));
+  if(!v){
+    if(running.code)await koppelRegel(running,{code:null});
+    return true;}
+  return await codeUitVeld(running,v);}
+async function ntKlaar(){
+  if(!running||!ntWizard)return;
+  const el=$("nt-oms"),v=schoon(el?el.value:ntRauw());
+  if(!v){toast("Omschrijving ontbreekt — vul hem in of sluit de invoer met Esc");ntFocus();return;}
+  if(!await ntBewaarGewoneCode())return;
+  if(!await koppelRegel(running,{omschrijving:v}))return;
+  ntWizard=null;liveId=null;closeAC();renderAll();announce();
+  toast("Taakgegevens gereed — timer loopt door");}
+async function ntTerug(){
+  if(!ntWizard)return;
+  if(ntWizard.step==="kind"){ntWizard=null;renderAll();
+    toast("Invoer gesloten — de nieuwe timer loopt door");return;}
+  if(ntWizard.step==="nieuw")ntWizard.step="dossier";
+  else if(ntWizard.step==="omschrijving")
+    ntWizard.step=ntWizard.kind==="i7"?"i7":(ntWizard.kind==="volgt"?"volgt":"dossier");
+  else ntWizard.step="kind";
+  ntWizard.hi=0;ntWizard.descHi=-1;ntWizard.codeOpen=false;ntRender();ntFocus();}
+function ntBind(){
+  if(!ntWizard)return;
+  const box=$("nt-wizard");
+  box.querySelectorAll("[data-ntkind]").forEach((b,i)=>{
+    b.onfocus=()=>{ntWizard.hi=i;box.querySelectorAll("[data-ntkind]").forEach((x,j)=>
+      x.classList.toggle("hi",i===j));ntRenderSamenvatting();};
+    b.onclick=()=>ntKiesSoort(b.dataset.ntkind);
+    b.onkeydown=e=>{
+      if(e.key==="ArrowRight"||e.key==="ArrowLeft"){
+        e.preventDefault();e.stopPropagation();
+        const bs=[...box.querySelectorAll("[data-ntkind]")],d=e.key==="ArrowRight"?1:-1;
+        ntWizard.hi=(i+d+bs.length)%bs.length;bs[ntWizard.hi].focus();return;}
+      if(e.key==="Enter"){e.preventDefault();e.stopPropagation();ntKiesSoort(b.dataset.ntkind);return;}
+      if(e.key==="Escape"){e.preventDefault();e.stopPropagation();ntTerug();}};});
+  const dq=$("nt-dos-q");
+  if(dq){
+    dq.oninput=e=>{ntWizard.query=e.target.value;ntWizard.hi=0;ntRender();ntFocus();};
+    dq.onkeydown=e=>{
+      const rows=ntGewoneDossiers(ntWizard.query),n=rows.length+1;
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){e.preventDefault();e.stopPropagation();
+        ntWizard.hi=(ntWizard.hi+(e.key==="ArrowDown"?1:-1)+n)%n;ntRender();ntFocus();return;}
+      if(e.key==="Escape"){e.preventDefault();e.stopPropagation();ntTerug();return;}
+      if(e.key==="Enter"||e.key==="Tab"){
+        const naarCode=e.key==="Tab";e.preventDefault();e.stopPropagation();
+        if(ntWizard.hi<rows.length)ntKiesDossier(rows[ntWizard.hi].id,naarCode);
+        else ntOpenNieuw();}};}
+  box.querySelectorAll("[data-ntdos]").forEach(x=>x.onclick=()=>ntKiesDossier(x.dataset.ntdos,false));
+  const nieuw=box.querySelector("[data-ntnieuw]");if(nieuw)nieuw.onclick=ntOpenNieuw;
+  const nr=$("nt-new-nr"),nm=$("nt-new-naam");
+  if(nr){nr.oninput=e=>{ntWizard.newNr=e.target.value;};
+    nr.onkeydown=e=>{if(e.key==="Escape"){e.preventDefault();ntTerug();}
+      else if(e.key==="Enter"){e.preventDefault();if(schoon(ntWizard.newNaam))ntBevestigNieuw();else nm&&nm.focus();}};}
+  if(nm){nm.oninput=e=>{ntWizard.newNaam=e.target.value;};
+    nm.onkeydown=e=>{if(e.key==="Escape"){e.preventDefault();ntTerug();}
+      else if(e.key==="Enter"){e.preventDefault();ntBevestigNieuw();}};}
+  const iq=$("nt-i7-q");
+  if(iq){
+    iq.oninput=e=>{ntWizard.i7q=e.target.value;ntWizard.hi=0;ntRender();ntFocus();};
+    iq.onkeydown=e=>{const rows=ntI7Codes(ntWizard.i7q),n=rows.length;
+      if(e.key==="ArrowDown"||e.key==="ArrowUp"){if(!n)return;e.preventDefault();e.stopPropagation();
+        ntWizard.hi=(ntWizard.hi+(e.key==="ArrowDown"?1:-1)+n)%n;ntRender();ntFocus();return;}
+      if(e.key==="Escape"){e.preventDefault();e.stopPropagation();ntTerug();return;}
+      if((e.key==="Enter"||e.key==="Tab")&&n){e.preventDefault();e.stopPropagation();
+        ntKiesI7(rows[Math.min(ntWizard.hi,n-1)].code);}};}
+  box.querySelectorAll("[data-nti7]").forEach(x=>x.onclick=()=>ntKiesI7(x.dataset.nti7));
+  const vn=$("nt-volgt-naam");
+  if(vn){vn.oninput=e=>{ntWizard.dvnNaam=e.target.value;};
+    vn.onkeydown=e=>{if(e.key==="Escape"){e.preventDefault();e.stopPropagation();ntTerug();}
+      else if(e.key==="Enter"||e.key==="Tab"){e.preventDefault();e.stopPropagation();ntBevestigVolgt();}};}
+  const cd=$("nt-code"),om=$("nt-oms");
+  if(cd){
+    cd.onfocus=()=>{if(!ntWizard.codeOpen){ntWizard.codeOpen=true;ntWizard.codeHi=0;ntRender();ntFocus("code");}};
+    cd.onkeydown=e=>{
+      const d=dosOf(running.dossierId),rows=codesFor(d);
+      if((e.key==="ArrowDown"||e.key==="ArrowUp")&&rows.length){e.preventDefault();e.stopPropagation();
+        ntWizard.codeHi=(ntWizard.codeHi+(e.key==="ArrowDown"?1:-1)+rows.length)%rows.length;
+        const gekozen=rows[ntWizard.codeHi];cd.value=gekozen.code;
+        const its=[...box.querySelectorAll("[data-ntcode]")];
+        its.forEach(x=>x.classList.toggle("hi",x.dataset.ntcode===gekozen.code));
+        const hi=its.find(x=>x.dataset.ntcode===gekozen.code);
+        if(hi)hi.scrollIntoView({block:"nearest"});return;}
+      if(e.key==="Escape"){e.preventDefault();e.stopPropagation();ntWizard.codeOpen=false;ntRender();ntFocus();return;}
+      if(e.key==="Enter"||e.key==="Tab"){e.preventDefault();e.stopPropagation();
+        ntBewaarGewoneCode().then(()=>{ntWizard.codeOpen=false;ntRender();ntFocus();});}};
+  }
+  box.querySelectorAll("[data-ntcode]").forEach(x=>x.onclick=async()=>{
+    await codeUitVeld(running,x.dataset.ntcode);ntWizard.codeOpen=false;ntRender();ntFocus();});
+  if(om){
+    om.oninput=e=>{running.omschrijving=prefixVoor(dosOf(running.dossierId),running.datum,e.target.value);
+      planOmschr(running.id,running.omschrijving);ntWizard.descHi=-1;ntRenderSamenvatting();};
+    om.onkeydown=e=>{
+      const sugs=ntOmsSuggesties();
+      if((e.key==="ArrowDown"||e.key==="ArrowUp")&&sugs.length){e.preventDefault();e.stopPropagation();
+        if(ntWizard.descHi<0)ntWizard.descHi=0;
+        else ntWizard.descHi=(ntWizard.descHi+(e.key==="ArrowDown"?1:-1)+sugs.length)%sugs.length;
+        ntRender();ntFocus();return;}
+      if(e.key==="Escape"){e.preventDefault();e.stopPropagation();ntTerug();return;}
+      if(e.key==="Tab"&&e.shiftKey&&dosOf(running.dossierId)&&!isIndirect(dosOf(running.dossierId))){
+        e.preventDefault();e.stopPropagation();ntWizard.codeOpen=true;ntRender();ntFocus("code");return;}
+      if(e.key==="Enter"||e.key==="Tab"){e.preventDefault();e.stopPropagation();
+        if(ntWizard.descHi>=0&&sugs[ntWizard.descHi]){
+          const x=sugs[ntWizard.descHi];running.omschrijving=prefixVoor(dosOf(running.dossierId),
+            running.datum,x.value);planOmschr(running.id,running.omschrijving);
+          ntWizard.descHi=-1;ntRender();ntFocus();return;}
+        ntKlaar();}};
+  }
+  box.querySelectorAll("[data-ntoms]").forEach(x=>x.onclick=()=>{
+    const sugs=ntOmsSuggesties(),it=sugs[+x.dataset.ntoms];if(!it)return;
+    running.omschrijving=prefixVoor(dosOf(running.dossierId),running.datum,it.value);
+    planOmschr(running.id,running.omschrijving);ntWizard.descHi=-1;ntRender();ntFocus();});
+}
+async function nieuweTaak(){
+  const nieuw=await startRegel({dossierId:null,code:null,omschrijving:"",soort:"werk"});
+  if(!nieuw)return;
+  ntWizard=ntNieuwState();liveId=null;renderAll();ntFocus();
+  L("nieuwe-taak","timer direct gestart om "+nieuw.start+" · metadata volgt");
+}
 async function kiesDossierItem(it){
   const w=itemNaarOpdracht(it);
-  if(!w)return;
-  if(pending){await bevestigPending(w);
-    if(!eisCode())setTimeout(()=>{const el=$("l-omschr");el.focus();
-      const m=/\{[^}]+\}/.exec(el.value);
-      if(m)el.setSelectionRange(m.index,m.index+m[0].length);
-      else el.setSelectionRange(el.value.length,el.value.length);},10);
-    return;}
-  if(!running)return;
+  if(!w||!running)return;
   const uit=await koppelRegel(running,w);
   if(!uit){const hd=dosOf(running.dossierId);
     $("l-dossier").value=dosVeld(hd);
@@ -1559,61 +1907,50 @@ async function kiesDossierItem(it){
 
 /* ---------- weergave: NU ---------- */
 function renderLive(){
-  $("live").className="live"+(pending?" werk":(running?" "+running.soort:""));
-  document.body.dataset.run=pending?"werk":(running?running.soort:"");
-  $("l-fields").style.display=running?"grid":"none";
-  $("b-back").style.display=stack.length?"":"none";
+  /* Een wizard hoort altijd bij precies de regel die op dit moment loopt. Iedere
+     andere timeractie maakt de wizard daardoor vanzelf ongeldig. */
+  if(ntWizard&&(!running||ntWizard.id!==running.id))ntWizard=null;
+  const d=running?dosOf(running.dossierId):null;
+  $("live").className="live"+(running?" "+running.soort:"");
+  document.body.dataset.run=running?running.soort:"";
+  $("l-fields").style.display=running&&running.soort!=="pauze"&&!ntWizard?"grid":"none";
+  $("b-back").style.display=stack.length&&!ntWizard?"":"none";
   if(stack.length)$("b-back").innerHTML="Terug naar "+
     esc(((dosOf(stack[stack.length-1].dossierId)||{}).naam||"vorige taak"))+" <kbd>R</kbd>";
-  if(pending){
-    const vd=running?dosOf(running.dossierId):null;
-    $("l-who").className="who";
-    $("l-who").textContent="Nieuwe taak";
-    const mn=Math.max(0,(hm2m(nowHM())||0)-(hm2m(pending.vanaf)||0));
-    $("l-uren").textContent=uu(Math.ceil(Math.max(1,mn)/6)/10);
-    $("l-run").innerHTML="wisselen vanaf "+pending.vanaf+" · kies een dossier"+
-      (running?" — "+esc((vd&&vd.naam)||"de vorige taak")+
-        " loopt door tot je kiest":"")+
-      " · <kbd>Esc</kbd> annuleert";
-    $("l-fields").style.display="grid";
-    $("b-back").style.display="none";
-    if(liveId!=="pending"){liveId="pending";
-      if(document.activeElement!==$("l-dossier"))$("l-dossier").value="";
-      if(document.activeElement!==$("l-code"))$("l-code").value="";
-      if(document.activeElement!==$("l-omschr"))$("l-omschr").value="";}
-    $("l-code").classList.remove("miss");
-    hideWake();return;}
+
   if(!running){
     $("l-who").className="who idle";$("l-who").textContent="Er loopt niets";
     $("l-uren").textContent="";
     $("l-run").innerHTML="Druk <b>N</b> of kies hieronder waar je mee begint";
-    liveId=null;hideWake();return;}
-  const d=dosOf(running.dossierId);
+    liveId=null;hideWake();ntRender();return;}
+
   $("l-who").className="who";
   $("l-who").textContent=running.soort==="werk"?(d?d.naam:"Nieuwe taak"):
     running.soort==="pauze"?"Pauze":(running.soort==="telefoon"?"Telefoon":"Onderbreking");
   const mins=Math.max(0,(hm2m(nowHM())||0)-(hm2m(running.start)||0));
   $("l-uren").textContent=running.soort==="pauze"?"":uu(urenOf(running));
   $("l-run").innerHTML="loopt sinds "+running.start+" · "+mins+" min"+
-    (d&&d.voorlopig?" · dossier volgt nog":"")+(d&&d.lang==="en"?" · EN":"");
+    (d&&d.voorlopig?" · dossier volgt nog":"")+(d&&d.lang==="en"?" · EN":"")+
+    (ntWizard?" · gegevens worden nu ingevuld":"");
+
   const stempel=running.id+"|"+(running.gewijzigd||0);
   if(liveId!==stempel){liveId=stempel;
     if(document.activeElement!==$("l-dossier"))$("l-dossier").value=d?dosVeld(d):"";
     if(document.activeElement!==$("l-code"))$("l-code").value=codeNaam(d,running.code);
     if(document.activeElement!==$("l-omschr"))$("l-omschr").value=running.omschrijving||"";}
   $("l-code").classList.toggle("miss",isIndirect(d)&&!running.code);
-  /* Vangnet: welke route de regel ook heeft gestart, een i7-regel zonder werkcode
-     vraagt hier eenmalig om die code. Zo hangt de verplichting niet af van de
-     afzonderlijke aanroepplaatsen.                                             */
+
+  /* Alleen buiten de NT-wizard mag het gewone live-veld automatisch de verplichte
+     i7-keuzelijst opeisen. Tijdens de wizard beheert die zelf de focus. */
   if(running.code)codeGevraagd=null;
-  else if(isIndirect(d)&&!d.voorlopig&&codeGevraagd!==running.id)eisCode();
-  /* Vast bij een voorlopig dossier: dan is het veld alleen ter informatie. */
+  else if(!ntWizard&&isIndirect(d)&&!d.voorlopig&&codeGevraagd!==running.id)eisCode();
+
   $("l-code").readOnly=!!(d&&d.voorlopig);
   $("l-code").placeholder=isIndirect(d)&&!d.voorlopig?"verplicht":"—";
   $("l-code").title=d&&d.voorlopig?
-    "Een dossier waarvan het nummer nog volgt boekt altijd op "+
-      codeNaam(d,defaultCode(d)):
-    (isIndirect(d)?"Een i7-regel moet een werkcode hebben":"");}
+    "Een dossier waarvan het nummer nog volgt boekt altijd op "+codeNaam(d,defaultCode(d)):
+    (isIndirect(d)?"Een i7-regel moet een werkcode hebben":"");
+  hideWake();ntRender();}
 function renderRecent(){
   const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,4);
   $("recent").innerHTML=tk.length?tk.map((t,i)=>{
@@ -1720,7 +2057,7 @@ function codeFout(d,r){
   if(!d||!isIndirect(d))return false;
   if(!r.code)return true;
   if(!codesFor(d).some(c=>c.code===r.code))return true;
-  if(d.voorlopig){const vast=defaultCode(d);return !!vast&&r.code!==vast;}
+  if(d.voorlopig){const vast=defaultCode(d);return !vast||r.code!==vast;}
   return false;}
 /* Blokkerende fouten maken de dag onboekbaar: die kunnen niet met "toch boeken"
    worden gepasseerd. Waarschuwingen mogen wel bevestigd worden.                */
@@ -1736,10 +2073,12 @@ function controleer(){
     const d=dosOf(r.dossierId);
     if(!d)add(r,"geen dossier gekozen",true);
     else if(isIndirect(d)&&!r.code)add(r,"i7-regel zonder werkcode",true);
-    else if(codeFout(d,r))add(r,d.voorlopig?
-      "een dossier waarvan het nummer nog volgt moet op "+
-        codeNaam(d,defaultCode(d))+" staan":
-      "werkcode staat niet in de i7-werklijst",true);
+    else if(codeFout(d,r)){
+      const vast=d.voorlopig?defaultCode(d):null;
+      add(r,d.voorlopig?(vast?
+        "een dossier waarvan het nummer nog volgt moet op "+codeNaam(d,vast)+" staan":
+        "werkcode Commercieel ontbreekt in de i7-werklijst"):
+        "werkcode staat niet in de i7-werklijst",true);}
     if(!(r.omschrijving||"").trim())add(r,"lege omschrijving",true);
     if(hm2m(r.start)==null)add(r,"ongeldige starttijd",true);
     if(r.eind&&hm2m(r.eind)==null)add(r,"ongeldige eindtijd",true);
@@ -2090,29 +2429,31 @@ $("b-adddos").onclick=async()=>{
 /* ---------- lopende velden ---------- */
 
 $("l-dossier").addEventListener("input",e=>{
-  if(!running&&!pending)return;
+  if(!running)return;
   openAC(e.target,dossierItems(e.target.value),kiesDossierItem);});
 $("l-dossier").addEventListener("focus",e=>{
-  if((pending||(running&&!running.dossierId))&&!e.target.value)
+  if(running&&!running.dossierId&&!e.target.value)
     openAC(e.target,dossierItems(""),kiesDossierItem);});
 $("l-code").addEventListener("focus",e=>{
   /* W5: laat meteen zien welke codes voor dit dossier al bekend zijn. */
-  if(!running||pending||e.target.value.trim())return;
+  if(!running||e.target.value.trim())return;
   const d=dosOf(running.dossierId);
   if(codeItems(d,"").length)openAC(e.target,codeItems(d,""),kiesCodeItem);});
 $("l-code").addEventListener("input",e=>{
-  if(!running||pending)return;
+  if(!running)return;
   const d=dosOf(running.dossierId);
   openAC(e.target,codeItems(d,e.target.value),kiesCodeItem);});
 $("l-omschr").addEventListener("input",e=>{
-  if(!running||pending)return;
+  if(!running)return;
   running.omschrijving=e.target.value;
   planOmschr(running.id,e.target.value);
   const d=dosOf(running.dossierId),q=e.target.value.replace(VOOR,"");
   if(q.length>=2)openAC(e.target,omschrItems(d,q),async it=>{
     const p=(running.omschrijving||"").match(VOOR);
     running.omschrijving=(p?p[0]:"")+it.value;
-    if(it.code&&!running.code)running.code=it.code;
+    /* Een omschrijvingssuggestie mag nooit stilzwijgend een optionele dossiercode
+       invullen. i7 heeft zijn code al expliciet gekozen vóór de omschrijving. */
+    if(it.code&&!running.code&&isIndirect(d))running.code=it.code;
     await saveRegel(running);liveId=null;
     $("l-omschr").value=running.omschrijving;$("l-code").value=codeNaam(d,running.code);
     const m=/\{[^}]+\}/.exec($("l-omschr").value);$("l-omschr").focus();
@@ -2123,8 +2464,6 @@ $("l-omschr").addEventListener("keydown",e=>{
   if(acKeys(e))return;
   if(e.key==="Enter"){e.preventDefault();e.target.blur();}});
 ["l-dossier","l-code"].forEach(id=>$(id).addEventListener("keydown",acKeys));
-$("l-dossier").addEventListener("keydown",async e=>{
-  if(e.key==="Escape"&&pending){e.preventDefault();await annuleerPending();}});
 async function dossierBlur(inp,huidigId,koppel){
   const v=inp.value.trim(),d=dosOf(huidigId);
   if(v===""){inp.classList.toggle("miss",!d);if(d)inp.value=dosVeld(d);return;}
@@ -2151,12 +2490,7 @@ async function dossierBlur(inp,huidigId,koppel){
   else{inp.value="";inp.classList.add("miss");
     toast('"'+kort(v,22)+'" is geen bestaand dossier — kies er een uit de lijst');}}
 $("l-dossier").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
-  if(pickBusy)return;
-  if(pending){
-    const v=$("l-dossier").value.trim();
-    if(v==="")return;
-    await pendingBlur(v);return;}
-  if(!running)return;
+  if(pickBusy||!running)return;
   await dossierBlur($("l-dossier"),running.dossierId,async op=>{
     const uit=await koppelRegel(running,op);
     if(!uit)return null;
@@ -2182,7 +2516,7 @@ async function codeUitVeld(r,v){
   if(uit)toast("Werkcode "+kort(v,22)+" onthouden bij "+dosVeld(uit.dossier));
   return !!uit;}
 $("l-code").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
-  if(pickBusy||!running||pending)return;
+  if(pickBusy||!running)return;
   const d=dosOf(running.dossierId);
   const ingetypt=$("l-code").value.trim();
   if(ingetypt&&ingetypt!==codeNaam(d,running.code)&&!(d&&d.voorlopig)){
@@ -2444,7 +2778,7 @@ async function maakLopend(id){
       o.regels.put(open);
       o.meta.put(open.id,"running");
       o.meta.delete("pending");});
-    pending=null;
+    pending=null;ntWizard=null;
     if(dicht)memRegel(dicht);
     memRegel(open);
     running=alle.find(x=>x.id===open.id);
@@ -2632,7 +2966,7 @@ async function importFile(file){
       await replaceAll("codes",rows);soort="werkcodes";
       toast(rows.length+" werkcodes geïmporteerd");}
     else if(d.app==="hourhound"){
-      if(running||pending){toast("Sluit eerst de lopende regel af (E)");return;}
+      if(running){toast("Sluit eerst de lopende regel af (E)");return;}
       const sv=+d.schemaVersion||0;
       if(sv>BACKUPVERSIE){
         toast("Deze back-up komt uit een nieuwere versie van hourhound");return;}
@@ -2914,8 +3248,12 @@ function tekenBoek(){
       '<input type="checkbox" data-done="'+i+'"'+(isGeboekt(r.fp)?" checked":"")+
       ' style="width:auto;min-width:0" title="Staat in Intapp"></div>';});
   $("bk-lijst").innerHTML=h;
-  $("bk-done").innerHTML=(g?"Volgende openstaande":"Geboekt &#183; volgende")+
-    ' <kbd>&#9166;</kbd>';}
+  const allesKlaar=klaar.length>=rs.length;
+  $("bk-done").classList.toggle("go",allesKlaar);
+  $("bk-done").innerHTML=(allesKlaar?"Alles geboekt &#183; sluiten":
+    (g?"Volgende openstaande":"Geboekt &#183; volgende"))+' <kbd>&#9166;</kbd>';
+  $("bk-done").title=allesKlaar?"Alle regels staan in Intapp — sluit dit venster":
+    (g?"Ga naar de volgende nog niet geboekte regel":"Markeer als geboekt en ga verder");}
 async function kopieerHuidig(){
   const x=boek.rows[boek.i];if(!x)return;
   await kopieer(schoon(x.oms),$("bk-copy"),'Kopieer omschrijving <kbd>C</kbd>');
@@ -2928,9 +3266,13 @@ $("bk-next").onclick=()=>boekGa(boek.i+1);
 $("bk-copy").onclick=kopieerHuidig;
 $("bk-done").onclick=async()=>{
   const x=boek.rows[boek.i];if(!x)return;
+  if(boek.rows.every(r=>isGeboekt(r.fp))){
+    sluitBoek();toast("Alle regels van deze dag staan als geboekt");return;}
   if(!isGeboekt(x.fp)){if(!await zetGeboekt(x.fp,true))return;}
-  if(!volgendeOpen()){tekenBoek();
-    toast("Alle regels van deze dag staan als geboekt");}
+  if(!volgendeOpen()){
+    tekenBoek();
+    toast("Alles geboekt — Enter of klik sluit het venster");
+  }
   boekStat();};
 $("bk-tab").onclick=()=>{
   const kop="Dag\tDossiernummer\tDossiernaam\tWerkcode\nOmschrijving\nUren";
@@ -3016,8 +3358,13 @@ async function migrate(){
    tot de gebruiker heeft bevestigd.                                            */
 async function herstelInvariant(){
   const rid=await get("meta","running");
-  pending=(await get("meta","pending"))||null;
-  if(pending&&pending.datum!==today()){await wisPending(true);}
+  /* Oude versies konden een uitgestelde taakwissel in meta.pending bewaren. De
+     huidige versie kent dat concept niet meer; de oude marker wordt daarom alleen
+     opgeruimd, zonder retroactief een tijdknip te verzinnen. */
+  const oudPending=(await get("meta","pending"))||null;
+  pending=null;
+  if(oudPending){try{await del("meta","pending");}catch(e){}
+    L("migratie-pending","oude uitgestelde taakwissel verwijderd");}
   const open=alle.filter(r=>!r.eind);
   if(open.length<=1){
     const lopend=open[0]||null;
@@ -3135,9 +3482,10 @@ async function zorgVoorI7(){
   const ds=await getAll("dossiers");
   if(ds.some(d=>d.isI7))return;
   const g=ds.find(d=>/^I7/i.test(d.nummer||""));
-  if(g){g.isI7=true;await put("dossiers",g);return;}
+  if(g){g.isI7=true;g.gewijzigd=Date.now();await put("dossiers",g);return;}
   await put("dossiers",{id:"d-i7",nummer:"I700000000",naam:"Indirecte uren",lang:"nl",
-    voorlopig:false,codes:[],c:ds.length,used:999,isI7:true,archief:false});}
+    voorlopig:false,codes:[],c:ds.length,used:999,isI7:true,archief:false,
+    gewijzigd:Date.now()});}
 
 async function laadInstellingen(){
   codeGebruik=(await get("meta","codeGebruik"))||{};
@@ -3145,7 +3493,7 @@ async function laadInstellingen(){
   logboek=(await get("meta","log"))||[];
   logOms=!!(await get("meta","logOms"));
   $("b-logoms").checked=logOms;$("logstat").textContent=logboek.length+" regels";
-  zetThema((await get("meta","thema"))||"auto");
+  zetThema((await get("meta","thema"))||"donker");
   rondMode=(await get("meta","rondMode"))||"groep";
   $("d-mode").value=rondMode;}
 
