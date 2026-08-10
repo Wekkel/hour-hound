@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.11"; // new Nieuwe Taak flow
+const VERSION = "0.1.12"; // new Nieuwe Taak flow
 
 const CACHE = "hourhound-" + VERSION;
 const ASSETS = [
