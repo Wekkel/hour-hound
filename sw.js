@@ -14,7 +14,16 @@ const ASSETS = [
   "./",
   "./index.html",
   "./manifest.webmanifest",
-  "./icon.svg"
+  "./icon.svg",
+   "./css/app.css",
+"./js/core.js",
+"./js/timer.js",
+"./js/wizard.js",
+"./js/views.js",
+"./js/controls.js",
+"./js/io.js",
+"./js/booking.js",
+"./js/app.js
 ];
 
 self.addEventListener("install", e => {
