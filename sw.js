@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.13"; // fix syntax error + skipWaiting
+const VERSION = "0.1.13"; // fix syntax error + behoud update-knop gedrag
 
 const CACHE = "hourhound-" + VERSION;
 
@@ -28,11 +28,12 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (e) => {
+  // Geen skipWaiting() → nieuwe worker blijft "waiting"
+  // tot de gebruiker via de knop SKIP_WAITING stuurt.
   e.waitUntil(
     caches
       .open(CACHE)
       .then((c) => c.addAll(ASSETS))
-      .then(() => self.skipWaiting())   // nieuwe versie meteen actief maken
       .catch((err) => {
         console.error("[SW] Install failed:", err);
       })
