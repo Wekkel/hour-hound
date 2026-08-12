@@ -6,12 +6,12 @@
    Verandert er iets aan deze regels, pas dan ook dit blok aan.
 
    WERKCODES
-   W1. De i7-werklijst is een VASTE lijst van kantoor (werkcodes.json). De app en de
-       gebruiker maken daar nooit codes bij aan. codeItems() biedt "Nieuwe code"
-       daarom alleen aan bij een gewoon dossier.
-   W2. werkcodes.json wordt bij iedere start opnieuw ingelezen uit dezelfde map als
-       index.html — zie laadWerkcodes(). Handmatig importeren onder Beheer blijft
-       bestaan als terugval voor file:// en offline.
+   W1. De i7-werklijst is een VASTE lijst van kantoor die via werkcodes.json wordt
+       geïmporteerd. De app en de gebruiker maken daar nooit codes bij aan.
+       codeItems() biedt "Nieuwe code" daarom alleen aan bij een gewoon dossier.
+   W2. Een eenmaal geïmporteerde i7-werklijst wordt lokaal in IndexedDB bewaard en is
+       leidend. laadWerkcodes() probeert werkcodes.json alleen als bootstrap wanneer
+       lokaal nog géén codes bestaan; het bestand hoeft dus niet in de repository.
    W3. Op het i7-dossier is een werkcode VERPLICHT, maar er is GEEN stille standaard.
        defaultCode() geeft daar bewust null terug, eisCode() vraagt de code op en
        controleer() maakt het een blokkerende fout. Nooit automatisch invullen.

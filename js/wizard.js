@@ -197,9 +197,14 @@ function ntRender(){
     i7:a.dataset.nti7||"",dvn:a.dataset.ntdvn||"",code:a.dataset.ntcode||"",
     oms:a.dataset.ntoms||"",start:typeof a.selectionStart==="number"?a.selectionStart:null,
     end:typeof a.selectionEnd==="number"?a.selectionEnd:null}:null;
+  /* De werklijst is externe wizard-state: een import onder Beheer kan i7codes
+     wijzigen zonder dat ntWizard zelf verandert. Neem daarom ook een compacte
+     fingerprint van de codes op in de render-signatuur. Anders blijft een reeds
+     geopend i7-scherm na import ten onrechte "geen werkcodes" tonen. */
+  const codeSig=i7codes.map(c=>c.code+"\u001f"+c.naam+"\u001f"+(c.favoriet?1:0)).join("\u001e");
   const sig=[ntWizard.id,ntWizard.step,ntWizard.hi,ntWizard.query,ntWizard.newNr,
     ntWizard.newNaam,ntWizard.dvnNaam,ntWizard.dvnHi,ntWizard.i7q,ntWizard.descHi,
-    ntWizard.codeOpen?1:0,ntWizard.codeHi].join("|");
+    ntWizard.codeOpen?1:0,ntWizard.codeHi,codeSig].join("|");
   if(box.dataset.sig===sig){ntRenderSamenvatting();return;}
   box.dataset.sig=sig;box.innerHTML=ntHtml();ntRenderSamenvatting();ntBind();
   if(bewaar){
@@ -247,7 +252,16 @@ async function ntBevestigNieuw(){
   ntRender();ntFocus();}
 async function ntKiesI7(code){
   if(!running||!ntWizard)return;
+  /* Een reeds gerenderde keuzeregel kan verouderd raken wanneer de werklijst in een
+     andere tab of via Beheer wordt vervangen. Alleen een code uit de actuele lijst
+     mag de wizard daarom naar de omschrijving laten doorgaan. */
+  if(!i7codes.some(c=>c.code===code)){
+    toast("De i7-werklijst is gewijzigd — kies de werkcode opnieuw");
+    ntWizard.step="i7";ntWizard.hi=0;ntRender();ntFocus();return;}
   if(!await koppelRegel(running,{code}))return;
+  if(running.code!==code){
+    toast("Werkcode is niet opgeslagen — kies hem opnieuw");
+    ntWizard.step="i7";ntWizard.hi=0;ntRender();ntFocus();return;}
   ntWizard.step="omschrijving";ntWizard.descHi=-1;ntRender();ntFocus();}
 function vervangDvnPrefix(tekst,naam){
   return String(tekst||"").replace(/^(\d{2}\.\d{2}\.\d{4} · )[^·]*( · )/,
@@ -311,6 +325,14 @@ async function ntBewaarGewoneCode(){
   return await codeUitVeld(running,v);}
 async function ntKlaar(){
   if(!running||!ntWizard)return;
+  const d=dosOf(running.dossierId);
+  /* Laat een i7-wizard nooit afronden zonder de verplichte vaste-lijstkeuze. Dit is
+     de laatste invariant achter de UI: ook een stale DOM of onverwachte statewissel
+     kan daardoor niet ongemerkt een i7-regel zonder werkcode opleveren. */
+  if(d&&d.isI7&&!running.code){
+    toast(i7codes.length?"Kies eerst de verplichte i7-werkcode":
+      "Geen i7-werkcodes beschikbaar — importeer werkcodes.json onder Beheer");
+    ntWizard.step="i7";ntWizard.hi=0;ntRender();ntFocus();return;}
   const el=$("nt-oms"),v=schoon(el?el.value:ntRauw());
   if(!v){toast("Omschrijving ontbreekt — vul hem in of sluit de invoer met Esc");ntFocus();return;}
   if(!await ntBewaarGewoneCode())return;

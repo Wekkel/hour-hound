@@ -102,10 +102,18 @@ async function importFile(file){
       await replaceAll("templates",rows);soort="sjablonen";
       toast(rows.length+" sjablonen geïmporteerd");}
     else if(d.schema==="hourhound/werkcodes"&&Array.isArray(d.codes)){
-      const rows=d.codes.filter(c=>c&&c.code).slice(0,500).map(c=>({
-        code:str(c.code,60),naam:str(c.naam,120)||str(c.code,60),favoriet:!!c.favoriet}));
-      await replaceAll("codes",rows);soort="werkcodes";
-      toast(rows.length+" werkcodes geïmporteerd");}
+      const gekeurd=keurCodes(d.codes.slice(0,500));
+      if(!gekeurd.goed.length){
+        toast("Geen bruikbare werkcodes gevonden — bestaande werklijst is behouden");return;}
+      await replaceAll("codes",gekeurd.goed);
+      /* Werk de geheugenstate meteen bij. herlaad() doet dit straks nogmaals als
+         integriteitsstap, maar hierdoor is ook tijdens een open N-wizard de nieuwe
+         lijst al de actuele bron van waarheid. */
+      i7codes=await getAll("codes");soort="werkcodes";
+      L("werkcodes-import",i7codes.length+" codes"+
+        (gekeurd.fout.length?" · "+gekeurd.fout.length+" afgekeurd":""));
+      toast(i7codes.length+" werkcodes geïmporteerd"+
+        (gekeurd.fout.length?" · "+gekeurd.fout.length+" overgeslagen":""));}
     else if(d.app==="hourhound"){
       if(running){toast("Sluit eerst de lopende regel af (E)");return;}
       const sv=+d.schemaVersion||0;

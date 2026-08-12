@@ -149,28 +149,32 @@ async function herlaad(){
   setTimeout(middernachtCheck,0);
   liveId=null;renderAll();}
 
-/* W2: de vaste i7-werklijst komt uit werkcodes.json naast index.html en wordt bij
-   iedere start gesynchroniseerd. Lukt dat niet (file://, offline, bestand ontbreekt),
-   dan blijft de eerder ingelezen lijst staan en kan er onder Beheer handmatig worden
-   geïmporteerd.                                                                 */
+/* W2: de handmatig geïmporteerde i7-werklijst in IndexedDB is leidend. De gebruiker
+   bewaart werkcodes.json bewust niet in de repository, dus een bestaande lokale lijst
+   mag bij een start nooit afhankelijk worden van een netwerkfetch of een eventueel
+   oude service-worker-cache. Alleen wanneer lokaal nog géén codes bestaan, proberen
+   we werkcodes.json als eenmalige bootstrap voor installaties die het bestand wél naast
+   index.html hebben staan.                                                      */
 async function laadWerkcodes(){
+  const lokaal=await getAll("codes");
+  if(lokaal.length){
+    i7codes=lokaal;
+    L("werkcodes-lokaal","behouden · "+lokaal.length+" codes");
+    return false;}
   let d=null;
   try{
     const r=await fetch("werkcodes.json",{cache:"no-cache"});
-    if(!r.ok){L("werkcodes-json",r.status+" bij ophalen");return false;}
+    if(!r.ok){L("werkcodes-json",r.status+" bij ophalen · lokale lijst leeg");return false;}
     d=await r.json();
-  }catch(e){L("werkcodes-json","niet opgehaald: "+String(e).slice(0,50));return false;}
+  }catch(e){L("werkcodes-json","niet opgehaald · lokale lijst leeg: "+
+    String(e).slice(0,50));return false;}
   const rij=keurCodes(d&&Array.isArray(d.codes)?d.codes:d);
-  if(!rij.goed.length){L("werkcodes-json","geen bruikbare codes");return false;}
-  const nu=await getAll("codes");
-  const gelijk=nu.length===rij.goed.length&&rij.goed.every(c=>
-    nu.some(x=>x.code===c.code&&x.naam===c.naam&&!!x.favoriet===!!c.favoriet));
-  if(gelijk){L("werkcodes-json","ongewijzigd · "+nu.length+" codes");return false;}
+  if(!rij.goed.length){L("werkcodes-json","geen bruikbare codes · lokale lijst leeg");return false;}
   await replaceAll("codes",rij.goed);
   i7codes=await getAll("codes");
-  L("werkcodes-json","gesynchroniseerd · "+rij.goed.length+" codes"+
+  L("werkcodes-json","bootstrap · "+rij.goed.length+" codes"+
     (rij.fout.length?" · "+rij.fout.length+" afgekeurd":""));
-  toast("Werkcodelijst bijgewerkt uit werkcodes.json — "+rij.goed.length+" codes");
+  toast("Werkcodelijst geladen uit werkcodes.json — "+rij.goed.length+" codes");
   return true;}
 async function zorgVoorI7(){
   const ds=await getAll("dossiers");
