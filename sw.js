@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.13"; // fix syntax error + behoud update-knop gedrag
+const VERSION = "0.1.14"; // Fix persistent i7 workcode loading and prevent stale wizard state from bypassing required workcode selection.
 
 const CACHE = "hourhound-" + VERSION;
 
