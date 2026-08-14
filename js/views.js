@@ -47,17 +47,31 @@ function renderLive(){
     (isIndirect(d)?"Een i7-regel moet een werkcode hebben":"");
   hideWake();ntRender();}
 function renderRecent(){
-  const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running)).slice(0,4);
-  $("recent").innerHTML=tk.length?tk.map((t,i)=>{
+  const recent=$("recent"),oudeScroll=recent.scrollTop;
+  const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running));
+  recent.innerHTML=tk.length?tk.map((t,i)=>{
     const d=dosOf(t.dossierId);
     return '<button class="taak" data-taak="'+esc(t.k)+'">'+
       '<span class="r1"><i style="background:'+dosColor(d)+'"></i>'+
       '<span class="dn">'+esc(taakLabel(t))+"</span>"+
       (t.code?'<span class="cd">'+esc(codeNaam(d,t.code))+"</span>":"")+
       '<span class="sp"></span><span class="ur">'+uu(t.u)+"</span>"+
-      (i<9?"<kbd>"+(i+1)+"</kbd>":"")+"</span>"+
+      (i<4?"<kbd>"+(i+1)+"</kbd>":"")+"</span>"+
       '<span class="r2">'+esc(t.oms||"geen omschrijving")+"</span></button>";}).join(""):
     '<div class="hint">Nog niets vandaag — druk N om te beginnen.</div>';
+  /* Alle taken van vandaag blijven beschikbaar. De viewport wordt pas begrensd als
+     er meer dan vier zijn. We meten de natuurlijke hoogte van de eerste vier regels,
+     zodat ook langere omschrijvingen volledig zichtbaar blijven. */
+  recent.style.maxHeight="";
+  recent.classList.toggle("recent-scroll",tk.length>4);
+  if(tk.length>4){
+    const vierde=recent.querySelectorAll("button.taak")[3];
+    const onder=parseFloat(getComputedStyle(vierde).marginBottom)||0;
+    const h=Math.ceil(vierde.getBoundingClientRect().bottom-
+      recent.getBoundingClientRect().top+onder);
+    recent.style.maxHeight=h+"px";
+    recent.scrollTop=Math.max(0,Math.min(oudeScroll,recent.scrollHeight-recent.clientHeight));}
+  else recent.scrollTop=0;
   $("i7row").innerHTML=favCodes().map((c,i)=>'<button data-i7="'+esc(c.code)+'">'+
     '<i style="background:var(--soft)"></i><span>'+esc(c.naam)+"</span>"+
     (i<5?"<kbd>"+(i+5)+"</kbd>":"")+"</button>").join("")||

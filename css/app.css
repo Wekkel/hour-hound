@@ -141,6 +141,8 @@ h2{font:500 14px/1.2 var(--sans);margin:0 0 .5rem}
 .bar button{flex:1;min-width:124px;padding:.5rem .6rem;font-size:15px}
 .strip button.taak{display:block;width:100%;padding:.35rem .5rem;text-align:left;
   font-size:14px;margin-bottom:.3rem}
+#recent.recent-scroll{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;
+  padding-right:.2rem}
 .strip .r1{display:flex;align-items:center;gap:.45rem}
 .strip .r1 i{width:9px;height:9px;border-radius:2px;flex:none}
 .strip .sp{flex:1}
