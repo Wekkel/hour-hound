@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.14"; // Fix persistent i7 workcode loading and prevent stale wizard state from bypassing required workcode selection.
+const VERSION = "0.1.15"; // recent list scrollable.
 
 const CACHE = "hourhound-" + VERSION;
 
