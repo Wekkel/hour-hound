@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.15"; // recent list scrollable.
+const VERSION = "0.1.16"; // end of day protection and wizard.
 
 const CACHE = "hourhound-" + VERSION;
 
