@@ -28,6 +28,13 @@ $("i7row").addEventListener("click",async e=>{
   naStart();});
 $("tabs").addEventListener("click",e=>{const b=e.target.closest("[data-v]");
   if(b)showTab(b.dataset.v);});
+$("open-days").addEventListener("click",async e=>{
+  const later=e.target.closest("[data-open-later]");
+  if(later){openDagenSnooze=Date.now()+6*60*60*1000;renderOpenDagen();return;}
+  const view=e.target.closest("[data-open-view]");
+  if(view){viewDate=view.dataset.openView;refreshDay();showTab("dag");renderOpenDagen();return;}
+  const close=e.target.closest("[data-open-close]");
+  if(close)await sluitWerkdag(close.dataset.openClose);});
 
 document.addEventListener("keydown",async e=>{
   if(boek.aan){boekKeys(e);return;}

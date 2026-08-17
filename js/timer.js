@@ -109,33 +109,8 @@ function startRegel(o){
 function kiesTaak(w){return startRegel(w);}
 
 async function eindeWerkdag(){
-  const dag=today();
-  if(!running&&!stack.length&&dagEinde[dag]!=null){
-    toast("Deze werkdag is al afgesloten om "+dagEinde[dag]);return;}
-  const klaar=await timerOp("einde werkdag",async t=>{
-    if(!opGeldig(t,running?running.id:null))return false;
-    const dicht=running?sluitObj(running):null;
-    const nwDagEinde=Object.assign({},dagEinde);
-    nwDagEinde[dag]=dicht?dicht.eind:nowHM();
-    await rustig([dicht?dicht.id:null]);
-    await txAll(s=>{
-      if(dicht)s.regels.put(dicht);
-      s.meta.delete("running");
-      s.meta.delete("pending");
-      s.meta.put(nwDagEinde,"dagEinde");
-      s.meta.put([],"stack");});
-    if(dicht)memRegel(dicht);
-    pending=null;running=null;dagEinde=nwDagEinde;stack=[];
-    vergeetTimerUndo("einde werkdag");
-    liveId=null;renderAll();announce();
-    return true;});
-  if(!klaar)return;
-  viewDate=dag;refreshDay();showTab("dag");
-  L("einde-werkdag",dag+" om "+dagEinde[dag]+" · "+uu(intappTotaal())+" u");
-  const tekort=Math.round((NORM-intappTotaal())*10)/10;
-  if(tekort>0.05)setTimeout(vulAanTot8,120);
-  else toast("Werkdag afgesloten om "+dagEinde[dag]+" — je zit op "+
-    uu(intappTotaal())+" uur");}
+  return sluitWerkdag(today());}
+
 
 /* ---------- dossier koppelen ----------
    Aanmaken of bijwerken van het dossier, het ophogen van used, het toevoegen van een

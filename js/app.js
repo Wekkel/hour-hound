@@ -1,7 +1,7 @@
 "use strict";
 /* ---------- render en start ---------- */
 function renderAll(){
-  renderLive();renderRecent();renderTot();
+  renderLive();renderRecent();renderTot();renderOpenDagen();
   if(tab==="dag")bouwDag();if(tab==="week")renderWeek();if(tab==="beheer")renderBeheer();}
 function showTab(v){
   tab=v;["nu","dag","week","beheer"].forEach(x=>$("v-"+x).classList.toggle("on",x===v));

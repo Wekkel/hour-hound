@@ -46,6 +46,74 @@ function renderLive(){
     "Een dossier waarvan het nummer nog volgt boekt altijd op "+codeNaam(d,defaultCode(d)):
     (isIndirect(d)?"Een i7-regel moet een werkcode hebben":"");
   hideWake();ntRender();}
+function dagRegels(datum){return alle.filter(r=>r.datum===datum);} 
+function dagIntappTotaal(datum){return simIntappTotaal(dagRegels(datum));}
+function openWerkdagen(){
+  const nu=today(),map={};
+  alle.forEach(r=>{if(r.datum<nu&&dagEinde[r.datum]==null&&r.soort!=="pauze")map[r.datum]=true;});
+  return Object.keys(map).sort((a,b)=>b.localeCompare(a));}
+function renderOpenDagen(){
+  const box=$("open-days");if(!box)return;
+  const dagen=Date.now()<openDagenSnooze?[]:openWerkdagen();
+  if(!dagen.length){box.classList.remove("on");box.innerHTML="";return;}
+  const d=dagen[0],n=dagRegels(d).filter(r=>r.soort!=="pauze").length;
+  box.innerHTML='<span><strong>Nog niet afgesloten:</strong> '+esc(dagLabel(d))+', '+
+    n+' regel'+(n===1?'':'s')+' en '+uu(dagIntappTotaal(d))+
+    ' uur in de Intapp-samenvatting'+(dagen.length>1?' · '+(dagen.length-1)+' oudere dag(en) daarna':'')+'</span>'+ 
+    '<div class="spacer"></div>'+ 
+    '<button class="sm" data-open-view="'+esc(d)+'">Bekijk</button>'+ 
+    '<button class="sm go" data-open-close="'+esc(d)+'">Sluit '+esc(kortDag(d))+'</button>'+ 
+    '<button class="sm ghost" data-open-later="1">Later</button>';
+  box.classList.add("on");}
+function voorstelDagEinde(datum){
+  const list=dagRegels(datum),mins=list.map(r=>hm2m(eindOf(r))||hm2m(r.start)||0);
+  let m=mins.length?Math.max(...mins):null;
+  if(datum<today())m=Math.max(m||0,17*60);
+  if(datum===today())m=hm2m(nowHM())||m||17*60;
+  return m2hm(m==null?17*60:m);}
+async function sluitWerkdag(datum){
+  if(opBlok){toast("Rond eerst het herstelvenster af");return false;}
+  if(dagEinde[datum]!=null){toast("Deze werkdag is al afgesloten om "+dagEinde[datum]);return false;}
+  const list=dagRegels(datum);
+  if(!list.length){toast("Geen regels op "+dmy(datum));return false;}
+  const oud=datum!==today();
+  let eind=oud?prompt("Je sluit "+dagLabel(datum)+" af.\n\nWelke eindtijd moet Hour Hound gebruiken voor eventuele Diversen-aanvulling?",voorstelDagEinde(datum)):nowHM();
+  if(eind===null)return false;
+  eind=eind.trim();
+  if(hm2m(eind)==null){toast("Ongeldige eindtijd");return false;}
+  const huidig=dagIntappTotaal(datum),tekort=Math.round((NORM-huidig)*10)/10;
+  let msg="Werkdag afsluiten: "+dagLabel(datum)+" om "+eind+".\n\n"+
+    "Nu verantwoord in Intapp: "+uu(huidig)+" uur.";
+  if(tekort>0.05)msg+="\nNa afsluiten kan Hour Hound voorstellen om "+uu(tekort)+" uur aan te vullen als i7 · Diversen."+
+    " Je kunt die aanvulling daarna nog weigeren.";
+  else msg+="\nEr is geen Diversen-aanvulling nodig.";
+  if(oud)msg+="\n\nLet op: dit is een eerdere dag, niet vandaag.";
+  else{const openOud=openWerkdagen();
+    if(openOud.length)msg+="\n\nLet op: er " + (openOud.length===1?"staat":"staan")+
+      " nog " + openOud.length + " eerdere open werkdag" + (openOud.length===1?"":"en") +
+      ", te beginnen met " + dmy(openOud[0]) + ". Je sluit nu vandaag af.";}
+  if(!confirm(msg+"\n\nDoorgaan?"))return false;
+  const klaar=await timerOp("einde werkdag",async t=>{
+    if(!opGeldig(t,running?running.id:null))return false;
+    const wasRunning=running&&running.datum===datum;
+    const dicht=wasRunning?sluitObj(running,eind):null;
+    const nwDagEinde=Object.assign({},dagEinde);nwDagEinde[datum]=eind;
+    await rustig([dicht?dicht.id:null]);
+    await txAll(s=>{
+      if(dicht)s.regels.put(dicht);
+      if(wasRunning){s.meta.delete("running");s.meta.delete("pending");s.meta.put([],"stack");}
+      s.meta.put(nwDagEinde,"dagEinde");});
+    if(dicht)memRegel(dicht);
+    if(wasRunning){pending=null;running=null;stack=[];vergeetTimerUndo("einde werkdag");liveId=null;}
+    dagEinde=nwDagEinde;viewDate=datum;refreshDay();showTab("dag");renderAll();announce();
+    return true;});
+  if(!klaar)return false;
+  L("einde-werkdag",datum+" om "+dagEinde[datum]+" · "+uu(intappTotaal())+" u");
+  const naTekort=Math.round((NORM-intappTotaal())*10)/10;
+  if(naTekort>0.05)setTimeout(vulAanTot8,120);
+  else toast("Werkdag afgesloten om "+dagEinde[datum]+" — je zit op "+uu(intappTotaal())+" uur");
+  return true;}
+
 function renderRecent(){
   const recent=$("recent"),oudeScroll=recent.scrollTop;
   const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running));
@@ -383,10 +451,15 @@ async function vulAanTot8(){
     (plan.rijen.length>1?"ken":"")+": "+
     plan.rijen.map(r=>r.start+"–"+r.eind).join(", "));
   if(!plan.plan.length){toast("Niets aan te vullen");return;}
+  const extra=plan.plan.reduce((s,r)=>s+urenOf(r),0);
+  const waarschuwing=extra>=7.95?
+    "\n\nLET OP: je boekt vrijwel de hele werkdag als Diversen." :
+    (extra>1.0?"\n\nLet op: dit boekt "+uu(extra)+" uur als Diversen." : "");
   if(!confirm("Aanvullen met i7 · "+codeNaam(plan.ind,plan.code)+" · Diversen:\n\n"+
-    wat.join("\n")+"\n\nDagtotaal wordt "+uu(plan.eind)+" uur"+
+    wat.join("\n")+"\n\nToe te voegen: "+uu(extra)+" uur.\nDagtotaal wordt "+uu(plan.eind)+" uur"+
     (Math.abs(plan.eind-NORM)>0.05?" (de norm van "+uu(NORM)+
-      " uur wordt niet exact bereikt)":"")+".\n\nDoorgaan?"))return;
+      " uur wordt niet exact bereikt)":"")+"."+waarschuwing+
+    "\n\nKies Annuleren om de dag afgesloten te laten zonder Diversen-aanvulling.\n\nDoorgaan?"))return;
   try{
     await txAll(s=>{plan.plan.forEach(r=>s.regels.put(r));});
   }catch(e){L("FOUT-aanvullen",String(e));

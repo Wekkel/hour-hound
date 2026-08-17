@@ -287,4 +287,7 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
   border:1px solid var(--rust);color:var(--rust);font-size:14px;
   align-items:center;gap:.6rem;flex-wrap:wrap}
 .waarschuw.on{display:flex}
+.dagwarn{border-color:var(--amber);color:var(--ink);background:var(--warm)}
+.dagwarn strong{color:var(--amber)}
+.dagwarn .hint{color:var(--soft)}
 .toast{z-index:70}
