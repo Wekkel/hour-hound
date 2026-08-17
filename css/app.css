@@ -313,3 +313,7 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
   border-radius:9px;background:var(--warm);color:var(--ink);font-size:14px;line-height:1.45}
 .closewarn.on{display:block}
 #dc-fill.strong{background:var(--rust);border-color:var(--rust);color:#fff}
+.daystatus .auditline{color:var(--soft);font-size:13px;flex-basis:100%}
+tr.isauto td{background:rgba(197,139,64,.10)}
+.autobadge{display:inline-block;margin-right:.35rem;padding:.12rem .34rem;border:1px solid var(--amber);
+  border-radius:999px;color:var(--amber);font:500 10px/1 var(--sans);text-transform:uppercase;letter-spacing:.04em}

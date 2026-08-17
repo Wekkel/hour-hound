@@ -84,7 +84,7 @@ const NORM=8.0, VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 
 let db=null,dossiers=[],templates=[],i7codes=[],alle=[],regels=[],running=null,stack=[];
 let viewDate=today(),weekAnchor=today(),tab="nu",liveId=null;
-let hiddenAt=null,rondMode="groep",dagEinde={},snoozeTot=0,openDagenSnooze=0;
+let hiddenAt=null,rondMode="groep",dagEinde={},dagAudit={},snoozeTot=0,openDagenSnooze=0;
 let ntWizard=null;   // UI-state; N heeft de nieuwe timer dan al werkelijk gestart
 let pending=null;    // alleen voor het opruimen van oude versies; nieuwe code gebruikt dit niet
 const TABID=Math.random().toString(36).slice(2);

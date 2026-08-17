@@ -72,6 +72,23 @@ function voorstelDagEinde(datum){
   if(datum===today())m=hm2m(nowHM())||m||17*60;
   return m2hm(m==null?17*60:m);}
 function dagTekort(datum){return Math.max(0,Math.round((NORM-dagIntappTotaal(datum))*10)/10);}
+function auditDag(datum,type,extra){
+  const bestaand=dagAudit&&dagAudit[datum]&&Array.isArray(dagAudit[datum].events)?
+    dagAudit[datum].events.slice():[];
+  bestaand.push(Object.assign({type:type,t:new Date().toISOString()},extra||{}));
+  return{events:bestaand.slice(-20)};}
+function auditSamenvatting(datum){
+  const a=dagAudit&&dagAudit[datum];
+  const ev=a&&Array.isArray(a.events)?a.events:[];
+  if(!ev.length)return"";
+  return ev.slice(-3).map(e=>{
+    const t=e.t?new Date(e.t).toLocaleString("nl-NL",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"";
+    if(e.type==="gesloten")return "Afgesloten"+(e.eind?" om "+e.eind:"")+(t?" ("+t+")":"");
+    if(e.type==="aangevuld")return "Automatisch aangevuld: "+uu(e.uren||0)+" u"+(e.regels?" in "+e.regels+" regel(s)":"");
+    if(e.type==="heropend")return "Heropend"+(e.autoVerwijderd?"; "+e.autoVerwijderd+" automatische regel(s) verwijderd":"");
+    return e.type||"audit";
+  }).join(" · " );}
+function autoAanvulRegels(datum){return dagRegels(datum).filter(r=>r.autoAanvul);}
 function dagAfsluitWaarschuwing(datum,tekort){
   const oud=datum!==today(),openOud=datum===today()?openWerkdagen():[];
   const p=[];
@@ -137,14 +154,16 @@ async function sluitWerkdag(datum){
     const wasRunning=running&&running.datum===datum;
     const dicht=wasRunning?sluitObj(running,eind):null;
     const nwDagEinde=Object.assign({},dagEinde);nwDagEinde[datum]=eind;
+    const nwDagAudit=Object.assign({},dagAudit);
+    nwDagAudit[datum]=auditDag(datum,"gesloten",{eind:eind,totaalVoor:dagIntappTotaal(datum)});
     await rustig([dicht?dicht.id:null]);
     await txAll(s=>{
       if(dicht)s.regels.put(dicht);
       if(wasRunning){s.meta.delete("running");s.meta.delete("pending");s.meta.put([],"stack");}
-      s.meta.put(nwDagEinde,"dagEinde");});
+      s.meta.put(nwDagEinde,"dagEinde");s.meta.put(nwDagAudit,"dagAudit");});
     if(dicht)memRegel(dicht);
     if(wasRunning){pending=null;running=null;stack=[];vergeetTimerUndo("einde werkdag");liveId=null;}
-    dagEinde=nwDagEinde;viewDate=datum;refreshDay();showTab("dag");renderAll();announce();
+    dagEinde=nwDagEinde;dagAudit=nwDagAudit;viewDate=datum;refreshDay();showTab("dag");renderAll();announce();
     return true;});
   if(!klaar)return false;
   L("einde-werkdag",datum+" om "+dagEinde[datum]+" · "+uu(dagIntappTotaal(datum))+" u");
@@ -210,11 +229,17 @@ function renderDagStatus(){
   let h='<span class="main">Status: '+esc(status)+'</span>'+ 
     '<span>Verantwoord <b class="metric">'+uu(huidig)+'</b> / '+uu(NORM)+' u</span>'+ 
     '<span>Nog nodig <b class="metric">'+uu(tekort)+'</b> u</span>';
+  const autos=autoAanvulRegels(viewDate),audit=auditSamenvatting(viewDate);
+  if(autos.length)h+='<span class="warnline">Automatische Diversen-regels: '+autos.length+'</span>';
+  if(audit)h+='<span class="auditline">'+esc(audit)+'</span>';
   if(loopt)h+='<span class="warnline">Er loopt nog een regel op deze dag.</span>';
   if(oudOpen)h+='<span class="warnline">Deze dag staat nog open.</span>';
   h+='<div class="spacer"></div>';
   if(!gesloten)h+='<button class="sm go" data-close-current="1">Sluit deze dag af</button>';
-  else if(tekort>0.05&&!(running&&running.datum===viewDate))h+='<button class="sm" data-fill-current="1">Aanvullen tot 8,0</button>';
+  else{
+    h+='<button class="sm ghost" data-reopen-current="1">Heropen dag</button>';
+    if(tekort>0.05&&!(running&&running.datum===viewDate))h+='<button class="sm" data-fill-current="1">Aanvullen tot 8,0</button>';
+  }
   el.innerHTML=h;}
 
 /* ---------- weergave: DAG ---------- */
@@ -235,7 +260,7 @@ function bouwDag(){
         '</td><td class="x"><button class="sm ghost" data-fill="'+row.g[0]+"-"+row.g[1]+
         '" title="Deze tijd invullen">&#9998;</button></td></tr>';return;}
     const r=row.r,d=dosOf(r.dossierId),run=running&&running.id===r.id;
-    h+='<tr class="'+(run?"isrun ":"")+(r.soort==="pauze"?"ispauze":"")+'" data-id="'+esc(r.id)+'">'+
+    h+='<tr class="'+(run?"isrun ":"")+(r.soort==="pauze"?"ispauze ":"")+(r.autoAanvul?"isauto":"")+'" data-id="'+esc(r.id)+'">'+
       '<td class="t"><input data-f="start" value="'+esc(r.start)+'"></td>'+
       '<td class="t"><input data-f="eind" value="'+esc(run?"":(r.eind||""))+
         '" placeholder="'+(run?"loopt":"")+'"></td>'+
@@ -248,6 +273,7 @@ function bouwDag(){
       '<td><input data-f="omschrijving" value="'+esc(r.omschrijving)+'" autocomplete="off"></td>'+
       '<td class="u"><input data-f="uren" value="'+uu(urenOf(r))+'"></td>'+
       '<td class="x">'+
+      (r.autoAanvul?'<span class="autobadge" title="Automatisch aangemaakt bij dagaanvulling">auto</span>':"")+
       ((!run&&r.eind&&viewDate===today()&&r.soort!=="pauze")?
         '<button class="sm ghost" data-maaklopend="'+esc(r.id)+
         '" title="Maak dit de lopende timer">&#9654;</button>':"")+
@@ -441,7 +467,7 @@ function simIntappTotaal(lijst){
 function aanvulRegel(gp,minuten,ind,code){
   return nieuweRegel({datum:viewDate,start:m2hm(gp[0]),eind:m2hm(gp[0]+minuten),
     dossierId:ind.id,code,omschrijving:"Diversen",uren:Math.ceil(minuten/6)/10,
-    autoAanvul:true});}
+    autoAanvul:true,autoAanvulOp:Date.now(),autoAanvulReden:"dag-aanvulling"});}
 function grootsteBlokTotNorm(basis,gp,ind,code){
   let lo=1,hi=Math.max(0,gp[1]-gp[0]),best=0,bestTot=simIntappTotaal(basis);
   const voor=bestTot;
@@ -517,10 +543,17 @@ async function vulAanTot8(){
     (Math.abs(plan.eind-NORM)>0.05?" (de norm van "+uu(NORM)+
       " uur wordt niet exact bereikt)":"")+"."+waarschuwing+
     "\n\nKies Annuleren om de dag afgesloten te laten zonder Diversen-aanvulling.\n\nDoorgaan?"))return;
+  const batch=uid();
+  plan.plan.forEach(r=>{r.autoAanvulBatch=batch;r.autoAanvulOp=Date.now();});
+  const nwDagAudit=Object.assign({},dagAudit);
+  nwDagAudit[viewDate]=auditDag(viewDate,"aangevuld",{
+    uren:extra,regels:plan.plan.length,ids:plan.plan.map(r=>r.id),batch:batch,
+    totaalNa:plan.eind});
   try{
-    await txAll(s=>{plan.plan.forEach(r=>s.regels.put(r));});
+    await txAll(s=>{plan.plan.forEach(r=>s.regels.put(r));s.meta.put(nwDagAudit,"dagAudit");});
   }catch(e){L("FOUT-aanvullen",String(e));
     toast("Aanvullen mislukt — er is niets gewijzigd: "+e);return;}
+  dagAudit=nwDagAudit;
   plan.plan.forEach(memRegel);
   undoData("dag aanvullen",[],{weg:plan.plan.map(r=>r.id)});
   bouwDag();renderTot();announce();
@@ -529,10 +562,48 @@ async function vulAanTot8(){
   toast(Math.abs(werkelijk-NORM)<0.05?
     "Aangevuld tot "+uu(NORM)+" uur in de Intapp-samenvatting":
     "Aangevuld — de Intapp-samenvatting staat nu op "+uu(werkelijk)+" uur");}
+async function heropenWerkdag(datum){
+  if(opBlok){toast("Rond eerst het herstelvenster af");return;}
+  if(dagEinde[datum]==null){toast("Deze dag is al open");return;}
+  if(running&&running.datum===datum){toast("Er loopt nog een regel op deze dag");return;}
+  const autos=autoAanvulRegels(datum);
+  let verwijder=false;
+  if(autos.length){
+    const keuze=prompt("Je heropent "+dagLabel(datum)+".\n\n"+
+      "Deze dag bevat "+autos.length+" automatische Diversen-regel"+(autos.length===1?"":"s")+".\n\n"+
+      "1 = heropenen en automatische Diversen-regels verwijderen\n"+
+      "2 = heropenen maar automatische regels laten staan\n\n"+
+      "Kies 1 of 2.","1");
+    if(keuze===null)return;
+    const k=keuze.trim();
+    if(k!=="1"&&k!=="2"){toast("Heropenen geannuleerd");return;}
+    verwijder=k==="1";
+  }else if(!confirm("Werkdag "+dagLabel(datum)+" heropenen?"))return;
+  const nwDagEinde=Object.assign({},dagEinde);
+  const vorigeEind=nwDagEinde[datum];delete nwDagEinde[datum];
+  const nwDagAudit=Object.assign({},dagAudit);
+  nwDagAudit[datum]=auditDag(datum,"heropend",{
+    vorigeEind:vorigeEind,autoVerwijderd:verwijder?autos.length:0,autoBehouden:verwijder?0:autos.length});
+  try{
+    await rustig(verwijder?autos.map(r=>r.id):[]);
+    await txAll(o=>{
+      if(verwijder)autos.forEach(r=>o.regels.delete(r.id));
+      o.meta.put(nwDagEinde,"dagEinde");
+      o.meta.put(nwDagAudit,"dagAudit");});
+  }catch(e){L("FOUT-heropen",String(e));toast("Heropenen mislukt — niets gewijzigd: "+e);return;}
+  dagEinde=nwDagEinde;dagAudit=nwDagAudit;
+  if(verwijder&&autos.length){
+    const ids=new Set(autos.map(r=>r.id));
+    alle=alle.filter(r=>!ids.has(r.id));
+    undoStack=undoStack.filter(a=>!(a.soort==="data"&&(a.weg||[]).some(id=>ids.has(id))));}
+  viewDate=datum;refreshDay();bouwDag();renderAll();announce();
+  L("dag-heropend",datum+" · auto verwijderd "+(verwijder?autos.length:0));
+  toast("Werkdag heropend"+(verwijder&&autos.length?" — automatische Diversen-regels verwijderd":""));}
 $("d-fill").onclick=vulAanTot8;
 $("d-status").addEventListener("click",async e=>{
   if(e.target.closest("[data-close-current]")){await sluitWerkdag(viewDate);return;}
   if(e.target.closest("[data-fill-current]")){await vulAanTot8();return;}
+  if(e.target.closest("[data-reopen-current]")){await heropenWerkdag(viewDate);return;}
 });
 
 /* ---------- weergave: WEEK ---------- */
@@ -669,8 +740,8 @@ $("b-wipe").onclick=async()=>{
   if(!confirm("Zeker weten? Maak eerst een export als je iets wilt bewaren."))return;
   await txAll(o=>{o.dossiers.clear();o.regels.clear();
     o.meta.delete("running");o.meta.delete("stack");o.meta.delete("dagEinde");
-    o.meta.delete("geboekt");});
-  stack=[];dagEinde={};undoStack=[];geboekt={};running=null;
+    o.meta.delete("dagAudit");o.meta.delete("geboekt");});
+  stack=[];dagEinde={};dagAudit={};undoStack=[];geboekt={};running=null;
   await zorgVoorI7();await herlaad();
   L("alles-gewist","");toast("Gewist — hourhound begint schoon");};
 $("b-adddos").onclick=async()=>{

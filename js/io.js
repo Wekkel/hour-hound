@@ -3,7 +3,7 @@
 $("b-import").onclick=()=>$("file").click();
 $("file").onchange=e=>{const f=e.target.files[0];if(f)importFile(f);e.target.value="";};
 const str=(v,max)=>typeof v==="string"?v.slice(0,max||400):"";
-const BACKUPVERSIE=5;
+const BACKUPVERSIE=6;
 /* Een datum is pas geldig als hij na parsen exact dezelfde tekst oplevert: zo vallen
    2026-02-30 en 2026-13-01 er ook uit.                                          */
 const isDatum=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&
@@ -43,6 +43,9 @@ function keurRegels(arr){
       dossierId:typeof x.dossierId==="string"?x.dossierId:null,
       code:x.code?str(x.code,60):null,omschrijving:str(x.omschrijving,2000),
       uren:Math.round(u*10)/10,urenHand:!!x.urenHand,autoAanvul:!!x.autoAanvul,
+      autoAanvulOp:+x.autoAanvulOp||0,
+      autoAanvulBatch:x.autoAanvulBatch?str(x.autoAanvulBatch,80):null,
+      autoAanvulReden:x.autoAanvulReden?str(x.autoAanvulReden,80):null,
       soort:SOORTEN.indexOf(x.soort)>=0?x.soort:"werk",
       gemaakt:+x.gemaakt||Date.now(),gewijzigd:+x.gewijzigd||0});});
   return{goed,fout};}
@@ -89,6 +92,21 @@ function keurCodes(arr){
     goed.push({code:str(x.code,60),naam:str(x.naam,120)||str(x.code,60),
       favoriet:!!x.favoriet});});
   return{goed,fout};}
+function keurDagAudit(x){
+  if(!x||typeof x!=="object")return{};
+  const out={};
+  Object.keys(x).forEach(d=>{
+    if(!isDatum(d))return;
+    const ev=x[d]&&Array.isArray(x[d].events)?x[d].events:[];
+    out[d]={events:ev.slice(-20).filter(e=>e&&typeof e==="object").map(e=>({
+      type:str(e.type,40)||"audit",t:str(e.t,40)||new Date().toISOString(),
+      eind:e.eind?str(e.eind,5):null,vorigeEind:e.vorigeEind?str(e.vorigeEind,5):null,
+      uren:+e.uren||0,regels:+e.regels||0,totaalVoor:+e.totaalVoor||0,
+      totaalNa:+e.totaalNa||0,autoVerwijderd:+e.autoVerwijderd||0,
+      autoBehouden:+e.autoBehouden||0,batch:e.batch?str(e.batch,80):null,
+      reden:e.reden?str(e.reden,120):null,
+      ids:Array.isArray(e.ids)?e.ids.filter(id=>typeof id==="string").slice(0,200):[]}))};});
+  return out;}
 async function importFile(file){
   if(file.size>20*1024*1024){toast("Bestand te groot");return;}
   let d;try{d=JSON.parse(await file.text());}catch(err){toast("Geen geldig JSON");return;}
@@ -209,10 +227,11 @@ async function importFile(file){
         if(!confirm("Terugzetten wist de huidige "+alle.length+" tijdregels en "+
           dossiers.length+" dossiers.\n\nZeker weten?"))return;
         /* Expliciet: wat gaat er wel en niet mee terug?
-           altijd terug : dagafsluitingen, afrondingsmodus, codegebruik, boekstatus, thema
+           altijd terug : dagafsluitingen, dag-audit, afrondingsmodus, codegebruik, boekstatus, thema
            op keuze     : de geparkeerde terugkeerstapel en een lopende timer
            nooit        : het logboek (dat zit niet in de back-up)              */
         const mDag=(M.dagEinde&&typeof M.dagEinde==="object")?M.dagEinde:{};
+        const mAudit=keurDagAudit(M.dagAudit);
         const mCode=(M.codeGebruik&&typeof M.codeGebruik==="object")?M.codeGebruik:{};
         const mBoek=(M.geboekt&&typeof M.geboekt==="object")?M.geboekt:{};
         const mRond=M.rondMode==="regel"?"regel":"groep";
@@ -231,6 +250,7 @@ async function importFile(file){
           if(hervatId)o.meta.put(hervatId,"running");else o.meta.delete("running");
           o.meta.put(neemStack?mStack:[],"stack");
           o.meta.put(mDag,"dagEinde");
+          o.meta.put(mAudit,"dagAudit");
           o.meta.put(mRond,"rondMode");
           o.meta.put(mCode,"codeGebruik");
           o.meta.put(mBoek,"geboekt");
@@ -274,6 +294,7 @@ $("b-export").onclick=async()=>{
     dossiers:await getAll("dossiers"),regels:await getAll("regels"),
     templates:await getAll("templates"),codes:await getAll("codes"),
     meta:{dagEinde:(await get("meta","dagEinde"))||{},
+      dagAudit:(await get("meta","dagAudit"))||{},
       stack:(await get("meta","stack"))||[],
       rondMode:(await get("meta","rondMode"))||"groep",
       codeGebruik:(await get("meta","codeGebruik"))||{},

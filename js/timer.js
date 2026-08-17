@@ -59,9 +59,14 @@ async function _start(o){
   if(o.stackNa)nwStack=o.stackNa;
   else if((o.soort||"werk")==="werk"&&!o.bewaarStack&&stack.length)nwStack=[];
   const nwDagEinde=Object.assign({},dagEinde);
+  const nwDagAudit=Object.assign({},dagAudit);
   const dagEindeWeg=nwDagEinde[dag]!=null;
   const autoWeg=dagEindeWeg?alle.filter(r=>r.datum===dag&&r.autoAanvul):[];
-  if(dagEindeWeg)delete nwDagEinde[dag];
+  if(dagEindeWeg){
+    delete nwDagEinde[dag];
+    nwDagAudit[dag]=auditDag(dag,"heropend",{
+      reden:"nieuwe timer gestart",autoVerwijderd:autoWeg.length,
+      vorigeEind:dagEinde[dag]});}
   const dos=maak||(nieuw.dossierId?dosOf(nieuw.dossierId):null);
   const dosNw=dos?stempel(Object.assign({},dos,{used:(dos.used||0)+1})):null;
   const nwCode=Object.assign({},codeGebruik);
@@ -74,7 +79,7 @@ async function _start(o){
     s.regels.put(nieuw);
     s.meta.put(nieuw.id,"running");
     if(nwStack)s.meta.put(nwStack,"stack");
-    if(dagEindeWeg)s.meta.put(nwDagEinde,"dagEinde");
+    if(dagEindeWeg){s.meta.put(nwDagEinde,"dagEinde");s.meta.put(nwDagAudit,"dagAudit");}
     if(dosNw)s.dossiers.put(dosNw);
     if(nieuw.code)s.meta.put(nwCode,"codeGebruik");});
   pending=null;
@@ -88,7 +93,7 @@ async function _start(o){
   memRegel(nieuw);
   running=nieuw;viewDate=dag;
   if(nwStack)stack=nwStack;
-  if(dagEindeWeg)dagEinde=nwDagEinde;
+  if(dagEindeWeg){dagEinde=nwDagEinde;dagAudit=nwDagAudit;}
   if(dosNw)memDossier(dosNw);
   if(maak)L("dossier-nieuw","dos"+idKort(maak.id)+(maak.nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(maak.naam):""));

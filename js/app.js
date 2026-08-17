@@ -142,6 +142,7 @@ async function herlaad(){
   i7codes=await getAll("codes");alle=await getAll("regels");
   stack=(await get("meta","stack"))||[];
   dagEinde=(await get("meta","dagEinde"))||{};
+  dagAudit=(await get("meta","dagAudit"))||{};
   refreshDay();
   await herstelInvariant();
   /* Niet awaiten: herlaad() kan vanuit de foutafhandeling van een timerOp worden
