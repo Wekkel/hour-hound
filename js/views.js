@@ -71,28 +71,67 @@ function voorstelDagEinde(datum){
   if(datum<today())m=Math.max(m||0,17*60);
   if(datum===today())m=hm2m(nowHM())||m||17*60;
   return m2hm(m==null?17*60:m);}
+function dagTekort(datum){return Math.max(0,Math.round((NORM-dagIntappTotaal(datum))*10)/10);}
+function dagAfsluitWaarschuwing(datum,tekort){
+  const oud=datum!==today(),openOud=datum===today()?openWerkdagen():[];
+  const p=[];
+  if(oud)p.push("Dit is een eerdere dag, niet vandaag. Controleer de eindtijd voordat je afsluit.");
+  if(!oud&&openOud.length)p.push("Er "+(openOud.length===1?"staat":"staan")+" nog "+openOud.length+
+    " eerdere open werkdag"+(openOud.length===1?"":"en")+", te beginnen met "+dmy(openOud[0])+
+    ". Je sluit nu vandaag af.");
+  if(tekort>=7.95)p.push("Je staat op het punt vrijwel een hele werkdag als Diversen te kunnen aanvullen.");
+  else if(tekort>3.0)p.push("Er ontbreekt meer dan 3 uur. Gebruik aanvullen alleen als dit echt algemene i7-tijd was.");
+  else if(tekort>1.0)p.push("Er ontbreekt meer dan 1 uur. Controleer of je geen inhoudelijke taakregels mist.");
+  return p;}
+function dagAfsluitKeuze(datum){
+  const dlg=$("dayclose");
+  if(!dlg){
+    const eind=datum!==today()?prompt("Je sluit "+dagLabel(datum)+" af.\n\nEindtijd?",voorstelDagEinde(datum)):nowHM();
+    if(eind===null)return Promise.resolve(null);
+    return Promise.resolve({actie:"fill",eind});}
+  const huidig=dagIntappTotaal(datum),tekort=dagTekort(datum),gesloten=dagEinde[datum]!=null;
+  const eindVoorstel=voorstelDagEinde(datum),warnings=dagAfsluitWaarschuwing(datum,tekort);
+  $("dc-date").textContent=dagLabel(datum);
+  $("dc-status").textContent=gesloten?"al afgesloten":(datum===today()?"vandaag open":"eerdere dag open");
+  $("dc-done").textContent=uu(huidig)+" u";
+  $("dc-miss").textContent=uu(tekort)+" u";
+  $("dc-end").value=eindVoorstel;
+  $("dc-help").textContent=tekort>0.05?
+    "Kies bewust of Hour Hound echte vrije gaten vóór de eindtijd mag aanvullen met i7 · Praktijkorganisatie/administratie · Diversen. Annuleren of ‘zonder aanvullen’ boekt niets extra." :
+    "Er is geen Diversen-aanvulling nodig; afsluiten legt alleen de eindtijd vast.";
+  $("dc-warn").innerHTML=warnings.map(esc).join("<br>");
+  $("dc-warn").classList.toggle("on",warnings.length>0);
+  $("dc-fill").textContent=tekort>0.05?"Afsluiten + aanvullen":"Afsluiten";
+  $("dc-fill").classList.toggle("strong",tekort>=7.95);
+  $("dc-nofill").style.display=tekort>0.05?"":"none";
+  dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
+  setTimeout(()=>$("dc-end").focus(),0);
+  return new Promise(resolve=>{
+    const done=v=>{dlg.classList.remove("on");dlg.setAttribute("aria-hidden","true");
+      document.removeEventListener("keydown",key,true);resolve(v);};
+    const valid=actie=>{const eind=$("dc-end").value.trim();
+      if(hm2m(eind)==null){toast("Ongeldige eindtijd");$("dc-end").focus();return;}
+      done({actie,eind});};
+    const key=e=>{if(!dlg.classList.contains("on"))return;
+      if(e.key==="Escape"){e.preventDefault();done(null);}
+      if(e.key==="Enter"&&e.target===$("dc-end")){e.preventDefault();valid(tekort>0.05?"fill":"nofill");}};
+    document.addEventListener("keydown",key,true);
+    $("dc-fill").onclick=()=>valid(tekort>0.05?"fill":"nofill");
+    $("dc-nofill").onclick=()=>valid("nofill");
+    $("dc-goday").onclick=()=>done({actie:"day",eind:null});
+    $("dc-cancel").onclick=()=>done(null);
+    $("dc-x").onclick=()=>done(null);});}
 async function sluitWerkdag(datum){
   if(opBlok){toast("Rond eerst het herstelvenster af");return false;}
   if(dagEinde[datum]!=null){toast("Deze werkdag is al afgesloten om "+dagEinde[datum]);return false;}
   const list=dagRegels(datum);
   if(!list.length){toast("Geen regels op "+dmy(datum));return false;}
-  const oud=datum!==today();
-  let eind=oud?prompt("Je sluit "+dagLabel(datum)+" af.\n\nWelke eindtijd moet Hour Hound gebruiken voor eventuele Diversen-aanvulling?",voorstelDagEinde(datum)):nowHM();
-  if(eind===null)return false;
-  eind=eind.trim();
+  const keuze=await dagAfsluitKeuze(datum);
+  if(!keuze)return false;
+  if(keuze.actie==="day"){
+    viewDate=datum;refreshDay();showTab("dag");renderOpenDagen();return false;}
+  const eind=keuze.eind.trim();
   if(hm2m(eind)==null){toast("Ongeldige eindtijd");return false;}
-  const huidig=dagIntappTotaal(datum),tekort=Math.round((NORM-huidig)*10)/10;
-  let msg="Werkdag afsluiten: "+dagLabel(datum)+" om "+eind+".\n\n"+
-    "Nu verantwoord in Intapp: "+uu(huidig)+" uur.";
-  if(tekort>0.05)msg+="\nNa afsluiten kan Hour Hound voorstellen om "+uu(tekort)+" uur aan te vullen als i7 · Diversen."+
-    " Je kunt die aanvulling daarna nog weigeren.";
-  else msg+="\nEr is geen Diversen-aanvulling nodig.";
-  if(oud)msg+="\n\nLet op: dit is een eerdere dag, niet vandaag.";
-  else{const openOud=openWerkdagen();
-    if(openOud.length)msg+="\n\nLet op: er " + (openOud.length===1?"staat":"staan")+
-      " nog " + openOud.length + " eerdere open werkdag" + (openOud.length===1?"":"en") +
-      ", te beginnen met " + dmy(openOud[0]) + ". Je sluit nu vandaag af.";}
-  if(!confirm(msg+"\n\nDoorgaan?"))return false;
   const klaar=await timerOp("einde werkdag",async t=>{
     if(!opGeldig(t,running?running.id:null))return false;
     const wasRunning=running&&running.datum===datum;
@@ -108,10 +147,10 @@ async function sluitWerkdag(datum){
     dagEinde=nwDagEinde;viewDate=datum;refreshDay();showTab("dag");renderAll();announce();
     return true;});
   if(!klaar)return false;
-  L("einde-werkdag",datum+" om "+dagEinde[datum]+" · "+uu(intappTotaal())+" u");
-  const naTekort=Math.round((NORM-intappTotaal())*10)/10;
-  if(naTekort>0.05)setTimeout(vulAanTot8,120);
-  else toast("Werkdag afgesloten om "+dagEinde[datum]+" — je zit op "+uu(intappTotaal())+" uur");
+  L("einde-werkdag",datum+" om "+dagEinde[datum]+" · "+uu(dagIntappTotaal(datum))+" u");
+  const naTekort=dagTekort(datum);
+  if(keuze.actie==="fill"&&naTekort>0.05)setTimeout(vulAanTot8,120);
+  else toast("Werkdag afgesloten om "+dagEinde[datum]+(naTekort>0.05?" — zonder Diversen-aanvulling":" — je zit op "+uu(dagIntappTotaal(datum))+" uur"));
   return true;}
 
 function renderRecent(){
@@ -160,6 +199,24 @@ function renderTot(){
   const pct=Math.max(0,Math.min(1,t/NORM));
   $("hond").style.left="calc("+(pct*100).toFixed(1)+"% - "+(pct*86).toFixed(0)+"px)";}
 
+function renderDagStatus(){
+  const el=$("d-status");if(!el)return;
+  const huidig=dagIntappTotaal(viewDate),tekort=dagTekort(viewDate),gesloten=dagEinde[viewDate]!=null;
+  const oudOpen=viewDate<today()&&!gesloten&&dagRegels(viewDate).some(r=>r.soort!=="pauze");
+  const loopt=running&&running.datum===viewDate;
+  const cls=gesloten?"closed":"open";
+  el.className="daystatus "+cls;
+  const status=gesloten?("Afgesloten om "+dagEinde[viewDate]):(oudOpen?"Open eerdere werkdag":"Open werkdag");
+  let h='<span class="main">Status: '+esc(status)+'</span>'+ 
+    '<span>Verantwoord <b class="metric">'+uu(huidig)+'</b> / '+uu(NORM)+' u</span>'+ 
+    '<span>Nog nodig <b class="metric">'+uu(tekort)+'</b> u</span>';
+  if(loopt)h+='<span class="warnline">Er loopt nog een regel op deze dag.</span>';
+  if(oudOpen)h+='<span class="warnline">Deze dag staat nog open.</span>';
+  h+='<div class="spacer"></div>';
+  if(!gesloten)h+='<button class="sm go" data-close-current="1">Sluit deze dag af</button>';
+  else if(tekort>0.05&&!(running&&running.datum===viewDate))h+='<button class="sm" data-fill-current="1">Aanvullen tot 8,0</button>';
+  el.innerHTML=h;}
+
 /* ---------- weergave: DAG ---------- */
 function bouwDag(){
   $("d-label").textContent=dagLabel(viewDate)+
@@ -197,7 +254,7 @@ function bouwDag(){
       '<button class="sm ghost warn" data-del="'+esc(r.id)+'">&#10005;</button></td></tr>';});
   $("d-table").innerHTML=h+"</tbody>";verversDag();}
 function verversDag(){
-  renderRecent();renderTot();
+  renderRecent();renderTot();renderDagStatus();
   $("d-tot").textContent=uu(totaal(regels));
   $("d-void").textContent=uu(gapHours(gapsFor(regels,viewDate)));
   $("d-pauze").textContent=uu(pauzeUren(regels));
@@ -473,6 +530,10 @@ async function vulAanTot8(){
     "Aangevuld tot "+uu(NORM)+" uur in de Intapp-samenvatting":
     "Aangevuld — de Intapp-samenvatting staat nu op "+uu(werkelijk)+" uur");}
 $("d-fill").onclick=vulAanTot8;
+$("d-status").addEventListener("click",async e=>{
+  if(e.target.closest("[data-close-current]")){await sluitWerkdag(viewDate);return;}
+  if(e.target.closest("[data-fill-current]")){await vulAanTot8();return;}
+});
 
 /* ---------- weergave: WEEK ---------- */
 function renderWeek(){

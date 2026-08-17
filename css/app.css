@@ -291,3 +291,25 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
 .dagwarn strong{color:var(--amber)}
 .dagwarn .hint{color:var(--soft)}
 .toast{z-index:70}
+
+/* ---------- dag afsluiten ---------- */
+.daystatus{margin:.15rem 0 .9rem;padding:.75rem .85rem;border:1px solid var(--line);
+  border-radius:10px;background:var(--card);display:flex;gap:.85rem;align-items:center;
+  flex-wrap:wrap;font-size:14px}
+.daystatus .main{font-weight:500}
+.daystatus .metric{font-family:var(--mono)}
+.daystatus.open{border-color:var(--amber);background:var(--warm)}
+.daystatus.closed{border-color:var(--moss)}
+.daystatus .warnline{color:var(--rust);font-weight:500}
+.closebox{width:min(660px,100%)}
+.closegrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.65rem;margin-bottom:.9rem}
+.closegrid>div{border:1px solid var(--line);border-radius:9px;padding:.65rem .75rem;background:var(--paper)}
+.closegrid .cap{display:block;font:500 10px/1 var(--sans);text-transform:uppercase;
+  letter-spacing:.08em;color:var(--soft);margin-bottom:.35rem}
+.closegrid strong{font:500 22px/1.1 var(--mono)}
+.timepick{display:block;margin:.3rem 0 .8rem;font-size:13px;color:var(--soft)}
+.timepick input{display:block;margin-top:.3rem;width:140px;font-family:var(--mono);font-size:18px}
+.closewarn{display:none;margin:.6rem 0;padding:.65rem .75rem;border:1px solid var(--amber);
+  border-radius:9px;background:var(--warm);color:var(--ink);font-size:14px;line-height:1.45}
+.closewarn.on{display:block}
+#dc-fill.strong{background:var(--rust);border-color:var(--rust);color:#fff}

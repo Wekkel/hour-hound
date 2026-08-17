@@ -139,6 +139,7 @@
       <button class="sm" id="d-add">Regel toevoegen</button>
       <button class="sm" id="d-fill">Dag aanvullen tot 8,0</button>
     </div>
+    <div class="daystatus" id="d-status"></div>
     <div class="tw"><table id="d-table"></table></div>
     <div class="foot">
       <span>Verantwoord <b id="d-tot">0,0</b></span>
@@ -270,6 +271,37 @@
       <button class="sm ghost" id="h-later">Later beslissen</button>
       <div class="spacer"></div>
       <button class="go" id="h-ok">Bevestigen</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal" id="dayclose" aria-hidden="true">
+  <div class="mbox closebox" role="dialog" aria-modal="true" aria-labelledby="dc-title">
+    <div class="mtop">
+      <strong id="dc-title">Dag afsluiten</strong>
+      <span class="pill" id="dc-date">—</span>
+      <div class="spacer"></div>
+      <button class="sm ghost" id="dc-x" title="Sluiten (Esc)">&#10005;</button>
+    </div>
+    <div class="mbody">
+      <div class="closegrid">
+        <div><span class="cap">Status</span><strong id="dc-status">—</strong></div>
+        <div><span class="cap">Verantwoord</span><strong id="dc-done">0,0 u</strong></div>
+        <div><span class="cap">Ontbreekt tot 8,0</span><strong id="dc-miss">0,0 u</strong></div>
+      </div>
+      <label class="timepick">Eindtijd voor deze werkdag
+        <input id="dc-end" inputmode="numeric" autocomplete="off" placeholder="17:00">
+      </label>
+      <div class="closewarn" id="dc-warn"></div>
+      <div class="hint" id="dc-help"></div>
+    </div>
+    <div class="mfoot">
+      <button class="go" id="dc-fill">Afsluiten + aanvullen</button>
+      <button id="dc-nofill">Afsluiten zonder aanvullen</button>
+      <button class="sm" id="dc-goday">Terug naar Dag</button>
+      <div class="spacer"></div>
+      <button class="sm ghost" id="dc-cancel">Annuleren</button>
     </div>
   </div>
 </div>
