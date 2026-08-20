@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.16"; // end of day protection and wizard.
+const VERSION = "0.1.17"; // DVN implementation (including Grok Build review)
 
 const CACHE = "hourhound-" + VERSION;
 
