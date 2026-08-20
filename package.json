@@ -1,0 +1,10 @@
+{
+  "scripts": {
+    "test": "npm run test:browserless && npm run test:e2e",
+    "test:browserless": "node tests/browserless/regression.mjs",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.0"
+  }
+}
