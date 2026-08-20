@@ -331,3 +331,13 @@ tr.isauto td{background:rgba(197,139,64,.10)}
 tr td input[readonly]{background:transparent;border-color:transparent;box-shadow:none;color:inherit;cursor:pointer}
 tr td input[readonly]:focus{border-color:var(--line);background:var(--paper)}
 tr.needsreview td{box-shadow:inset 3px 0 0 var(--amber)}
+
+/* DVN naar Intapp */
+.tag.dvn{border-color:rgba(245,170,70,.55);background:rgba(245,170,70,.12)}
+.dvncard{border:1px solid var(--line);border-radius:14px;padding:.75rem;margin:.55rem 0;background:rgba(255,255,255,.025)}
+.dvncard.open{box-shadow:inset 3px 0 0 rgba(245,170,70,.65)}
+.dvncard.resolved{box-shadow:inset 3px 0 0 rgba(100,200,140,.55)}
+.dvnhead{display:flex;gap:.6rem;align-items:baseline;justify-content:space-between;flex-wrap:wrap}
+.bar.mini{margin-top:.55rem;padding:0;gap:.45rem;background:transparent;border:0}
+.dvncard details{margin-top:.55rem}
+.dvncard summary{cursor:pointer;color:var(--muted);font-size:13px}

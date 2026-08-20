@@ -275,50 +275,63 @@ async function markeerVolgt(){
   if(!await koppelRegel(running,op))return;
   liveId=null;renderAll();announce();naStart();
   toast("Gemarkeerd als dossier volgt nog");}
-/* ---------- voorlopig dossier definitief maken ---------- */
-async function kenNummerToe(id){
-  const d=dosOf(id);if(!d)return;
-  const nr=(prompt('Dossiernummer voor "'+d.naam+'":',"")||"").trim();
-  if(!nr)return;
-  const bestaand=dossiers.find(x=>x.id!==d.id&&(x.nummer||"").toLowerCase()===nr.toLowerCase());
+/* ---------- DVN dossiernummer toekennen ---------- */
+function dvnDossierVoorNummer(nr,id){
+  const n=(nr||"").trim().toLowerCase();
+  return n?dossiers.find(x=>x.id!==id&&(x.nummer||"").toLowerCase()===n):null;}
+function openDvnNummerSheet(id){
+  const d=dosOf(id);if(!d||!isDvn(d))return Promise.resolve(false);
+  const dlg=$("dvnnum");if(!dlg)return Promise.resolve(false);
+  const rs=alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze"),info=intappDossierInfo(d);
+  dlg.dataset.id=id;
+  $("dn-status").textContent=d.voorlopig?"nummer ontbreekt":(typeof dvnStatusTekst==="function"?dvnStatusTekst(d):"DVN");
+  $("dn-num").value=d.nummer||d.dvnResolvedNr||info.nummer||"";
+  $("dn-name").value=d.dvnTo?(dosOf(d.dvnTo)||{}).naam||d.naam:d.naam;
+  $("dn-meta").innerHTML='<b>'+esc(d.naam)+'</b><br>'+rs.length+' regel(s) · '+
+    uu(rs.reduce((s,r)=>s+urenOf(r),0))+' uur';
+  $("dn-warn").classList.remove("on");$("dn-warn").textContent="";
+  dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
+  setTimeout(()=>$("dn-num").focus(),0);
+  return new Promise(resolve=>{dlg._resolve=resolve;});}
+function sluitDvnNummerSheet(v){
+  const dlg=$("dvnnum");if(!dlg)return;
+  dlg.classList.remove("on");dlg.setAttribute("aria-hidden","true");
+  const r=dlg._resolve;dlg._resolve=null;delete dlg.dataset.id;if(r)r(v);}
+async function kenNummerToe(id){return openDvnNummerSheet(id);}
+async function slaDvnNummerOp(){
+  const dlg=$("dvnnum"),id=dlg&&dlg.dataset.id,d=dosOf(id);
+  if(!dlg||!d||!isDvn(d)){sluitDvnNummerSheet(false);return;}
+  const nr=($("dn-num").value||"").trim(),naam=($("dn-name").value||"").trim()||d.naam;
+  if(!nr){toast("Vul het dossiernummer in");$("dn-num").focus();return;}
+  const bestaand=dvnDossierVoorNummer(nr,d.id);
   const rs=alle.filter(r=>r.dossierId===d.id);
-  const doel=bestaand||d;
-  const vraag=(bestaand?
-      'Nummer '+nr+' hoort al bij "'+bestaand.naam+'".\nAlle regels van "'+d.naam+
-      '" naar dat dossier verplaatsen?':
-      '"'+d.naam+'" krijgt nummer '+nr+".")+
-    "\n\n"+rs.length+" regel(s) worden bijgewerkt:\n"+
-    "• het voorvoegsel met datum en werknaam wordt verwijderd\n"+
-    "• de i7-werkcode wordt gewist (dossiercodes zijn optioneel)\n\nDoorgaan?";
-  if(!confirm(vraag))return;
-  /* Bulkoperatie: alle regels, de stapel en het dossier zelf in één transactie. */
-  const nwRegels=rs.map(r=>{
-    const k=Object.assign({},r);
-    k.dossierId=doel.id;
-    k.omschrijving=(k.omschrijving||"").replace(VOOR,"").trim()||d.naam;
-    k.code=null;k.gewijzigd=Date.now();
-    return k;});
-  const stackGewijzigd=stack.some(it=>it.dossierId===d.id);
-  const nwStack=stack.map(it=>it.dossierId!==d.id?it:
-    Object.assign({},it,{dossierId:doel.id,code:null,
-      omschrijving:((it.omschrijving||"").replace(VOOR,"").trim())||d.naam}));
-  const nwDos=bestaand?null:stempel(Object.assign({},d,{nummer:nr,voorlopig:false}));
+  if(bestaand&&bestaand.voorlopig){
+    toast("Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.");return;}
+  const warn=[];
+  if(bestaand)warn.push('Nummer '+nr+' hoort al bij "'+bestaand.naam+'". Deze DVN blijft eigen regels houden, maar Intapp gebruikt dat bestaande dossier.');
+  warn.push(rs.length+' regel(s) blijven intern aan deze DVN gekoppeld. Het datum/werknaam-voorvoegsel verdwijnt en de i7-werkcode wordt gewist.');
+  if(!confirm(warn.join("\n\n")+"\n\nDoorgaan?"))return;
+  const nu=Date.now();
+  const nwD=stempel(Object.assign({},d,{
+    naam:bestaand?d.naam:naam,nummer:bestaand?null:nr,voorlopig:false,dvn:true,
+    dvnOriginalName:d.dvnOriginalName||d.naam,dvnResolvedAt:new Date().toISOString(),
+    dvnResolvedNr:nr,dvnTo:bestaand?bestaand.id:null}));
+  if(!bestaand)delete nwD.dvnTo;
+  const nwRegels=rs.map(r=>Object.assign({},r,{code:null,
+    omschrijving:((r.omschrijving||"").replace(VOOR,"").trim())||d.naam,gewijzigd:nu}));
+  const stackRaakt=stack.some(it=>it.dossierId===d.id);
+  const nwStack=stack.map(it=>it.dossierId!==d.id?it:Object.assign({},it,{code:null,
+    omschrijving:((it.omschrijving||"").replace(VOOR,"").trim())||d.naam}));
   try{
-    await txAll(s=>{
-      nwRegels.forEach(r=>s.regels.put(r));
-      if(stackGewijzigd)s.meta.put(nwStack,"stack");
-      if(bestaand)s.dossiers.delete(d.id);else s.dossiers.put(nwDos);});
-  }catch(e){L("FOUT-nummer-toekennen",String(e));
-    toast("Overzetten mislukt — er is niets gewijzigd: "+e);return;}
-  nwRegels.forEach(memRegel);
-  if(stackGewijzigd)stack=nwStack;
-  dossiers=await getAll("dossiers");
-  if(running)running=alle.find(r=>r.id===running.id)||running;
-  undoStack=[];
-  liveId=null;refreshDay();renderAll();renderWeek();announce();
-  L("nummer-toegekend","dos"+idKort(d.id)+" → dos"+idKort(doel.id)+" · "+
-    rs.length+" regels"+(bestaand?" · samengevoegd":""));
-  toast(rs.length+" regel(s) overgezet naar "+nr);}
+    await rustig(nwRegels.map(r=>r.id));
+    await txAll(s=>{s.dossiers.put(nwD);nwRegels.forEach(r=>s.regels.put(r));
+      if(stackRaakt)s.meta.put(nwStack,"stack");});
+  }catch(e){L("FOUT-dvn-nummer",String(e));toast("Dossiernummer opslaan mislukt — niets gewijzigd: "+e);return;}
+  memDossier(nwD);nwRegels.forEach(memRegel);if(stackRaakt)stack=nwStack;
+  if(running&&running.dossierId===d.id)running=alle.find(r=>r.id===running.id)||running;
+  undoStack=[];liveId=null;refreshDay();renderAll();renderWeek();announce();
+  L("dvn-nummer","dos"+idKort(d.id)+" → "+nr+" · "+rs.length+" regel(s)"+(bestaand?" · koppeling":""));
+  toast("DVN gebruikt nu dossiernummer "+nr+" voor Intapp");sluitDvnNummerSheet(true);}
 
 /* ---------- langloopmelding ----------
    Geen vraag meer bij afwezigheid: hourhound draait de hele dag op de achtergrond.

@@ -428,16 +428,16 @@ function verversDag(){
 
 const normOms=s=>String(s==null?"":s).replace(/\s+/g," ").trim().toLowerCase();
 function sumVan(lijst){
-  const map={},ind=i7();
+  const map={};
   lijst.filter(r=>r.soort!=="pauze").forEach(r=>{
-    const d=dosOf(r.dossierId);
-    const nummer=d?(d.nummer||(ind?ind.nummer:"")):"";
-    const naam=d?(d.voorlopig?(ind?ind.naam:"Indirecte uren"):d.naam):"";
+    const d=dosOf(r.dossierId),info=intappDossierInfo(d);
+    const nummer=info.nummer,naam=info.naam;
     const k=nummer+"|"+(r.code||"")+"|"+(r.omschrijving||"");
     if(!map[k])map[k]={k,nummer,naam,code:codeNaam(d,r.code),oms:r.omschrijving||"",
-      min:0,hand:0,los:0,dosIds:[],bron:[],
+      min:0,hand:0,los:0,dosIds:[],bron:[],dvnStatus:info.status,
       mist:(!d)||codeFout(d,r)||!(r.omschrijving||"").trim()};
     const g=map[k];
+    if(info.status&&!g.dvnStatus)g.dvnStatus=info.status;
     if(r.urenHand&&r.uren)g.hand+=r.uren;else g.min+=ruweMin(r);
     g.los+=urenOf(r);
     if(g.dosIds.indexOf(r.dossierId||"-")<0)g.dosIds.push(r.dossierId||"-");
@@ -533,7 +533,8 @@ function bouwSum(){
   $("d-sum").innerHTML='<thead><tr><th>Dag</th><th>Dossiernummer</th><th>Dossiernaam</th>'+
     '<th>Werkcode</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody>'+
     rs.map(x=>'<tr><td class="mono">'+esc(kortDag(viewDate))+'</td><td class="mono">'+esc(x.nummer)+
-      "</td><td>"+esc(x.naam)+'</td><td'+(x.mist?' class="bad"':"")+">"+
+      "</td><td>"+esc(x.naam)+(x.dvnStatus?' <span class="tag dvn">'+esc(x.dvnStatus)+"</span>":"")+
+      '</td><td'+(x.mist?' class="bad"':"")+">"+
       esc(x.code||(x.mist?"ontbreekt":""))+"</td><td>"+esc(x.oms)+
       '</td><td class="mono" style="text-align:right">'+uu(x.u)+"</td></tr>").join("")+
     '</tbody><tfoot><tr><td colspan="5">Totaal</td><td class="mono" style="text-align:right">'+
@@ -759,20 +760,19 @@ function renderWeek(){
         (t>0?'<div class="dd">norm gehaald</div>':'<div class="dd">&mdash;</div>'))+
       "</button>";}
   $("w-grid").innerHTML=h;
-  const prov=actief().filter(d=>d.voorlopig);
+  const prov=actief().filter(d=>isDvn(d));
   $("w-prov").innerHTML=prov.length?prov.map(p=>{
-    const rs=alle.filter(r=>r.dossierId===p.id),dagen={};
+    const rs=alle.filter(r=>r.dossierId===p.id),dagen={},info=intappDossierInfo(p);
     rs.forEach(r=>{dagen[r.datum]=(dagen[r.datum]||0)+urenOf(r);});
     const det=Object.keys(dagen).sort().map(k=>kortDag(k)+"  "+uu(dagen[k])).join("   ·   ");
     return '<div style="padding:.7rem 0;border-top:1px solid var(--line)">'+
       '<div style="display:flex;gap:.6rem;align-items:baseline;flex-wrap:wrap">'+
-      "<strong>"+esc(p.naam)+'</strong><span class="tag">volgt nog</span>'+
+      "<strong>"+esc(p.naam)+'</strong><span class="tag dvn">'+esc(dvnStatusTekst(p))+'</span>'+
       '<span class="mono">'+uu(rs.reduce((s,r)=>s+urenOf(r),0))+' u</span>'+
-      '<span style="flex:1"></span><button class="sm" data-ren="'+esc(p.id)+
-      '">Naam wijzigen</button><button class="sm" data-nr="'+esc(p.id)+
-      '">Nummer toekennen</button></div>'+
-      '<div class="hint mono">'+esc(det||"nog geen uren")+"</div></div>";}).join(""):
-    '<div class="hint">Geen dossiers in afwachting van een nummer.</div>';}
+      '<span style="flex:1"></span>'+(p.voorlopig?'<button class="sm" data-ren="'+esc(p.id)+'">Naam wijzigen</button>':'')+
+      '<button class="sm" data-nr="'+esc(p.id)+'">'+(p.voorlopig?'Nummer toekennen':'Nummer aanpassen')+'</button></div>'+
+      '<div class="hint mono">Intapp: '+esc(info.nummer||'geen nummer')+' · '+esc(info.naam||'geen naam')+' · '+esc(det||"nog geen uren")+"</div></div>";}).join(""):
+    '<div class="hint">Geen DVN-dossiers.</div>';}
 $("w-prev").onclick=()=>{weekAnchor=addD(weekAnchor,-7);renderWeek();};
 $("w-next").onclick=()=>{weekAnchor=addD(weekAnchor,7);renderWeek();};
 $("w-now").onclick=()=>{weekAnchor=today();renderWeek();};
@@ -782,8 +782,44 @@ $("w-prov").addEventListener("click",e=>{
   const ren=e.target.closest("[data-ren]");if(ren){vraagHernoemVoorlopig(ren.dataset.ren);return;}
   const b=e.target.closest("[data-nr]");if(b)kenNummerToe(b.dataset.nr);});
 
+
+function dvnRegels(d){return alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze");}
+function dvnStatusTekst(d){
+  if(d.voorlopig&&!d.nummer)return "dossiernummer ontbreekt";
+  if(d.dvnTo){const doel=dosOf(d.dvnTo);return doel?("dossiernummer "+(doel.nummer||"?")+" · nog invoeren"):
+    "gekoppeld dossier ontbreekt";}
+  if(d.nummer||d.dvnResolvedNr)return "dossiernummer "+(d.nummer||d.dvnResolvedNr)+" · nog invoeren";
+  return "DVN";}
+function renderDvnIntapp(){
+  const el=$("dvn-intapp");if(!el)return;
+  const ds=actief().filter(d=>isDvn(d)).sort((a,b)=>
+    (a.voorlopig===b.voorlopig?0:(a.voorlopig?-1:1))||a.naam.localeCompare(b.naam));
+  if(!ds.length){el.innerHTML='<div class="hint">Geen DVN-dossiers.</div>';return;}
+  el.innerHTML=ds.map(d=>{
+    const rs=dvnRegels(d),info=intappDossierInfo(d),dagen={};
+    rs.forEach(r=>{dagen[r.datum]=(dagen[r.datum]||0)+urenOf(r);});
+    const totaal=rs.reduce((s,r)=>s+urenOf(r),0);
+    const det=rs.slice().sort((a,b)=>(a.datum+a.start)<(b.datum+b.start)?-1:1)
+      .map(r=>'<tr><td class="mono">'+esc(kortDag(r.datum))+'</td><td class="mono">'+
+        esc(r.start+'–'+(r.eind||'loopt'))+'</td><td>'+esc((r.omschrijving||'').replace(VOOR,''))+
+        '</td><td class="mono" style="text-align:right">'+uu(urenOf(r))+'</td></tr>').join("");
+    const dagtekst=Object.keys(dagen).sort().map(k=>kortDag(k)+" "+uu(dagen[k])).join(" · ")||"nog geen uren";
+    return '<div class="dvncard '+(d.voorlopig?'open':'resolved')+'">'+
+      '<div class="dvnhead"><div><strong>'+esc(d.naam)+'</strong> '+
+      '<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span></div>'+
+      '<span class="mono">'+rs.length+' regel(s) · '+uu(totaal)+' u</span></div>'+
+      '<div class="hint">Intapp: '+esc(info.nummer||'geen nummer')+' · '+esc(info.naam||'geen naam')+
+      ' · '+esc(dagtekst)+'</div>'+
+      '<div class="bar mini">'+(d.voorlopig?'<button class="sm go" data-dvn-num="'+esc(d.id)+'">Dossiernummer toekennen</button>':
+        '<button class="sm" data-dvn-num="'+esc(d.id)+'">Dossiernummer aanpassen</button>')+
+      (rs.length?'<button class="sm" data-dvn-day="'+esc(rs[0].datum)+'">Toon eerste dag</button>':'')+
+      '</div><details><summary>Toon regels</summary><div class="tw"><table><thead><tr><th>Dag</th><th>Tijd</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody>'+
+      (det||'<tr><td colspan="4" class="hint">Geen regels.</td></tr>')+
+      '</tbody></table></div></details></div>';}).join("");}
+
 /* ---------- beheer ---------- */
 function renderBeheer(){
+  renderDvnIntapp();
   $("b-list").innerHTML=dossiers.map(d=>{
     const inGebruik=alle.some(r=>r.dossierId===d.id);
     const cs=(d.codes||[]).map(c=>'<span class="tag">'+esc(c.naam)+
@@ -797,8 +833,8 @@ function renderBeheer(){
       '<input value="'+esc(d.naam)+'" data-dnm="'+esc(d.id)+'" style="flex:1;min-width:170px">'+
       '<select data-dl="'+esc(d.id)+'"><option value="nl"'+(d.lang!=="en"?" selected":"")+
       '>NL</option><option value="en"'+(d.lang==="en"?" selected":"")+">EN</option></select>"+
-      (d.voorlopig?'<span class="tag">volgt nog</span>'+
-        '<button class="sm" data-nr="'+esc(d.id)+'">Nummer toekennen</button>':"")+
+      (isDvn(d)?'<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span>'+
+        '<button class="sm" data-nr="'+esc(d.id)+'">'+(d.voorlopig?'Nummer toekennen':'Nummer aanpassen')+'</button>':"")+
       (d.archief?'<span class="tag">archief</span>'+
         '<button class="sm" data-unarch="'+esc(d.id)+'">Activeren</button>':"")+
       (d.isI7||d.archief?"":'<button class="sm ghost warn" data-deldos="'+esc(d.id)+'">'+
@@ -807,13 +843,19 @@ function renderBeheer(){
       (isIndirect(d)?'<div class="hint" style="margin-top:.4rem">Gebruikt de i7-werklijst ('+
         i7codes.length+" codes), "+(d.voorlopig?
           "vast op "+esc(codeNaam(d,defaultCode(d))):
-          "per regel te kiezen")+"</div>":
+          "per regel te kiezen")+"</div>":(d.dvn?'<div class="hint" style="margin-top:.4rem">Oorspronkelijke DVN-identiteit blijft bewaard; dossiercodes zijn nu optioneel.</div>':'' )+
       '<div style="margin-top:.45rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">'+
       cs+'<input placeholder="code" data-nc="'+esc(d.id)+'" style="width:110px" class="mono">'+
       '<input placeholder="naam" data-ncn="'+esc(d.id)+'" style="width:180px">'+
       '<button class="sm" data-addcode="'+esc(d.id)+'">+</button></div>')+"</div>";}).join("");
   $("libstat").textContent=templates.length+" sjablonen · "+i7codes.length+
     " i7-codes (vaste lijst uit werkcodes.json) · "+alle.length+" regels";}
+$("dvn-intapp").addEventListener("click",async e=>{
+  const num=e.target.closest("[data-dvn-num]");
+  if(num){await kenNummerToe(num.dataset.dvnNum);return;}
+  const day=e.target.closest("[data-dvn-day]");
+  if(day){viewDate=day.dataset.dvnDay;refreshDay();showTab("dag");return;}
+});
 $("b-list").addEventListener("change",async e=>{
   const t=e.target;
   if(t.dataset.dn){const d=dosOf(t.dataset.dn);const nr=t.value.trim();

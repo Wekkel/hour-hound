@@ -67,6 +67,10 @@ function keurDossiers(arr){
     goed.push({id:x.id,nummer,naam:str(x.naam,200)||"Zonder naam",
       lang:x.lang==="en"?"en":"nl",
       voorlopig:!!x.voorlopig,archief:!!x.archief,isI7,
+      dvn:!!x.dvn,dvnOriginalName:x.dvnOriginalName?str(x.dvnOriginalName,200):null,
+      dvnResolvedAt:x.dvnResolvedAt?str(x.dvnResolvedAt,40):null,
+      dvnResolvedNr:x.dvnResolvedNr?str(x.dvnResolvedNr,60):null,
+      dvnTo:x.dvnTo?str(x.dvnTo,80):null,
       c:+x.c||0,used:+x.used||0,gewijzigd:+x.gewijzigd||0,
       codes:Array.isArray(x.codes)?x.codes.filter(c=>c&&c.code)
         .map(c=>({code:str(c.code,60),naam:str(c.naam,120)||str(c.code,60)})):[]});});

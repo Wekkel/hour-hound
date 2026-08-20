@@ -179,16 +179,19 @@
     <div class="wk" id="w-grid"></div>
   </section>
   <section>
-    <h2>Dossier volgt nog — klaar om in Intapp te boeken</h2>
-    <div class="hint" style="margin-bottom:.5rem">Zodra je het dossiernummer hebt, ken je het
-      hier toe. Alle regels verhuizen mee, het voorvoegsel verdwijnt en de i7-werkcode wordt
-      gewist. Hieronder staan de uren per dag om over te typen.</div>
+    <h2>DVN naar Intapp</h2>
+    <div class="hint" style="margin-bottom:.5rem">Zodra je het dossiernummer hebt, ken je het hier toe. De regels blijven intern aan de DVN hangen, terwijl de Intapp-samenvatting het echte dossiernummer gebruikt.</div>
     <div id="w-prov"></div>
   </section>
 </div>
 
 <!-- ===== BEHEER ===== -->
 <div class="view" id="v-beheer">
+  <section>
+    <h2>DVN naar Intapp</h2>
+    <div class="hint" style="margin-bottom:.55rem">Dossiers waarvan het nummer nog ontbrak blijven hier herleidbaar. Zodra het echte dossiernummer bekend is, gebruikt de Intapp-samenvatting dat nummer, maar de DVN-groep blijft zichtbaar tot Patch C de afboekstatus toevoegt.</div>
+    <div id="dvn-intapp"></div>
+  </section>
   <section>
     <h2>Dossiers</h2>
     <div id="b-list"></div>
@@ -306,6 +309,31 @@
   </div>
 </div>
 
+
+
+<div class="modal" id="dvnnum" aria-hidden="true">
+  <div class="mbox editbox" role="dialog" aria-modal="true" aria-labelledby="dn-title">
+    <div class="mtop">
+      <strong id="dn-title">Dossiernummer toekennen aan DVN</strong>
+      <span class="pill" id="dn-status">—</span>
+      <div class="spacer"></div>
+      <button class="sm ghost" id="dn-x" title="Sluiten">&#10005;</button>
+    </div>
+    <div class="mbody">
+      <div class="editmeta" id="dn-meta"></div>
+      <div class="editgrid">
+        <label>Dossiernummer<input id="dn-num" class="mono" autocomplete="off" placeholder="304999999"></label>
+        <label class="wide">Dossiernaam<input id="dn-name" autocomplete="off"></label>
+      </div>
+      <div class="closewarn" id="dn-warn"></div>
+      <div class="hint" id="dn-help">De tijdregels blijven intern aan deze DVN hangen. Voor Intapp gebruikt Hour Hound na opslaan het echte dossiernummer.</div>
+    </div>
+    <div class="mfoot">
+      <button class="go" id="dn-save">Dossiernummer opslaan</button>
+      <button class="sm ghost" id="dn-cancel">Annuleren</button>
+    </div>
+  </div>
+</div>
 
 
 <div class="modal" id="oldrun" aria-hidden="true">

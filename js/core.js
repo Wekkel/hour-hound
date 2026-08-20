@@ -321,8 +321,21 @@ document.addEventListener("focusout",()=>{
 const dosOf=id=>dossiers.find(d=>d.id===id);
 const i7=()=>dossiers.find(d=>d.isI7);
 const actief=()=>dossiers.filter(d=>!d.archief);
+const isDvn=d=>!!d&&(d.voorlopig||d.dvn);
 const isIndirect=d=>!!d&&(d.isI7||d.voorlopig);
 const dosVeld=d=>d?(d.nummer||d.naam):"";
+function intappDossierInfo(d){
+  const ind=i7();
+  if(!d)return{nummer:"",naam:"",dvn:false,status:""};
+  if(d.dvnTo){
+    const doel=dosOf(d.dvnTo);
+    if(doel)return{nummer:doel.nummer||"",naam:doel.naam,dvn:true,
+      status:"DVN · nog invoeren"};}
+  if(d.voorlopig&&!d.nummer)return{nummer:ind?ind.nummer:"",
+    naam:ind?ind.naam:"Indirecte uren",dvn:true,status:"DVN · nummer ontbreekt"};
+  if(isDvn(d))return{nummer:d.nummer||d.dvnResolvedNr||"",naam:d.naam,dvn:true,
+    status:(d.nummer||d.dvnResolvedNr)?"DVN · nog invoeren":"DVN · nummer ontbreekt"};
+  return{nummer:d.nummer||"",naam:d.naam,dvn:false,status:""};}
 const dosColor=d=>{const P=["#3f6b3a","#a8452a","#39607f","#7a5090","#8a6b2c","#2f6f6b",
   "#8f3f5c","#5a6b2c","#6b4a3f","#455a64"];return d?P[(d.c||0)%P.length]:"#888";};
 function codesFor(d){

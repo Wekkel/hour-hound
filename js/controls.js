@@ -37,7 +37,7 @@ $("open-days").addEventListener("click",async e=>{
   if(close)await sluitWerkdag(close.dataset.openClose);});
 
 document.addEventListener("keydown",async e=>{
-  if(["dayclose","oldrun","editregel"].some(id=>$(id)&&$(id).classList.contains("on")))return;
+  if(["dayclose","oldrun","editregel","dvnnum"].some(id=>$(id)&&$(id).classList.contains("on")))return;
   if(boek.aan){boekKeys(e);return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"&&!e.shiftKey){
     const t=e.target;
@@ -75,6 +75,24 @@ document.addEventListener("keydown",async e=>{
   else if(k==="d"){showTab("dag");}
   else if(k==="u"){showTab("week");}});
 
+
+/* ---------- DVN dossiernummer-sheet ---------- */
+if($("dvnnum")){
+  $("dn-x").onclick=()=>sluitDvnNummerSheet(false);
+  $("dn-cancel").onclick=()=>sluitDvnNummerSheet(false);
+  $("dn-save").onclick=slaDvnNummerOp;
+  $("dn-num").addEventListener("input",()=>{
+    const d=dosOf($("dvnnum").dataset.id),b=dvnDossierVoorNummer($("dn-num").value,d&&d.id);
+    const w=$("dn-warn");
+    if(b){w.textContent='Dit nummer bestaat al bij "'+b.naam+'". Opslaan koppelt deze DVN voor Intapp aan dat dossier, zonder de DVN-regels te verplaatsen.';w.classList.add("on");}
+    else{w.textContent="";w.classList.remove("on");}
+  });
+  document.addEventListener("keydown",e=>{
+    if(!$("dvnnum").classList.contains("on"))return;
+    if(e.key==="Escape"){e.preventDefault();sluitDvnNummerSheet(false);}
+    if(e.key==="Enter"&&e.target&&e.target.tagName==="INPUT"){e.preventDefault();slaDvnNummerOp();}
+  },true);
+}
 
 /* ---------- oude lopende taak en bewerksheets ---------- */
 if($("oldrun")){
