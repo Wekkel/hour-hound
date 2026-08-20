@@ -16,7 +16,10 @@ Deze map bevat de kleine regressiesuite die zonder browser draait. Het doel is n
    - sneltoetsen voor recente taken blijven beperkt tot 1–4;
    - sheets/modals blokkeren globale sneltoetsen;
    - dagafsluiting, heropenen, oude lopende timers, veilige regelbewerking en DVN → Intapp-statussen blijven aanwezig;
-   - backup/import bewaart nieuwe dag- en DVN-metadata.
+   - oude timers en bewerking van een lopende regel blijven op het timerOp-contract;
+   - hervatten van een recente taak start niet per ongeluk twee timerwissels;
+   - backup/import bewaart nieuwe dag- en DVN-metadata;
+   - service worker cacheert geen testbestanden.
 
 ## Wanneer tests aanpassen?
 
@@ -37,6 +40,6 @@ npm run test:browserless
 
 De suite gebruikt alleen Node.js core modules. Er zijn dus geen npm dependencies nodig.
 
-## Waarom nog geen Playwright hier?
+## Relatie met Playwright
 
-Deze suite is bedoeld als snel harnas dat ook in een kale omgeving werkt. In een latere stap komt daar een Playwright-smoketest naast voor de echte UI-flows: app openen, taak starten, oude timer melden, dag afsluiten, DVN nummer toekennen en DVN als ingevoerd markeren.
+Deze suite is bedoeld als snel harnas dat ook in een kale omgeving werkt. Hij vervangt Playwright niet: echte UI-flows, focusgedrag, IndexedDB-herlaadgedrag en service-worker-effecten horen in `tests/e2e/` thuis. Lees ook `tests/LESSONS_LEARNED.md` voordat je tests versoepelt of verwijdert.

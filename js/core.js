@@ -360,6 +360,9 @@ function markDvnControleNodig(d,reden){
     dvnIntappNeedsCheckAt:new Date().toISOString(),
     dvnIntappNeedsCheckReason:reden||"tijdregel gewijzigd",
     dvnIntappAudit:dvnAuditAdd(d,"controle-nodig",{reden:reden||"tijdregel gewijzigd"})}));}
+function dvnPutIfPosted(d,reden){
+  if(!d||!isDvn(d)||dvnIntappState(d)!=="posted")return null;
+  return markDvnControleNodig(d,reden||"tijdregel gewijzigd");}
 function intappDossierInfo(d){
   const ind=i7();
   if(!d)return{nummer:"",naam:"",dvn:false,status:""};
@@ -437,7 +440,7 @@ function naStart(){
   setTimeout(()=>$("l-omschr").focus(),30);}
 const geenCodes=()=>{
   toast("Er zijn nog geen i7-werkcodes — importeer werkcodes.json onder Beheer");};
-function eindOf(r){return r.eind||(running&&r.id===running.id?nowHM():r.start);}
+function eindOf(r){return r.eind||(running&&r.id===running.id?(r.datum===today()?nowHM():"23:59"):r.start);}
 function ruweMin(r){const a=hm2m(r.start),b=hm2m(eindOf(r));
   if(a==null||b==null)return 1;return Math.max(1,b-a);}
 function urenOf(r){

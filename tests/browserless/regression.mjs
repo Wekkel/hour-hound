@@ -38,7 +38,8 @@ const src = {
   controls: read('js/controls.js'),
   io: read('js/io.js'),
   booking: read('js/booking.js'),
-  app: read('js/app.js')
+  app: read('js/app.js'),
+  sw: read('sw.js')
 };
 
 let failures = 0;
@@ -77,7 +78,7 @@ function evaluateCorePure(){
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today();\n`+
     `return true;\n};\n`+
-    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, schoon, urenOf, ruweMin, eindOf, totaal, gapsFor, gapHours, takenVandaag, taakLabel, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
+    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, schoon, urenOf, ruweMin, eindOf, totaal, gapsFor, gapHours, takenVandaag, taakLabel, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
   return { api: context.__hhPure, setState: context.__hhSetState };
 }
@@ -151,6 +152,16 @@ test('DVN pure statushelpers onderscheiden ontbrekend, klaar, ingevoerd en contr
   assertEq(api.dvnIntappState(checked), 'needs_check', 'posted DVN moet naar controle nodig kunnen vallen');
 });
 
+test('lopende taak van eerdere dag telt niet stilzwijgend door tot nu', () => {
+  const { api, setState } = evaluateCorePure();
+  const yesterday = api.addD(api.ymd(new Date()), -1);
+  const running = { id: 'r-old', datum: yesterday, start: '15:20', eind: null, soort: 'werk' };
+  setState({ alle: [running], running });
+  assertEq(api.eindOf(running), '23:59',
+    'Open regel van eerdere dag mag niet tot de huidige klok doortellen');
+  assertEq(api.urenOf(running), 8.7, '15:20–23:59 moet 8,7 uur zijn, niet de tijd van vandaag');
+});
+
 test('takenVandaag groepeert onbeperkt en behoudt recente taakidentiteit', () => {
   const { api, setState } = evaluateCorePure();
   const today = new Date();
@@ -183,7 +194,7 @@ test('modal/sheet staat globale sneltoetsen niet toe', () => {
   for (const id of ['dayclose', 'oldrun', 'editregel', 'dvnnum', 'dvnpost', 'boek', 'herstel']) {
     assertIncludes(src.views, `"${id}"`, `isModalOpen mist ${id}`);
   }
-  for (const id of ['dayclose', 'oldrun', 'editregel', 'dvnnum', 'dvnpost']) {
+  for (const id of ['dayclose', 'oldrun', 'editregel', 'dvnnum', 'dvnpost', 'herstel']) {
     assertIncludes(src.controls, `"${id}"`, `controls sneltoetsblokkade mist ${id}`);
   }
 });
@@ -203,6 +214,11 @@ test('oude lopende taak over datumgrens krijgt expliciete keuzes', () => {
   assertIncludes(src.controls, 'xr-stop', 'Stoppen op gekozen tijdstip-actie ontbreekt');
   assertIncludes(src.controls, 'xr-continue', 'Door laten lopen-actie ontbreekt');
   assertIncludes(src.controls, 'xr-edit', 'Taak bekijken/bewerken-actie ontbreekt');
+  const midnight = (src.timer.match(/async function middernachtCheck\(\)\{[\s\S]*?\n\}/) || [''])[0];
+  assert(midnight, 'middernachtCheck ontbreekt');
+  assertNotIncludes(midnight, '_stop', 'middernacht mag een oude timer niet stilzwijgend afsluiten');
+  assertIncludes(midnight, 'controleerOudeLopendeTaak', 'middernacht moet dezelfde keuzesheet tonen');
+  assertIncludes(src.timer, 'k.datum!==today()', 'Impliciet sluiten van een oude regel moet op 23:59 blijven');
 });
 
 test('bestaande tijdregels worden via bewerksheet gewijzigd, niet rauw inline', () => {
@@ -211,6 +227,12 @@ test('bestaande tijdregels worden via bewerksheet gewijzigd, niet rauw inline', 
   assertIncludes(src.views, 'readonly', 'Dag-tabelvelden moeten read-only blijven');
   assertIncludes(src.views, 'bewerk', 'Dagregels moeten een bewuste bewerkactie tonen');
   assertIncludes(src.views, 'automatische Diversen-aanvulregel', 'Waarschuwing voor automatische regels ontbreekt');
+  for (const eventName of ['focusin', 'input', 'change', 'blur']) {
+    assertNotIncludes(src.views, `$("d-table").addEventListener("${eventName}"`,
+      `Dag-tabel mag geen rauwe ${eventName}-handler meer hebben`);
+  }
+  assertIncludes(src.views, 'input[data-f][readonly]',
+    'Klikken op readonly dagvelden moet de bewerksheet openen');
 });
 
 test('DVN blijft intern herkenbaar na dossiernummer-toekenning', () => {
@@ -228,19 +250,48 @@ test('DVN Intapp-status is markeerbaar en valt terug naar controle nodig bij lat
   assertIncludes(src.timer, 'function openDvnPostSheet', 'DVN-post-sheet opener ontbreekt');
   assertIncludes(src.timer, 'async function markeerDvnIngevoerd', 'Markeer-als-ingevoerd functie ontbreekt');
   assertIncludes(src.core, 'function dvnIntappState', 'DVN-statushelper ontbreekt');
+  assertIncludes(src.core, 'function dvnPutIfPosted', 'Gedeelde posted-DVN-terugval ontbreekt');
   assertIncludes(src.core, '"posted"', 'DVN posted-status ontbreekt');
   assertIncludes(src.core, '"needs_check"', 'DVN controle-nodig status ontbreekt');
   assertIncludes(src.views, 'tijdregel gewijzigd', 'Bewerken van posted DVN-regel moet controle nodig maken');
   assertIncludes(src.views, 'tijdregel verwijderd', 'Verwijderen van posted DVN-regel moet controle nodig maken');
   assertIncludes(src.views, 'tijdregel opnieuw lopend gemaakt', 'Opnieuw lopend maken moet controle nodig maken');
   assertIncludes(src.timer, 'dossiernummer aangepast', 'Dossiernummerwijziging na posted moet controle nodig maken');
+  assertIncludes(src.timer, 'dvnPutIfPosted', 'Timerpaden moeten posted DVN via de gedeelde helper terugzetten');
 });
+
+test('hervatten van een recente taak start exact één nieuwe timerwissel', () => {
+  const m = src.views.match(/async function hervat\(k\)\{[\s\S]*?\n\}/);
+  assert(m, 'hervat() ontbreekt');
+  const body = m[0];
+  assertEq((body.match(/await kiesTaak\(/g) || []).length, 1,
+    'hervat() mag niet twee keer achter elkaar dezelfde taak starten');
+  assertEq((body.match(/takenVandaag\(\)\.find/g) || []).length, 1,
+    'hervat() moet de taak één keer opzoeken en daarna dezelfde snapshot gebruiken');
+});
+
+test('oude timer en editor volgen timerOp-contract', () => {
+  assertIncludes(src.timer, 'function middernachtCheck', 'middernachtCheck ontbreekt');
+  const midnight = (src.timer.match(/async function middernachtCheck\(\)\{[\s\S]*?\n\}/) || [''])[0];
+  assertNotIncludes(midnight, 'await _stop', 'middernachtCheck mag niet rechtstreeks stoppen');
+  assertIncludes(src.views, 'timerOp("bewerk lopende regel"',
+    'Bewerken van de lopende regel moet door timerOp() lopen');
+  assertNotIncludes(src.views, 'meta.delete("running");});\n        Object.values(extraDos).forEach(memDossier);',
+    'Editor mag meta.running niet buiten het timerOp-pad wijzigen');
+});
+
 
 test('backup/import bewaart nieuwe dag- en DVN-metadata', () => {
   assertIncludes(src.io, 'const BACKUPVERSIE=7', 'Backupversie moet Patch C-metadata dekken');
-  for (const key of ['dagAudit', 'dvnResolvedNr', 'dvnTo', 'dvnIntappStatus', 'dvnIntappAudit', 'dvnIntappPostedRuleIds']) {
+  for (const key of ['dagAudit', 'dvnResolvedNr', 'dvnTo', 'dvnIntappStatus', 'dvnIntappAudit', 'dvnIntappPostedRuleIds', 'hersteld', 'herstelOrigineel']) {
     assertIncludes(src.io, key, `Backup/import mist ${key}`);
   }
+});
+
+test('service worker cacheert geen testbestanden', () => {
+  assertNotIncludes(src.sw, 'tests/', 'Service worker mag tests niet cachen');
+  assertNotIncludes(src.sw, 'regression.mjs', 'Service worker mag de testsuite niet cachen');
+  assertIncludes(src.sw, './js/app.js', 'Productie-assets horen in de service worker');
 });
 
 for (const { name, fn } of tests) {

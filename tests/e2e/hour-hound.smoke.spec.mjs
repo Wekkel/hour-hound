@@ -78,6 +78,11 @@ const baseCodes = [
   { code: 'ADM', naam: 'Praktijkorganisatie/administratie' }
 ];
 
+const i7Dossier = {
+  id: 'd-i7', nummer: 'I700000000', naam: 'Indirecte uren', lang: 'nl',
+  codes: [], c: 0, used: 999, isI7: true, voorlopig: false, archief: false
+};
+
 test('meldt een lopende taak van een eerdere dag en laat bewust doorlopen', async ({ page }) => {
   const today = todayLocal();
   const old = addDays(today, -1);
@@ -86,23 +91,30 @@ test('meldt een lopende taak van een eerdere dag en laat bewust doorlopen', asyn
     dossierId: 'd-normal', code: null, omschrijving: 'oude lopende taak', soort: 'werk', gemaakt: Date.now(), gewijzigd: Date.now()
   };
   await openAndSeed(page, {
-    dossiers: [{ id: 'd-normal', nummer: '304000001', naam: 'Normaal dossier', lang: 'nl', codes: [], c: 1 }],
+    dossiers: [
+      i7Dossier,
+      { id: 'd-normal', nummer: '304000001', naam: 'Normaal dossier', lang: 'nl', codes: [], c: 1 }
+    ],
     regels: [runningRule],
     codes: baseCodes,
     meta: { running: runningRule.id }
   });
 
-  await expect(page.getByText('Lopende taak van eerdere dag')).toBeVisible();
-  await expect(page.getByText('Stop deze taak op de startdatum van de regel')).toBeVisible();
-  await page.getByRole('button', { name: 'Door laten lopen' }).click();
-  await expect(page.getByText('Lopende taak van eerdere dag')).toBeHidden();
+  await expect(page.locator('#oldrun')).toContainText('Lopende taak van eerdere dag');
+  await expect(page.locator('#oldrun')).toContainText('Stop deze taak op de startdatum van de regel');
+  await page.locator('#xr-continue').click();
+  await expect(page.locator('#oldrun')).not.toHaveClass(/on/);
   await expect(page.locator('#l-who')).toContainText('Normaal dossier');
+  await expect(page.locator('#l-run')).toContainText('niet doortellen naar vandaag');
 });
 
 test('wijzigt een bestaande tijdregel via de bewuste bewerkingssheet', async ({ page }) => {
   const today = todayLocal();
   await openAndSeed(page, {
-    dossiers: [{ id: 'd-normal', nummer: '304000002', naam: 'Bewerk dossier', lang: 'nl', codes: [], c: 1 }],
+    dossiers: [
+      i7Dossier,
+      { id: 'd-normal', nummer: '304000002', naam: 'Bewerk dossier', lang: 'nl', codes: [], c: 1 }
+    ],
     regels: [{
       id: 'r-edit', datum: today, start: '09:00', eind: '09:30', dossierId: 'd-normal',
       code: null, omschrijving: 'oude omschrijving', soort: 'werk', gemaakt: Date.now(), gewijzigd: Date.now()
@@ -111,23 +123,28 @@ test('wijzigt een bestaande tijdregel via de bewuste bewerkingssheet', async ({ 
     meta: {}
   });
 
-  await page.getByRole('button', { name: 'Dag' }).click();
-  await expect(page.getByText('oude omschrijving')).toBeVisible();
-  await page.getByRole('button', { name: 'bewerk' }).first().click();
-  await expect(page.getByText('Tijdregel bewerken')).toBeVisible();
+  await page.locator('#tabs [data-v="dag"]').click();
+  await expect(page.locator('#v-dag')).toBeVisible();
+  await expect(page.locator('#d-table input[data-f="omschrijving"]')).toHaveValue('oude omschrijving');
+  await expect(page.locator('#d-table input[data-f="omschrijving"]')).toHaveAttribute('readonly', '');
+  await page.locator('#d-table').getByRole('button', { name: 'bewerk' }).click();
+  await expect(page.locator('#editregel')).toContainText('Tijdregel bewerken');
   await page.locator('#er-oms').fill('nieuwe bewuste omschrijving');
-  await page.getByRole('button', { name: 'Wijzigingen opslaan' }).click();
-  await expect(page.getByText('Tijdregel bewerken')).toBeHidden();
-  await expect(page.getByText('nieuwe bewuste omschrijving')).toBeVisible();
+  await page.locator('#er-save').click();
+  await expect(page.locator('#editregel')).not.toHaveClass(/on/);
+  await expect(page.locator('#d-table input[data-f="omschrijving"]')).toHaveValue('nieuwe bewuste omschrijving');
 });
 
 test('kent een dossiernummer toe aan DVN en markeert de DVN als ingevoerd', async ({ page }) => {
   const today = todayLocal();
   await openAndSeed(page, {
-    dossiers: [{
-      id: 'd-dvn', nummer: null, naam: 'KanAm - Malo X', lang: 'nl', codes: [], c: 1,
-      voorlopig: true, isI7: true, dvn: true
-    }],
+    dossiers: [
+      i7Dossier,
+      {
+        id: 'd-dvn', nummer: null, naam: 'KanAm - Malo X', lang: 'nl', codes: [], c: 1,
+        voorlopig: true, isI7: false, dvn: true
+      }
+    ],
     regels: [{
       id: 'r-dvn', datum: today, start: '10:00', eind: '11:00', dossierId: 'd-dvn',
       code: 'COM', omschrijving: `${today.split('-').reverse().join('.')} · KanAm - Malo X · fee quote`,
@@ -137,20 +154,74 @@ test('kent een dossiernummer toe aan DVN en markeert de DVN als ingevoerd', asyn
     meta: {}
   });
 
-  await page.getByRole('button', { name: 'Beheer' }).click();
-  await expect(page.getByText('DVN naar Intapp')).toBeVisible();
+  await page.locator('#tabs [data-v="beheer"]').click();
+  await expect(page.locator('#dvn-intapp')).toBeVisible();
   await page.locator('#dvn-intapp').getByRole('button', { name: 'Dossiernummer toekennen' }).click();
-  await expect(page.getByText('Dossiernummer toekennen aan DVN')).toBeVisible();
+  await expect(page.locator('#dvnnum')).toContainText('Dossiernummer toekennen aan DVN');
   await page.locator('#dn-num').fill('304999999');
   await page.locator('#dn-name').fill('KanAm - Malo X final');
-  await page.getByRole('button', { name: 'Dossiernummer opslaan' }).click();
-  await expect(page.getByText('Dossiernummer toekennen aan DVN')).toBeHidden();
-  await expect(page.locator('#dvn-intapp')).toContainText('Nog invoeren');
+  await page.locator('#dn-save').click();
+  await expect(page.locator('#dvnnum')).not.toHaveClass(/on/);
+  await expect(page.locator('#dvn-intapp')).toContainText(/nog invoeren/i);
   await expect(page.locator('#dvn-intapp')).toContainText('304999999');
 
   await page.locator('#dvn-intapp').getByRole('button', { name: 'Markeer als ingevoerd' }).click();
-  await expect(page.getByText('DVN markeren als ingevoerd')).toBeVisible();
-  await page.getByRole('button', { name: 'Markeer als ingevoerd' }).click();
-  await expect(page.getByText('DVN markeren als ingevoerd')).toBeHidden();
-  await expect(page.locator('#dvn-intapp')).toContainText('Ingevoerd in Intapp');
+  await expect(page.locator('#dvnpost')).toContainText('DVN markeren als ingevoerd');
+  await page.locator('#dp-save').click();
+  await expect(page.locator('#dvnpost')).not.toHaveClass(/on/);
+  await expect(page.locator('#dvn-intapp')).toContainText(/ingevoerd in Intapp/i);
+
+  await page.locator('#tabs [data-v="dag"]').click();
+  await page.locator('#d-table').getByRole('button', { name: 'bewerk' }).click();
+  await expect(page.locator('#editregel')).toContainText(/controle nodig/i);
+  await page.locator('#er-oms').fill('fee quote herzien');
+  await page.locator('#er-save').click();
+  await expect(page.locator('#editregel')).not.toHaveClass(/on/);
+  await page.locator('#tabs [data-v="beheer"]').click();
+  await expect(page.locator('#dvn-intapp')).toContainText(/controle nodig/i);
+});
+
+test('sluit een werkdag af via de sheet zonder stilzwijgend Diversen aan te vullen', async ({ page }) => {
+  const today = todayLocal();
+  await openAndSeed(page, {
+    dossiers: [
+      i7Dossier,
+      { id: 'd-normal', nummer: '304000003', naam: 'Afsluit dossier', lang: 'nl', codes: [], c: 1 }
+    ],
+    regels: [{
+      id: 'r-close', datum: today, start: '09:00', eind: '12:00', dossierId: 'd-normal',
+      code: null, omschrijving: 'ochtendwerk', soort: 'werk', gemaakt: Date.now(), gewijzigd: Date.now()
+    }],
+    codes: baseCodes,
+    meta: {}
+  });
+
+  await page.locator('#b-end').click();
+  await expect(page.locator('#dayclose')).toContainText('Dag afsluiten');
+  await expect(page.locator('#dc-nofill')).toBeVisible();
+  await page.locator('#dc-nofill').click();
+  await expect(page.locator('#dayclose')).not.toHaveClass(/on/);
+  await expect(page.locator('#d-status')).toContainText(/Afgesloten/i);
+});
+
+test('recente takenlijst toont alle taken maar alleen sneltoetsen 1-4', async ({ page }) => {
+  const today = todayLocal();
+  const regels = Array.from({ length: 6 }, (_, i) => ({
+    id: `r-t${i}`, datum: today, start: `0${i + 1}:00`, eind: `0${i + 1}:10`,
+    dossierId: 'd-normal', code: null, omschrijving: `taak ${i}`, soort: 'werk',
+    gemaakt: Date.now(), gewijzigd: Date.now()
+  }));
+  await openAndSeed(page, {
+    dossiers: [
+      i7Dossier,
+      { id: 'd-normal', nummer: '304000004', naam: 'Recente dossier', lang: 'nl', codes: [], c: 1 }
+    ],
+    regels,
+    codes: baseCodes,
+    meta: {}
+  });
+
+  await expect(page.locator('#recent button.taak')).toHaveCount(6);
+  await expect(page.locator('#recent kbd')).toHaveCount(4);
+  await expect(page.locator('#recent')).toHaveClass(/recent-scroll/);
 });

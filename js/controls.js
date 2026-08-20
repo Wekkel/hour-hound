@@ -37,7 +37,7 @@ $("open-days").addEventListener("click",async e=>{
   if(close)await sluitWerkdag(close.dataset.openClose);});
 
 document.addEventListener("keydown",async e=>{
-  if(["dayclose","oldrun","editregel","dvnnum","dvnpost"].some(id=>$(id)&&$(id).classList.contains("on")))return;
+  if(["dayclose","oldrun","editregel","dvnnum","dvnpost","herstel"].some(id=>$(id)&&$(id).classList.contains("on")))return;
   if(boek.aan){boekKeys(e);return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"&&!e.shiftKey){
     const t=e.target;
@@ -112,7 +112,8 @@ if($("oldrun")){
   const sluitOudeTaak=()=>{$("oldrun").classList.remove("on");$("oldrun").setAttribute("aria-hidden","true");};
   $("xr-x").onclick=()=>{oldRunSnooze=Date.now()+60*60*1000;sluitOudeTaak();};
   $("xr-cancel").onclick=()=>{oldRunSnooze=Date.now()+60*60*1000;sluitOudeTaak();};
-  $("xr-continue").onclick=()=>{oldRunSnooze=Date.now()+24*60*60*1000;sluitOudeTaak();toast("Lopende taak blijft doorlopen");};
+  $("xr-continue").onclick=()=>{oldRunSnooze=Date.now()+24*60*60*1000;sluitOudeTaak();
+    toast(running?"Lopende taak blijft op "+dmy(running.datum)+" — uren tellen niet door naar vandaag":"Lopende taak blijft doorlopen");};
   $("xr-edit").onclick=async()=>{const id=running&&running.id;sluitOudeTaak();if(id)await openRegelEditor(id,"oldrun");};
   document.addEventListener("keydown",e=>{if($("oldrun").classList.contains("on")&&e.key==="Escape"){e.preventDefault();oldRunSnooze=Date.now()+60*60*1000;sluitOudeTaak();}},true);
   $("xr-stop").onclick=async()=>{

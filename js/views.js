@@ -22,9 +22,10 @@ function renderLive(){
   $("l-who").className="who";
   $("l-who").textContent=running.soort==="werk"?(d?d.naam:"Nieuwe taak"):
     running.soort==="pauze"?"Pauze":(running.soort==="telefoon"?"Telefoon":"Onderbreking");
-  const mins=Math.max(0,(hm2m(nowHM())||0)-(hm2m(running.start)||0));
+  const mins=Math.max(0,(hm2m(eindOf(running))||0)-(hm2m(running.start)||0));
   $("l-uren").textContent=running.soort==="pauze"?"":uu(urenOf(running));
   $("l-run").innerHTML="loopt sinds "+running.start+" · "+mins+" min"+
+    (running.datum!==today()?" · op "+dmy(running.datum)+" (niet doortellen naar vandaag)":"")+
     (d&&d.voorlopig?" · dossier volgt nog":"")+(d&&d.lang==="en"?" · EN":"")+
     (ntWizard?" · gegevens worden nu ingevuld":"");
 
@@ -290,14 +291,22 @@ function openRegelEditor(id,bron){
         tmpD=Object.assign({},tmpD,{codes:(tmpD.codes||[]).concat([{code:c.nieuweCode,naam:c.nieuweCode}])});stempel(tmpD);}
       if(tmpD&&extraDos[tmpD.id])tmpD=Object.assign({},tmpD,extraDos[tmpD.id]);
       else if(tmpD)extraDos[tmpD.id]=tmpD;
-      try{
+      const schrijf=async()=>{
         await rustig([tmpRule.id]);
         await txAll(o=>{Object.values(extraDos).forEach(d=>o.dossiers.put(d));o.regels.put(tmpRule);
           if(looptNu&&eind){o.meta.delete("running");o.meta.delete("pending");}});
+        Object.values(extraDos).forEach(memDossier);memRegel(tmpRule);
+        if(looptNu&&eind){running=null;pending=null;vergeetTimerUndo("regel gestopt via bewerksheet");}
+        else if(looptNu){running=alle.find(x=>x.id===tmpRule.id);liveId=null;}
+        return true;};
+      try{
+        if(looptNu){
+          const ok=await timerOp("bewerk lopende regel",async t=>{
+            if(!opGeldig(t,id)){toast("De timer is inmiddels gewijzigd");return false;}
+            return await schrijf();});
+          if(!ok)return;
+        }else await schrijf();
       }catch(e){L("FOUT-regel-editor",String(e));toast("Opslaan mislukt — niets gewijzigd: "+e);return;}
-      Object.values(extraDos).forEach(memDossier);memRegel(tmpRule);
-      if(looptNu&&eind){running=null;pending=null;vergeetTimerUndo("regel gestopt via bewerksheet");}
-      else if(looptNu){running=alle.find(x=>x.id===tmpRule.id);liveId=null;}
       undoData("regel bewerken",[voor]);
       L("regel-editor",tmpRule.start+"-"+(tmpRule.eind||"loopt")+" · "+dosIdLog(tmpRule.dossierId));
       viewDate=tmpRule.datum;refreshDay();bouwDag();renderAll();announce();
@@ -551,10 +560,7 @@ function bouwSum(){
 
 $("d-probs").addEventListener("click",e=>{
   const b=e.target.closest("[data-goto]");if(!b)return;
-  const tr=$("d-table").querySelector('tr[data-id="'+b.dataset.goto+'"]');
-  if(!tr)return;
-  tr.scrollIntoView({block:"center",behavior:"smooth"});
-  const f=tr.querySelector('[data-f="dossier"]');if(f)f.focus();});
+  openRegelEditor(b.dataset.goto,"dag");});
 $("d-mode").onchange=async e=>{rondMode=e.target.value;
   await putK("meta",rondMode,"rondMode");verversDag();};
 $("d-copy").onclick=()=>{
@@ -843,7 +849,7 @@ function renderBeheer(){
       (d.archief?";opacity:.55":"")+'">'+
       '<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">'+
       '<input class="mono" value="'+esc(d.nummer||"")+'" placeholder="nummer" data-dn="'+esc(d.id)+
-      '" style="width:180px"'+(d.isI7||d.voorlopig?" disabled":"")+">"+
+      '" style="width:180px"'+(d.isI7||isDvn(d)?" disabled":"")+">"+
       '<input value="'+esc(d.naam)+'" data-dnm="'+esc(d.id)+'" style="flex:1;min-width:170px">'+
       '<select data-dl="'+esc(d.id)+'"><option value="nl"'+(d.lang!=="en"?" selected":"")+
       '>NL</option><option value="en"'+(d.lang==="en"?" selected":"")+">EN</option></select>"+
@@ -884,7 +890,10 @@ $("b-list").addEventListener("change",async e=>{
   if(t.dataset.dnm){const d=dosOf(t.dataset.dnm),naam=t.value.trim();
     if(d.voorlopig){if(!naam){t.value=d.naam;toast("De DVN-naam kan niet leeg zijn");return;}
       const oud=d.naam,uit=await hernoemVoorlopig(d.id,naam);if(!uit)t.value=oud;}
-    else{d.naam=naam||d.naam;stempel(d);await put("dossiers",d);
+    else{d.naam=naam||d.naam;stempel(d);
+      const dvn=dvnPutIfPosted(d,"dossiernaam gewijzigd");
+      if(dvn){memDossier(dvn);await put("dossiers",dvn);}
+      else await put("dossiers",d);
       dossiers=await getAll("dossiers");renderAll();}}
   if(t.dataset.dl){const d=dosOf(t.dataset.dl);d.lang=t.value;stempel(d);
     await put("dossiers",d);
@@ -1079,161 +1088,10 @@ async function herstelOmschr(){
   L("omschrijving-hersteld","na afsluiten · "+omsLog(n.tekst));
   toast("Laatst getypte omschrijving is alsnog opgeslagen");}
 
-/* ---------- dagtabel ---------- */
-$("d-table").addEventListener("focusin",e=>{
-  const inp=e.target.closest?e.target.closest('input[data-f="code"]'):null;
-  if(!inp||inp.value.trim()||inp.readOnly)return;
-  const tr=inp.closest("tr");if(!tr)return;
-  const r=regels.find(x=>x.id===tr.dataset.id);if(!r)return;
-  const d=dosOf(r.dossierId);
-  if(!codeItems(d,"").length)return;
-  openAC(inp,codeItems(d,""),async it=>{
-    const voor=kopie1(r);
-    const uit=await koppelRegel(r,it.isNew&&d?{nieuweCode:it.newCode}:{code:it.value});
-    if(!uit){inp.value=codeNaam(d,r.code);return;}
-    undoData("werkcode wijzigen",[voor]);
-    inp.value=codeNaam(uit.dossier,r.code);inp.classList.remove("miss");
-    if(running&&running.id===r.id){running=r;liveId=null;renderLive();}
-    verversDag();announce();});});
-$("d-table").addEventListener("input",e=>{
-  const inp=e.target.closest("input[data-f]");if(!inp)return;
-  const r=regels.find(x=>x.id===inp.closest("tr").dataset.id);if(!r)return;
-  const f=inp.dataset.f,d=dosOf(r.dossierId);
-  if(f==="dossier")openAC(inp,dossierItems(inp.value),async it=>{
-    const w=itemNaarOpdracht(it);
-    if(!w)return;
-    const voor=kopie1(r),tr=inp.closest("tr");
-    const uit=await koppelRegel(r,w);
-    if(!uit){const hd=dosOf(r.dossierId);inp.value=dosVeld(hd);return;}
-    undoData("dossier wijzigen",[voor]);
-    inp.value=dosVeld(uit.dossier);
-    tr.querySelector('[data-f="code"]').value=codeNaam(uit.dossier,r.code);
-    tr.querySelector('[data-f="omschrijving"]').value=r.omschrijving;
-    if(running&&running.id===r.id){running=r;liveId=null;renderLive();}
-    verversDag();renderRecent();renderTot();announce();});
-  else if(f==="code")openAC(inp,codeItems(d,inp.value),async it=>{
-    const voor=kopie1(r);
-    const uit=await koppelRegel(r,it.isNew&&d?{nieuweCode:it.newCode}:{code:it.value});
-    if(!uit){inp.value=codeNaam(d,r.code);return;}
-    undoData("werkcode wijzigen",[voor]);
-    inp.value=codeNaam(uit.dossier,r.code);inp.classList.remove("miss");
-    if(running&&running.id===r.id){running=r;liveId=null;renderLive();}
-    verversDag();announce();});
-  else if(f==="omschrijving"){
-    const q=inp.value.replace(VOOR,"");
-    if(q.length>=2)openAC(inp,omschrItems(d,q),async it=>{
-      undoData("omschrijving wijzigen",[r]);
-      const p=inp.value.match(VOOR);r.omschrijving=(p?p[0]:"")+it.value;
-      if(it.code&&!r.code)r.code=it.code;
-      await saveRegel(r);inp.value=r.omschrijving;
-      inp.closest("tr").querySelector('[data-f="code"]').value=codeNaam(d,r.code);
-      if(running&&running.id===r.id){running=r;liveId=null;renderLive();}
-      verversDag();announce();},true);
-    else closeAC();}});
-$("d-table").addEventListener("keydown",acKeys);
-$("d-table").addEventListener("blur",e=>{
-  const inp=e.target.closest?e.target.closest("input[data-f]"):null;if(!inp)return;
-  const tr=inp.closest("tr");if(!tr)return;
-  const r=regels.find(x=>x.id===tr.dataset.id);if(!r)return;
-  setTimeout(async()=>{
-    if(pickBusy)return;
-    const d=dosOf(r.dossierId);
-    if(inp.dataset.f==="dossier")
-      await dossierBlur(inp,r.dossierId,async op=>{
-        const voor=kopie1(r);
-        const uit=await koppelRegel(r,op);
-        if(!uit)return null;
-        undoData("dossier wijzigen",[voor]);
-        tr.querySelector('[data-f="code"]').value=codeNaam(uit.dossier,r.code);
-        if(running&&running.id===r.id){running=r;liveId=null;renderLive();}
-        verversDag();announce();
-        return uit;});
-    else if(inp.dataset.f==="code"){
-      if(inp.value.trim()===""){
-        if(d&&d.voorlopig){
-          const vast=codeVoor(d,null);
-          if(!vast)geenCodes();
-          else{if(r.code!==vast){const voor=kopie1(r);
-              if(await koppelRegel(r,{code:vast}))undoData("werkcode hersteld",[voor]);}
-            toast("Een dossier waarvan het nummer nog volgt boekt altijd op "+
-              codeNaam(d,vast));}}
-        else if(isIndirect(d)){
-          if(r.code!==null){const voor=kopie1(r);
-            if(await koppelRegel(r,{code:null}))undoData("werkcode wissen",[voor]);}
-          toast("Een i7-regel moet een werkcode hebben — kies er een uit de lijst");}
-        else if(r.code!==null){undoData("werkcode wissen",[r]);
-          r.code=null;await saveRegel(r);}}
-      else if(inp.value.trim()!==codeNaam(d,r.code)&&!(d&&d.voorlopig)){
-        const voor=kopie1(r);
-        if(await codeUitVeld(r,inp.value.trim()))
-          undoData("werkcode wijzigen",[voor]);}
-      inp.value=codeNaam(dosOf(r.dossierId),r.code);
-      verversDag();}},220);},true);
-$("d-table").addEventListener("change",async e=>{
-  const inp=e.target.closest("input[data-f]");if(!inp)return;
-  const r=regels.find(x=>x.id===inp.closest("tr").dataset.id);if(!r)return;
-  const f=inp.dataset.f,v=inp.value.trim();
-  if(f==="dossier")return;   /* wordt volledig door de keuzelijst en blur afgehandeld */
-  const loopt=!!(running&&running.id===r.id);
-  /* Een eindtijd invullen op de lopende regel is een echte stopactie, geen
-     veldwijziging: anders blijft meta.running naar een afgesloten regel wijzen.  */
-  if(f==="eind"&&loopt){
-    if(v===""){inp.value="";return;}
-    const m=hm2m(v);
-    if(m==null){toast("Ongeldige tijd");inp.value="";return;}
-    if(hm2m(r.start)!=null&&m<hm2m(r.start)){
-      toast("Eindtijd ligt vóór de starttijd");inp.value="";return;}
-    const voor=kopie1(r);
-    const dicht=await stopRunning(m2hm(m),"handmatig stoppen");
-    if(!dicht)return;
-    undoTimer("timer stoppen",[voor],{herstelRunning:voor.id,verwachtRunning:null,
-      verwacht:[{id:voor.id,gewijzigd:dicht.gewijzigd}]});
-    bouwDag();renderAll();announce();
-    toast("Timer gestopt om "+m2hm(m));return;}
-  const oud=Object.assign({},r);
-  if(f==="start"){const m=hm2m(v);
-    if(m==null){toast("Ongeldige tijd");inp.value=r.start;return;}
-    if(loopt&&m>hm2m(nowHM())){
-      toast("De starttijd van een lopende regel kan niet in de toekomst liggen");
-      inp.value=r.start;return;}
-    if(m2hm(m)===r.start)return;
-    r.start=m2hm(m);}
-  else if(f==="eind"){
-    /* Een eindtijd leegmaken zou een open regel maken zonder officiële timerpointer,
-       die na herladen onverwacht actief kan worden. Daarvoor is de knop ▶.      */
-    if(v===""){toast("Een eindtijd kan niet worden leeggemaakt — gebruik ▶ om deze "+
-      "regel de lopende timer te maken");inp.value=r.eind||"";return;}
-    {const m=hm2m(v);
-      if(m==null){toast("Ongeldige tijd");inp.value=r.eind||"";return;}
-      if(hm2m(r.start)!=null&&m<hm2m(r.start)){toast("Eindtijd ligt vóór de starttijd");
-        inp.value=r.eind||"";return;}
-      if(m2hm(m)===r.eind)return;
-      r.eind=m2hm(m);}}
-  else if(f==="omschrijving"){if(inp.value===r.omschrijving)return;
-    r.omschrijving=inp.value;}
-  else if(f==="uren"){
-    /* Een actieve timer mag nooit urenHand krijgen: de live teller zou bevriezen. */
-    if(loopt){toast("Handmatige uren kunnen niet op een lopende regel — stop hem "+
-      "eerst met E of vul een eindtijd in");inp.value=uu(urenOf(r));return;}
-    if(v===""){if(!r.urenHand)return;r.urenHand=false;}
-    else{const n=Number(v.replace(",","."));
-      if(!isFinite(n)||n<=0||n>DAGMAX){toast("Ongeldig aantal uren");
-        inp.value=uu(urenOf(r));return;}
-      const w=Math.max(0.1,Math.round(n*10)/10);
-      if(r.urenHand&&w===r.uren)return;
-      if(!dagRuimte(r.datum,w,r.id)){inp.value=uu(urenOf(r));return;}
-      r.uren=w;r.urenHand=true;}}
-  if(f!=="uren"&&!r.urenHand)r.uren=urenOf(r);
-  if(!dagRuimte(r.datum,urenOf(r),r.id)){
-    Object.keys(r).forEach(x=>{delete r[x];});Object.assign(r,oud);
-    inp.value=f==="uren"?uu(urenOf(r)):(r[f]||"");return;}
-  if(r.hersteld)delete r.hersteld;
-  undoData("regel bewerken",[oud]);
-  L("dag-bewerk",f+" · "+(f==="omschrijving"?omsLog(v):kort(v,20)));
-  if(loopt){running=r;liveId=null;}
-  await saveRegel(r);
-  if(f==="start"||f==="eind")bouwDag();else verversDag();
-  renderLive();renderTot();announce();});
+/* ---------- dagtabel ----------
+   Bestaande tijdregels worden uitsluitend via de bewerksheet gewijzigd. De
+   tabelvelden zijn read-only; focus/input/change mogen geen ruwe mutatie meer
+   doen, ook niet via autocomplete.                                            */
 $("d-table").addEventListener("click",async e=>{
   const ed=e.target.closest("[data-edit], input[data-f][readonly]");
   if(ed){const tr=ed.closest("tr[data-id]");if(tr)await openRegelEditor(tr.dataset.id,"dag");return;}
@@ -1272,9 +1130,7 @@ $("d-table").addEventListener("click",async e=>{
     undoData("gat invullen",[],{weg:[r.id]});
     await saveRegel(r);
     bouwDag();renderTot();announce();
-    for(const tr of $("d-table").querySelectorAll("tbody tr[data-id]")){
-      const s=tr.querySelector('[data-f="start"]');
-      if(s&&s.value===m2hm(a)){tr.querySelector('[data-f="dossier"]').focus();break;}}}});
+    await openRegelEditor(r.id,"dag");}});
 /* De enige manier om een afgesloten regel weer te laten lopen. Sluit de huidige timer
    af, opent de gekozen regel en zet meta.running om — atomisch, met controle op datum,
    starttijd en overlap. urenHand gaat er af, anders bevriest de teller.        */
@@ -1299,18 +1155,21 @@ async function maakLopend(id){
     const open=Object.assign({},r,{eind:null,urenHand:false,gewijzigd:Date.now()});
     delete open.hersteld;
     const od=dosOf(open.dossierId);
-    const dvnCheck=od&&isDvn(od)&&dvnIntappState(od)==="posted"?
-      markDvnControleNodig(od,"tijdregel opnieuw lopend gemaakt"):null;
+    const dvnCheck=dvnPutIfPosted(od,"tijdregel opnieuw lopend gemaakt");
+    const dvnDicht=dicht?dvnPutIfPosted((dvnCheck&&dicht.dossierId===dvnCheck.id)?null:
+      dosOf(dicht.dossierId),"tijdregel gewijzigd"):null;
     await rustig([id,dicht?dicht.id:null]);
     await txAll(o=>{
       if(dicht)o.regels.put(dicht);
       if(dvnCheck)o.dossiers.put(dvnCheck);
+      if(dvnDicht)o.dossiers.put(dvnDicht);
       o.regels.put(open);
       o.meta.put(open.id,"running");
       o.meta.delete("pending");});
     pending=null;ntWizard=null;
     if(dicht)memRegel(dicht);
     if(dvnCheck)memDossier(dvnCheck);
+    if(dvnDicht)memDossier(dvnDicht);
     memRegel(open);
     running=alle.find(x=>x.id===open.id);
     vergeetTimerUndo("timer overgezet");
@@ -1324,5 +1183,6 @@ $("d-add").onclick=async()=>{
   if(!dagRuimte(viewDate,0.1,null))return;
   const r=nieuweRegel({start:nowHM(),eind:nowHM()});
   undoData("regel toevoegen",[],{weg:[r.id]});
-  await saveRegel(r);bouwDag();announce();};
+  await saveRegel(r);bouwDag();announce();
+  await openRegelEditor(r.id,"dag");};
 

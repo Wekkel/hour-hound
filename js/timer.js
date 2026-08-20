@@ -1,6 +1,15 @@
 "use strict";
 /* ---------- regels ---------- */
-const saveRegel=r=>{r.gewijzigd=Date.now();memRegel(r);return schrijfRegel(kopie1(r));};
+const saveRegel=r=>{
+  r.gewijzigd=Date.now();memRegel(r);
+  const kop=kopie1(r);
+  const dvn=dvnPutIfPosted(dosOf(r.dossierId),"tijdregel gewijzigd");
+  if(dvn)memDossier(dvn);
+  const vorige=schrijfRij[r.id]||Promise.resolve();
+  const p=vorige.then(()=>tx(dvn?["regels","dossiers"]:"regels","readwrite",o=>{
+    if(dvn){o.regels.put(kop);o.dossiers.put(dvn);}else o.put(kop);}));
+  schrijfRij[r.id]=p.then(()=>{},()=>{});
+  return p;};
 function refreshDay(){regels=alle.filter(x=>x.datum===viewDate)
   .sort((a,b)=>(hm2m(a.start)||0)-(hm2m(b.start)||0));}
 function prefixVoor(d,datum,tekst){
@@ -15,8 +24,9 @@ function sluitObj(r,eindTijd){
   const k=Object.assign({},r);
   const oms=pakOmschr(r.id);
   if(oms!=null)k.omschrijving=oms;
-  let e=eindTijd||nowHM();
-  if(hm2m(e)==null)e=nowHM();
+  let e=eindTijd;
+  if(e==null||hm2m(e)==null)e=k.datum!==today()?"23:59":nowHM();
+  if(hm2m(e)==null)e="23:59";
   if(hm2m(e)<hm2m(k.start))e="23:59";
   k.eind=e;
   if(!k.urenHand)k.uren=Math.ceil(Math.max(1,hm2m(e)-hm2m(k.start))/6)/10;
@@ -29,9 +39,10 @@ async function _stop(eindTijd){
   if(!running)return null;
   const voor=kopie1(running);
   const dicht=sluitObj(running,eindTijd);
+  const dvn=dvnPutIfPosted(dosOf(dicht.dossierId),"tijdregel gewijzigd");
   await rustig([dicht.id]);
-  await txAll(o=>{o.regels.put(dicht);o.meta.delete("running");});
-  running=null;memRegel(dicht);
+  await txAll(o=>{o.regels.put(dicht);if(dvn)o.dossiers.put(dvn);o.meta.delete("running");});
+  running=null;memRegel(dicht);if(dvn)memDossier(dvn);
   L("stop-regel",dicht.start+"-"+dicht.eind+" · "+uu(urenOf(dicht))+" u · "+
     dosIdLog(dicht.dossierId));
   return{dicht,voor};}
@@ -68,7 +79,13 @@ async function _start(o){
       reden:"nieuwe timer gestart",autoVerwijderd:autoWeg.length,
       vorigeEind:dagEinde[dag]});}
   const dos=maak||(nieuw.dossierId?dosOf(nieuw.dossierId):null);
-  const dosNw=dos?stempel(Object.assign({},dos,{used:(dos.used||0)+1})):null;
+  let dosNw=dos?stempel(Object.assign({},dos,{used:(dos.used||0)+1})):null;
+  const dvnPuts=[];
+  const noteDvn=(d,reden)=>{const nw=dvnPutIfPosted(d,reden);
+    if(nw){dvnPuts.push(nw);return nw;}return d;};
+  if(dosNw)dosNw=noteDvn(dosNw,"tijdregel toegevoegd");
+  if(dicht)noteDvn((dosNw&&dicht.dossierId===dosNw.id)?null:dosOf(dicht.dossierId),
+    "tijdregel gewijzigd");
   const nwCode=Object.assign({},codeGebruik);
   if(nieuw.code)nwCode[nieuw.code]=(nwCode[nieuw.code]||0)+1;
   await rustig([nieuw.id,dicht?dicht.id:null].concat(autoWeg.map(r=>r.id)));
@@ -81,6 +98,7 @@ async function _start(o){
     if(nwStack)s.meta.put(nwStack,"stack");
     if(dagEindeWeg){s.meta.put(nwDagEinde,"dagEinde");s.meta.put(nwDagAudit,"dagAudit");}
     if(dosNw)s.dossiers.put(dosNw);
+    dvnPuts.forEach(d=>{if(!dosNw||d.id!==dosNw.id)s.dossiers.put(d);});
     if(nieuw.code)s.meta.put(nwCode,"codeGebruik");});
   pending=null;
   vergeetTimerUndo("nieuwe timerwissel");
@@ -95,6 +113,7 @@ async function _start(o){
   if(nwStack)stack=nwStack;
   if(dagEindeWeg){dagEinde=nwDagEinde;dagAudit=nwDagAudit;}
   if(dosNw)memDossier(dosNw);
+  dvnPuts.forEach(d=>{if(!dosNw||d.id!==dosNw.id)memDossier(d);});
   if(maak)L("dossier-nieuw","dos"+idKort(maak.id)+(maak.nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(maak.naam):""));
   codeGebruik=nwCode;
@@ -159,6 +178,7 @@ async function koppelRegel(r,op){
   if(dosK&&dosK.voorlopig&&!defaultCode(dosK)){
     toast("Werkcode Commercieel ontbreekt in de i7-werklijst — herstel werkcodes.json eerst");
     return null;}
+  const oudD=r.dossierId?dosOf(r.dossierId):null;
   if(dosK&&op.telUsed){dosK.used=(dosK.used||0)+1;stempel(dosK);}
   if(op.nieuweCode&&dosK&&!isIndirect(dosK)&&
     !dosK.codes.some(c=>c.code===op.nieuweCode))
@@ -183,16 +203,21 @@ async function koppelRegel(r,op){
   const telCode=!!(dosK&&isIndirect(dosK)&&nw.code&&nw.code!==r.code);
   const nwCode=Object.assign({},codeGebruik);
   if(telCode)nwCode[nw.code]=(nwCode[nw.code]||0)+1;
+  const dvnNw=dvnPutIfPosted(dosK,"tijdregel gewijzigd");
+  if(dvnNw)dosK=dvnNw;
+  const dvnOud=(!dosK||!oudD||oudD.id!==dosK.id)?dvnPutIfPosted(oudD,"tijdregel gewijzigd"):null;
   try{
     await rustig([r.id]);
     await tx(["dossiers","regels","meta"],"readwrite",o=>{
       if(dosK)o.dossiers.put(dosK);
+      if(dvnOud)o.dossiers.put(dvnOud);
       o.regels.put(nw);
       if(telCode)o.meta.put(nwCode,"codeGebruik");});
   }catch(e){L("FOUT-koppelen",String(e));
     toast("Koppelen mislukt — er is niets gewijzigd: "+e);
     return null;}
   if(dosK)memDossier(dosK);
+  if(dvnOud)memDossier(dvnOud);
   if(telCode)codeGebruik=nwCode;
   if(maak)L("dossier-nieuw","dos"+idKort(maak.id)+(maak.nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(maak.naam):""));
@@ -398,16 +423,12 @@ $("wake-ja").onclick=()=>{snoozeTot=Date.now()+60*60*1000;hideWake();};
 $("wake-nee").onclick=async()=>{hideWake();
   await stopRunning(null,"stoppen na langloopmelding");await nieuweTaak();};
 
-/* ---------- middernachtgrens ---------- */
+/* ---------- middernachtgrens ----------
+   Een tijdregel kan niet over meerdere datums lopen. Er wordt daarom nooit
+   stilzwijgend afgesloten of doorgeboekt: de gebruiker krijgt dezelfde expliciete
+   keuzesheet als bij een herstart de volgende ochtend.                        */
 async function middernachtCheck(){
   if(!running||running.datum===today())return;
-  const d=running.datum,verwacht=running.id;
-  await timerOp("middernachtcontrole",async t=>{
-    if(!opGeldig(t,verwacht))return;
-    if(!running||running.datum===today())return;
-    await _stop("23:59");
-    ntWizard=null;pending=null;
-    try{await del("meta","pending");}catch(e){}
-    liveId=null;renderAll();announce();
-    toast("Regel van "+dmy(d)+" is om 23:59 afgesloten");});}
+  if(typeof controleerOudeLopendeTaak==="function")controleerOudeLopendeTaak();
+}
 

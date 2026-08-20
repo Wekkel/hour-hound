@@ -47,6 +47,10 @@ function keurRegels(arr){
       autoAanvulBatch:x.autoAanvulBatch?str(x.autoAanvulBatch,80):null,
       autoAanvulReden:x.autoAanvulReden?str(x.autoAanvulReden,80):null,
       soort:SOORTEN.indexOf(x.soort)>=0?x.soort:"werk",
+      hersteld:!!x.hersteld,herstelOp:+x.herstelOp||0,
+      herstelOrigineel:x.herstelOrigineel&&typeof x.herstelOrigineel==="object"?{
+        eind:x.herstelOrigineel.eind==null?null:str(x.herstelOrigineel.eind,5),
+        uren:+x.herstelOrigineel.uren||0,urenHand:!!x.herstelOrigineel.urenHand}:undefined,
       gemaakt:+x.gemaakt||Date.now(),gewijzigd:+x.gewijzigd||0});});
   return{goed,fout};}
 function keurDossiers(arr){

@@ -5,13 +5,21 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
 ## Flows die nu worden bewaakt
 
 1. **Lopende taak van eerdere dag**
-   De app moet bij start een oude open timer herkennen en een duidelijke sheet tonen met concrete keuzes. De test kiest bewust `Door laten lopen`.
+   De app moet bij start een oude open timer herkennen en een duidelijke sheet tonen. Stilzwijgend afsluiten om 23:59 is verboden; `Door laten lopen` houdt de timer op de oorspronkelijke datum.
 
 2. **Veilige bewerking van bestaande tijdregels**
    Een opgeslagen regel op de Dag-tab wordt niet rauw inline gewijzigd, maar via de sheet `Tijdregel bewerken` en expliciet `Wijzigingen opslaan`.
 
 3. **DVN → dossiernummer → Intapp-status**
-   Een DVN blijft intern DVN, krijgt een echt dossiernummer voor Intapp, en kan daarna als `ingevoerd in Intapp` worden gemarkeerd.
+   Een DVN blijft intern DVN, krijgt een echt dossiernummer voor Intapp, kan als `ingevoerd in Intapp` worden gemarkeerd, en valt terug naar `controle nodig` na een latere tijdregelwijziging.
+
+4. **Dagafsluiting**
+   Einde werkdag opent de afsluitsheet. Afsluiten zonder Diversen-aanvulling mag niets extra boeken.
+
+5. **Recente taken**
+   Alle taken van vandaag blijven zichtbaar; alleen de eerste vier hebben sneltoetsen 1–4 en de lijst gaat scrollen vanaf taak 5.
+
+Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 
 ## Uitvoeren
 
@@ -33,7 +41,6 @@ npm test
 
 Breid deze suite uit zodra een workflow voor de gebruiker administratief belangrijk wordt, bijvoorbeeld:
 
-- dag afsluiten met en zonder automatische Diversen-aanvulling;
 - dag heropenen en automatische aanvulregels verwijderen/behouden;
 - boeken in Intapp en boekstatus terugval;
 - import/export/restore van echte backups.

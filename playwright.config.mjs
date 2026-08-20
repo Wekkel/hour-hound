@@ -7,7 +7,8 @@ export default defineConfig({
   fullyParallel: false,
   use: {
     baseURL: 'http://127.0.0.1:4173',
-    trace: 'retain-on-failure'
+    trace: 'retain-on-failure',
+    serviceWorkers: 'block'
   },
   webServer: {
     command: 'node tests/e2e/static-server.mjs',
