@@ -37,7 +37,7 @@ $("open-days").addEventListener("click",async e=>{
   if(close)await sluitWerkdag(close.dataset.openClose);});
 
 document.addEventListener("keydown",async e=>{
-  if(["dayclose","oldrun","editregel","dvnnum"].some(id=>$(id)&&$(id).classList.contains("on")))return;
+  if(["dayclose","oldrun","editregel","dvnnum","dvnpost"].some(id=>$(id)&&$(id).classList.contains("on")))return;
   if(boek.aan){boekKeys(e);return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"&&!e.shiftKey){
     const t=e.target;
@@ -93,6 +93,19 @@ if($("dvnnum")){
     if(e.key==="Enter"&&e.target&&e.target.tagName==="INPUT"){e.preventDefault();slaDvnNummerOp();}
   },true);
 }
+
+/* ---------- DVN Intapp-markering ---------- */
+if($("dvnpost")){
+  $("dp-x").onclick=()=>sluitDvnPostSheet(false);
+  $("dp-cancel").onclick=()=>sluitDvnPostSheet(false);
+  $("dp-save").onclick=markeerDvnIngevoerd;
+  document.addEventListener("keydown",e=>{
+    if(!$("dvnpost").classList.contains("on"))return;
+    if(e.key==="Escape"){e.preventDefault();sluitDvnPostSheet(false);}
+    if(e.key==="Enter"){e.preventDefault();markeerDvnIngevoerd();}
+  },true);
+}
+
 
 /* ---------- oude lopende taak en bewerksheets ---------- */
 if($("oldrun")){

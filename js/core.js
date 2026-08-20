@@ -324,17 +324,53 @@ const actief=()=>dossiers.filter(d=>!d.archief);
 const isDvn=d=>!!d&&(d.voorlopig||d.dvn);
 const isIndirect=d=>!!d&&(d.isI7||d.voorlopig);
 const dosVeld=d=>d?(d.nummer||d.naam):"";
+function dvnRegels(d){return d?alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze"):[];}
+function dvnResolvedDoel(d){return d&&d.dvnTo?dosOf(d.dvnTo):null;}
+function dvnResolvedNummer(d){
+  if(!d)return"";
+  const doel=dvnResolvedDoel(d);
+  return (doel&&doel.nummer)||d.nummer||d.dvnResolvedNr||"";}
+function dvnIntappState(d){
+  if(!isDvn(d))return"";
+  if(!dvnResolvedNummer(d))return"missing";
+  if(d.dvnIntappStatus==="posted")return"posted";
+  if(d.dvnIntappStatus==="needs_check")return"needs_check";
+  return"ready";}
+function dvnStatusTekst(d){
+  const nr=dvnResolvedNummer(d),st=dvnIntappState(d);
+  if(st==="missing")return"dossiernummer ontbreekt";
+  if(st==="posted")return"dossiernummer "+nr+" · ingevoerd in Intapp";
+  if(st==="needs_check")return"dossiernummer "+nr+" · controle nodig";
+  if(st==="ready")return"dossiernummer "+nr+" · nog invoeren";
+  return"DVN";}
+function dvnSummaryStatus(d){
+  const st=dvnIntappState(d);
+  if(st==="posted")return"DVN · ingevoerd in Intapp";
+  if(st==="needs_check")return"DVN · controle nodig";
+  if(st==="ready")return"DVN · nog invoeren";
+  if(st==="missing")return"DVN · nummer ontbreekt";
+  return"";}
+function dvnAuditAdd(d,type,extra){
+  const ev=(Array.isArray(d&&d.dvnIntappAudit)?d.dvnIntappAudit:[]).slice(-19);
+  ev.push(Object.assign({type,t:new Date().toISOString()},extra||{}));
+  return ev;}
+function markDvnControleNodig(d,reden){
+  if(!isDvn(d)||dvnIntappState(d)!=="posted")return d;
+  return stempel(Object.assign({},d,{dvnIntappStatus:"needs_check",
+    dvnIntappNeedsCheckAt:new Date().toISOString(),
+    dvnIntappNeedsCheckReason:reden||"tijdregel gewijzigd",
+    dvnIntappAudit:dvnAuditAdd(d,"controle-nodig",{reden:reden||"tijdregel gewijzigd"})}));}
 function intappDossierInfo(d){
   const ind=i7();
   if(!d)return{nummer:"",naam:"",dvn:false,status:""};
   if(d.dvnTo){
-    const doel=dosOf(d.dvnTo);
+    const doel=dvnResolvedDoel(d);
     if(doel)return{nummer:doel.nummer||"",naam:doel.naam,dvn:true,
-      status:"DVN · nog invoeren"};}
+      status:dvnSummaryStatus(d)};}
   if(d.voorlopig&&!d.nummer)return{nummer:ind?ind.nummer:"",
-    naam:ind?ind.naam:"Indirecte uren",dvn:true,status:"DVN · nummer ontbreekt"};
-  if(isDvn(d))return{nummer:d.nummer||d.dvnResolvedNr||"",naam:d.naam,dvn:true,
-    status:(d.nummer||d.dvnResolvedNr)?"DVN · nog invoeren":"DVN · nummer ontbreekt"};
+    naam:ind?ind.naam:"Indirecte uren",dvn:true,status:dvnSummaryStatus(d)};
+  if(isDvn(d))return{nummer:dvnResolvedNummer(d),naam:d.naam,dvn:true,
+    status:dvnSummaryStatus(d)};
   return{nummer:d.nummer||"",naam:d.naam,dvn:false,status:""};}
 const dosColor=d=>{const P=["#3f6b3a","#a8452a","#39607f","#7a5090","#8a6b2c","#2f6f6b",
   "#8f3f5c","#5a6b2c","#6b4a3f","#455a64"];return d?P[(d.c||0)%P.length]:"#888";};

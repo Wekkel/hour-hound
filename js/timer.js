@@ -312,10 +312,16 @@ async function slaDvnNummerOp(){
   warn.push(rs.length+' regel(s) blijven intern aan deze DVN gekoppeld. Het datum/werknaam-voorvoegsel verdwijnt en de i7-werkcode wordt gewist.');
   if(!confirm(warn.join("\n\n")+"\n\nDoorgaan?"))return;
   const nu=Date.now();
+  const vorigNr=dvnResolvedNummer(d);
   const nwD=stempel(Object.assign({},d,{
     naam:bestaand?d.naam:naam,nummer:bestaand?null:nr,voorlopig:false,dvn:true,
     dvnOriginalName:d.dvnOriginalName||d.naam,dvnResolvedAt:new Date().toISOString(),
-    dvnResolvedNr:nr,dvnTo:bestaand?bestaand.id:null}));
+    dvnResolvedNr:nr,dvnTo:bestaand?bestaand.id:null,
+    dvnIntappStatus:(d.dvnIntappStatus==="posted"&&vorigNr&&vorigNr!==nr)?"needs_check":d.dvnIntappStatus,
+    dvnIntappNeedsCheckAt:(d.dvnIntappStatus==="posted"&&vorigNr&&vorigNr!==nr)?new Date().toISOString():d.dvnIntappNeedsCheckAt,
+    dvnIntappNeedsCheckReason:(d.dvnIntappStatus==="posted"&&vorigNr&&vorigNr!==nr)?"dossiernummer aangepast":d.dvnIntappNeedsCheckReason,
+    dvnIntappAudit:(d.dvnIntappStatus==="posted"&&vorigNr&&vorigNr!==nr)?
+      dvnAuditAdd(d,"controle-nodig",{reden:"dossiernummer aangepast",van:vorigNr,naar:nr}):d.dvnIntappAudit}));
   if(!bestaand)delete nwD.dvnTo;
   const nwRegels=rs.map(r=>Object.assign({},r,{code:null,
     omschrijving:((r.omschrijving||"").replace(VOOR,"").trim())||d.naam,gewijzigd:nu}));
@@ -332,6 +338,46 @@ async function slaDvnNummerOp(){
   undoStack=[];liveId=null;refreshDay();renderAll();renderWeek();announce();
   L("dvn-nummer","dos"+idKort(d.id)+" → "+nr+" · "+rs.length+" regel(s)"+(bestaand?" · koppeling":""));
   toast("DVN gebruikt nu dossiernummer "+nr+" voor Intapp");sluitDvnNummerSheet(true);}
+
+/* ---------- DVN markeren als ingevoerd in Intapp ---------- */
+function openDvnPostSheet(id){
+  const d=dosOf(id),dlg=$("dvnpost");
+  if(!dlg||!d||!isDvn(d))return Promise.resolve(false);
+  if(!dvnResolvedNummer(d)){toast("Ken eerst een dossiernummer toe");return Promise.resolve(false);}
+  const rs=dvnRegels(d),u=rs.reduce((s,r)=>s+urenOf(r),0),info=intappDossierInfo(d);
+  dlg.dataset.id=id;
+  $("dp-status").textContent=dvnStatusTekst(d);
+  $("dp-meta").innerHTML="<b>"+esc(info.nummer)+" · "+esc(info.naam||d.naam)+"</b><br>"+
+    rs.length+" regel(s) · "+uu(u)+" uur";
+  $("dp-help").textContent=rs.length?
+    "Deze DVN blijft traceerbaar onder Beheer, maar verdwijnt uit de open DVN-acties zodra je bevestigt.":
+    "Deze DVN heeft nog geen tijdregels. Je kunt hem wel markeren, maar meestal is dat niet nodig.";
+  dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
+  return new Promise(res=>{dlg._resolve=res;setTimeout(()=>$("dp-save").focus(),0);});}
+function sluitDvnPostSheet(v){
+  const dlg=$("dvnpost");if(!dlg)return;
+  dlg.classList.remove("on");dlg.setAttribute("aria-hidden","true");
+  const r=dlg._resolve;dlg._resolve=null;delete dlg.dataset.id;if(r)r(v);}
+async function markeerDvnIngevoerd(){
+  const dlg=$("dvnpost"),id=dlg&&dlg.dataset.id,d=dosOf(id);
+  if(!dlg||!d||!isDvn(d)){sluitDvnPostSheet(false);return;}
+  const nr=dvnResolvedNummer(d);
+  if(!nr){toast("Ken eerst een dossiernummer toe");return;}
+  const rs=dvnRegels(d),u=Math.round(rs.reduce((s,r)=>s+urenOf(r),0)*10)/10;
+  if(!confirm("Markeer "+rs.length+" regel(s) / "+uu(u)+" uur voor dossier "+nr+" als ingevoerd in Intapp?"))return;
+  const nu=new Date().toISOString();
+  const nw=stempel(Object.assign({},d,{
+    dvnIntappStatus:"posted",dvnIntappPostedAt:nu,
+    dvnIntappPostedCount:rs.length,dvnIntappPostedHours:u,
+    dvnIntappPostedRuleIds:rs.map(r=>r.id),
+    dvnIntappNeedsCheckAt:null,dvnIntappNeedsCheckReason:null,
+    dvnIntappAudit:dvnAuditAdd(d,"ingevoerd",{regels:rs.length,uren:u,nummer:nr})}));
+  try{await put("dossiers",nw);}
+  catch(e){L("FOUT-dvn-post",String(e));toast("Markeren mislukt — niets gewijzigd: "+e);return;}
+  memDossier(nw);renderAll();announce();
+  L("dvn-intapp",dosIdLog(id)+" · "+rs.length+" regel(s) · "+uu(u)+" u");
+  toast("DVN gemarkeerd als ingevoerd in Intapp");sluitDvnPostSheet(true);}
+
 
 /* ---------- langloopmelding ----------
    Geen vraag meer bij afwezigheid: hourhound draait de hele dag op de achtergrond.

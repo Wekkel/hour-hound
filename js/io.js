@@ -3,7 +3,7 @@
 $("b-import").onclick=()=>$("file").click();
 $("file").onchange=e=>{const f=e.target.files[0];if(f)importFile(f);e.target.value="";};
 const str=(v,max)=>typeof v==="string"?v.slice(0,max||400):"";
-const BACKUPVERSIE=6;
+const BACKUPVERSIE=7;
 /* Een datum is pas geldig als hij na parsen exact dezelfde tekst oplevert: zo vallen
    2026-02-30 en 2026-13-01 er ook uit.                                          */
 const isDatum=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&
@@ -71,6 +71,20 @@ function keurDossiers(arr){
       dvnResolvedAt:x.dvnResolvedAt?str(x.dvnResolvedAt,40):null,
       dvnResolvedNr:x.dvnResolvedNr?str(x.dvnResolvedNr,60):null,
       dvnTo:x.dvnTo?str(x.dvnTo,80):null,
+      dvnIntappStatus:["posted","needs_check"].indexOf(x.dvnIntappStatus)>=0?x.dvnIntappStatus:null,
+      dvnIntappPostedAt:x.dvnIntappPostedAt?str(x.dvnIntappPostedAt,40):null,
+      dvnIntappPostedCount:+x.dvnIntappPostedCount||0,
+      dvnIntappPostedHours:+x.dvnIntappPostedHours||0,
+      dvnIntappPostedRuleIds:Array.isArray(x.dvnIntappPostedRuleIds)?
+        x.dvnIntappPostedRuleIds.filter(id=>typeof id==="string").slice(0,500):[],
+      dvnIntappNeedsCheckAt:x.dvnIntappNeedsCheckAt?str(x.dvnIntappNeedsCheckAt,40):null,
+      dvnIntappNeedsCheckReason:x.dvnIntappNeedsCheckReason?str(x.dvnIntappNeedsCheckReason,120):null,
+      dvnIntappAudit:Array.isArray(x.dvnIntappAudit)?x.dvnIntappAudit.slice(-50)
+        .filter(e=>e&&typeof e==="object").map(e=>({
+          type:str(e.type,40)||"audit",t:str(e.t,40)||new Date().toISOString(),
+          reden:e.reden?str(e.reden,120):null,nummer:e.nummer?str(e.nummer,60):null,
+          van:e.van?str(e.van,60):null,naar:e.naar?str(e.naar,60):null,
+          regels:+e.regels||0,uren:+e.uren||0})):[],
       c:+x.c||0,used:+x.used||0,gewijzigd:+x.gewijzigd||0,
       codes:Array.isArray(x.codes)?x.codes.filter(c=>c&&c.code)
         .map(c=>({code:str(c.code,60),naam:str(c.naam,120)||str(c.code,60)})):[]});});

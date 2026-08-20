@@ -175,7 +175,7 @@ async function sluitWerkdag(datum){
 
 
 /* ---------- bewuste regelbewerking en oude lopende timer ---------- */
-const isModalOpen=()=>["dayclose","oldrun","editregel","boek","herstel"].some(id=>{
+const isModalOpen=()=>["dayclose","oldrun","editregel","dvnnum","dvnpost","boek","herstel"].some(id=>{
   const el=$(id);return el&&el.classList.contains("on");});
 function voorstelOudeTimerEind(r){
   const na=alle.filter(x=>x.datum===r.datum&&x.id!==r.id&&hm2m(x.start)!=null&&
@@ -233,6 +233,8 @@ function openRegelEditor(id,bron){
   const waars=[];
   if(loopt)waars.push("Deze regel is de lopende timer. Een eindtijd invullen stopt hem bewust op die tijd.");
   if(r.autoAanvul)waars.push("Dit is een automatische Diversen-aanvulregel. Aanpassen kan de dagafsluiting veranderen.");
+  if(d&&isDvn(d)&&dvnIntappState(d)==="posted")
+    waars.push("Deze regel hoort bij een DVN die als ingevoerd in Intapp is gemarkeerd. Opslaan zet die DVN terug naar controle nodig.");
   if(regelIsGeboekt(r))waars.push("Deze regel hoort bij een Intapp-regel die als geboekt is gemarkeerd. Door wijzigen valt die boekstatus automatisch terug naar controle nodig.");
   if(bron==="oldrun")waars.push("Deze taak is op een eerdere datum gestart. Kies expliciet een eindtijd als hij niet werkelijk moet doorlopen.");
   $("er-warn").innerHTML=waars.map(esc).join("<br>");
@@ -279,14 +281,21 @@ function openRegelEditor(id,bron){
       if(!dagRuimte(tmpRule.datum,urenOf(tmpRule),tmpRule.id))return;
       if((cur.autoAanvul||regelIsGeboekt(cur))&&!confirm("Je wijzigt een bestaande tijdregel met administratieve status.\n\nDoorgaan en bewust opslaan?"))return;
       tmpRule.gewijzigd=Date.now();delete tmpRule.hersteld;
+      const extraDos={};
+      [cur.dossierId,tmpRule.dossierId].forEach(id=>{
+        const od=dosOf(id);
+        if(od&&isDvn(od)&&dvnIntappState(od)==="posted")
+          extraDos[od.id]=markDvnControleNodig(od,"tijdregel gewijzigd");});
       if(c.nieuweCode&&tmpD&&!isIndirect(tmpD)&&!(tmpD.codes||[]).some(x=>x.code===c.nieuweCode)){
         tmpD=Object.assign({},tmpD,{codes:(tmpD.codes||[]).concat([{code:c.nieuweCode,naam:c.nieuweCode}])});stempel(tmpD);}
+      if(tmpD&&extraDos[tmpD.id])tmpD=Object.assign({},tmpD,extraDos[tmpD.id]);
+      else if(tmpD)extraDos[tmpD.id]=tmpD;
       try{
         await rustig([tmpRule.id]);
-        await txAll(o=>{if(tmpD)o.dossiers.put(tmpD);o.regels.put(tmpRule);
+        await txAll(o=>{Object.values(extraDos).forEach(d=>o.dossiers.put(d));o.regels.put(tmpRule);
           if(looptNu&&eind){o.meta.delete("running");o.meta.delete("pending");}});
       }catch(e){L("FOUT-regel-editor",String(e));toast("Opslaan mislukt — niets gewijzigd: "+e);return;}
-      if(tmpD)memDossier(tmpD);memRegel(tmpRule);
+      Object.values(extraDos).forEach(memDossier);memRegel(tmpRule);
       if(looptNu&&eind){running=null;pending=null;vergeetTimerUndo("regel gestopt via bewerksheet");}
       else if(looptNu){running=alle.find(x=>x.id===tmpRule.id);liveId=null;}
       undoData("regel bewerken",[voor]);
@@ -780,23 +789,25 @@ $("w-grid").addEventListener("click",e=>{const b=e.target.closest("[data-day]");
   viewDate=b.dataset.day;refreshDay();showTab("dag");});
 $("w-prov").addEventListener("click",e=>{
   const ren=e.target.closest("[data-ren]");if(ren){vraagHernoemVoorlopig(ren.dataset.ren);return;}
+  const post=e.target.closest("[data-post]");if(post){openDvnPostSheet(post.dataset.post);return;}
   const b=e.target.closest("[data-nr]");if(b)kenNummerToe(b.dataset.nr);});
 
 
-function dvnRegels(d){return alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze");}
-function dvnStatusTekst(d){
-  if(d.voorlopig&&!d.nummer)return "dossiernummer ontbreekt";
-  if(d.dvnTo){const doel=dosOf(d.dvnTo);return doel?("dossiernummer "+(doel.nummer||"?")+" · nog invoeren"):
-    "gekoppeld dossier ontbreekt";}
-  if(d.nummer||d.dvnResolvedNr)return "dossiernummer "+(d.nummer||d.dvnResolvedNr)+" · nog invoeren";
-  return "DVN";}
+function dvnAuditTekst(d){
+  const st=dvnIntappState(d);
+  if(st==="posted"&&d.dvnIntappPostedAt)return "Ingevoerd in Intapp op "+
+    new Date(d.dvnIntappPostedAt).toLocaleString("nl-NL",{dateStyle:"short",timeStyle:"short"});
+  if(st==="needs_check")return "Controle nodig"+(d.dvnIntappNeedsCheckReason?
+    " na "+d.dvnIntappNeedsCheckReason:"");
+  return "";}
 function renderDvnIntapp(){
   const el=$("dvn-intapp");if(!el)return;
+  const volg={needs_check:0,ready:1,missing:2,posted:3,"":4};
   const ds=actief().filter(d=>isDvn(d)).sort((a,b)=>
-    (a.voorlopig===b.voorlopig?0:(a.voorlopig?-1:1))||a.naam.localeCompare(b.naam));
+    (volg[dvnIntappState(a)]??9)-(volg[dvnIntappState(b)]??9)||a.naam.localeCompare(b.naam));
   if(!ds.length){el.innerHTML='<div class="hint">Geen DVN-dossiers.</div>';return;}
   el.innerHTML=ds.map(d=>{
-    const rs=dvnRegels(d),info=intappDossierInfo(d),dagen={};
+    const rs=dvnRegels(d),info=intappDossierInfo(d),dagen={},st=dvnIntappState(d);
     rs.forEach(r=>{dagen[r.datum]=(dagen[r.datum]||0)+urenOf(r);});
     const totaal=rs.reduce((s,r)=>s+urenOf(r),0);
     const det=rs.slice().sort((a,b)=>(a.datum+a.start)<(b.datum+b.start)?-1:1)
@@ -804,16 +815,19 @@ function renderDvnIntapp(){
         esc(r.start+'–'+(r.eind||'loopt'))+'</td><td>'+esc((r.omschrijving||'').replace(VOOR,''))+
         '</td><td class="mono" style="text-align:right">'+uu(urenOf(r))+'</td></tr>').join("");
     const dagtekst=Object.keys(dagen).sort().map(k=>kortDag(k)+" "+uu(dagen[k])).join(" · ")||"nog geen uren";
-    return '<div class="dvncard '+(d.voorlopig?'open':'resolved')+'">'+
+    const audit=dvnAuditTekst(d);
+    const acties=(d.voorlopig?'<button class="sm go" data-dvn-num="'+esc(d.id)+'">Dossiernummer toekennen</button>':
+        '<button class="sm" data-dvn-num="'+esc(d.id)+'">Dossiernummer aanpassen</button>')+
+      ((st==="ready"||st==="needs_check")?'<button class="sm go" data-dvn-post="'+esc(d.id)+'">Markeer als ingevoerd</button>':'')+
+      (rs.length?'<button class="sm" data-dvn-day="'+esc(rs[0].datum)+'">Toon eerste dag</button>':'');
+    return '<div class="dvncard '+esc(st||'dvn')+'">'+
       '<div class="dvnhead"><div><strong>'+esc(d.naam)+'</strong> '+
       '<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span></div>'+
-      '<span class="mono">'+rs.length+' regel(s) · '+uu(totaal)+' u</span></div>'+
+      '<span class="mono">'+rs.length+' regel(s) · '+uu(totaal)+' u</span></div>'+ 
       '<div class="hint">Intapp: '+esc(info.nummer||'geen nummer')+' · '+esc(info.naam||'geen naam')+
-      ' · '+esc(dagtekst)+'</div>'+
-      '<div class="bar mini">'+(d.voorlopig?'<button class="sm go" data-dvn-num="'+esc(d.id)+'">Dossiernummer toekennen</button>':
-        '<button class="sm" data-dvn-num="'+esc(d.id)+'">Dossiernummer aanpassen</button>')+
-      (rs.length?'<button class="sm" data-dvn-day="'+esc(rs[0].datum)+'">Toon eerste dag</button>':'')+
-      '</div><details><summary>Toon regels</summary><div class="tw"><table><thead><tr><th>Dag</th><th>Tijd</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody>'+
+      ' · '+esc(dagtekst)+'</div>'+(audit?'<div class="hint">'+esc(audit)+'</div>':'')+
+      '<div class="bar mini">'+acties+
+      '</div><details><summary>Toon regels</summary><div class="tw"><table><thead><tr><th>Dag</th><th>Tijd</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody>'+ 
       (det||'<tr><td colspan="4" class="hint">Geen regels.</td></tr>')+
       '</tbody></table></div></details></div>';}).join("");}
 
@@ -834,7 +848,8 @@ function renderBeheer(){
       '<select data-dl="'+esc(d.id)+'"><option value="nl"'+(d.lang!=="en"?" selected":"")+
       '>NL</option><option value="en"'+(d.lang==="en"?" selected":"")+">EN</option></select>"+
       (isDvn(d)?'<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span>'+
-        '<button class="sm" data-nr="'+esc(d.id)+'">'+(d.voorlopig?'Nummer toekennen':'Nummer aanpassen')+'</button>':"")+
+        '<button class="sm" data-nr="'+esc(d.id)+'">'+(d.voorlopig?'Nummer toekennen':'Nummer aanpassen')+'</button>'+
+        ((dvnIntappState(d)==="ready"||dvnIntappState(d)==="needs_check")?'<button class="sm go" data-post="'+esc(d.id)+'">Markeer ingevoerd</button>':""):"")+
       (d.archief?'<span class="tag">archief</span>'+
         '<button class="sm" data-unarch="'+esc(d.id)+'">Activeren</button>':"")+
       (d.isI7||d.archief?"":'<button class="sm ghost warn" data-deldos="'+esc(d.id)+'">'+
@@ -853,6 +868,8 @@ function renderBeheer(){
 $("dvn-intapp").addEventListener("click",async e=>{
   const num=e.target.closest("[data-dvn-num]");
   if(num){await kenNummerToe(num.dataset.dvnNum);return;}
+  const post=e.target.closest("[data-dvn-post]");
+  if(post){await openDvnPostSheet(post.dataset.dvnPost);return;}
   const day=e.target.closest("[data-dvn-day]");
   if(day){viewDate=day.dataset.dvnDay;refreshDay();showTab("dag");return;}
 });
@@ -873,6 +890,7 @@ $("b-list").addEventListener("change",async e=>{
     await put("dossiers",d);
     dossiers=await getAll("dossiers");}});
 $("b-list").addEventListener("click",async e=>{
+  const post=e.target.closest("[data-post]");if(post){openDvnPostSheet(post.dataset.post);return;}
   const nr=e.target.closest("[data-nr]");if(nr){kenNummerToe(nr.dataset.nr);return;}
   const ua=e.target.closest("[data-unarch]");
   if(ua){const d=dosOf(ua.dataset.unarch);d.archief=false;await put("dossiers",d);
@@ -1224,12 +1242,15 @@ $("d-table").addEventListener("click",async e=>{
     const oud=regels.find(x=>x.id===id);if(!oud)return;
     if(!confirm("Deze regel verwijderen?"))return;
     const wasRunning=!!(running&&running.id===id);
-    const kop=kopie1(oud);
+    const kop=kopie1(oud),od=dosOf(oud.dossierId);
+    const dvnCheck=od&&isDvn(od)&&dvnIntappState(od)==="posted"?
+      markDvnControleNodig(od,"tijdregel verwijderd"):null;
     const gelukt=await timerOp("regel verwijderen",async t=>{
       if(!opGeldig(t,running?running.id:null))return false;
       await rustig([id]);
-      await txAll(o=>{o.regels.delete(id);
+      await txAll(o=>{o.regels.delete(id);if(dvnCheck)o.dossiers.put(dvnCheck);
         if(wasRunning)o.meta.delete("running");});
+      if(dvnCheck)memDossier(dvnCheck);
       if(wasRunning)running=null;
       alle=alle.filter(r=>r.id!==id);refreshDay();
       return true;});
@@ -1277,14 +1298,19 @@ async function maakLopend(id){
     const dicht=running?sluitObj(running):null;
     const open=Object.assign({},r,{eind:null,urenHand:false,gewijzigd:Date.now()});
     delete open.hersteld;
+    const od=dosOf(open.dossierId);
+    const dvnCheck=od&&isDvn(od)&&dvnIntappState(od)==="posted"?
+      markDvnControleNodig(od,"tijdregel opnieuw lopend gemaakt"):null;
     await rustig([id,dicht?dicht.id:null]);
     await txAll(o=>{
       if(dicht)o.regels.put(dicht);
+      if(dvnCheck)o.dossiers.put(dvnCheck);
       o.regels.put(open);
       o.meta.put(open.id,"running");
       o.meta.delete("pending");});
     pending=null;ntWizard=null;
     if(dicht)memRegel(dicht);
+    if(dvnCheck)memDossier(dvnCheck);
     memRegel(open);
     running=alle.find(x=>x.id===open.id);
     vergeetTimerUndo("timer overgezet");
