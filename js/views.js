@@ -172,6 +172,141 @@ async function sluitWerkdag(datum){
   else toast("Werkdag afgesloten om "+dagEinde[datum]+(naTekort>0.05?" — zonder Diversen-aanvulling":" — je zit op "+uu(dagIntappTotaal(datum))+" uur"));
   return true;}
 
+
+
+/* ---------- bewuste regelbewerking en oude lopende timer ---------- */
+const isModalOpen=()=>["dayclose","oldrun","editregel","boek","herstel"].some(id=>{
+  const el=$(id);return el&&el.classList.contains("on");});
+function voorstelOudeTimerEind(r){
+  const na=alle.filter(x=>x.datum===r.datum&&x.id!==r.id&&hm2m(x.start)!=null&&
+      hm2m(x.start)>hm2m(r.start)).sort((a,b)=>hm2m(a.start)-hm2m(b.start))[0];
+  if(na)return na.start;
+  const s=hm2m(r.start),e17=hm2m("17:00");
+  if(s!=null&&s<e17)return "17:00";
+  return r.start;}
+function regelBoekFingerprint(r){
+  const oude=viewDate,oudeRegels=regels;
+  viewDate=r.datum;regels=alle.filter(x=>x.datum===r.datum)
+    .sort((a,b)=>(hm2m(a.start)||0)-(hm2m(b.start)||0));
+  const hit=sumRows().find(x=>x.bron&&x.bron.some(b=>b.id===r.id));
+  viewDate=oude;regels=oudeRegels;
+  return hit?hit.fp:null;}
+function regelIsGeboekt(r){const fp=regelBoekFingerprint(r);return !!(fp&&(geboekt[r.datum]||[]).indexOf(fp)>=0);}
+function opdrachtUitDossierTekst(v,huidigId){
+  const txt=(v||"").trim(),h=dosOf(huidigId);
+  if(!txt)return{dossierId:null,code:null};
+  if(h&&(txt===dosVeld(h)||txt===h.naam||txt===(h.nummer||"")))return{};
+  const lo=txt.toLowerCase();
+  const hit=actief().find(x=>(x.nummer||"").toLowerCase()===lo||x.naam.toLowerCase()===lo||
+    ((x.nummer||"")+" - "+x.naam).toLowerCase()===lo);
+  if(hit)return{dossierId:hit.id,telUsed:false};
+  const pd=splitsDossier(txt);
+  if(pd&&!nummerBezet(pd.nummer,null))
+    return{nieuwDossier:{naam:pd.naam,nummer:pd.nummer,lang:"nl"},telUsed:false};
+  return{fout:'"'+kort(txt,28)+'" is geen bestaand dossier. Gebruik exact nummer, naam of "nummer - naam".'};}
+function normaliseerCodeVoorOpslag(d,r,txt){
+  const v=(txt||"").trim();
+  if(!d)return v?{fout:"Kies eerst een dossier voordat je een werkcode invult"}:{code:null};
+  if(d.voorlopig){const vast=defaultCode(d);return vast?{code:vast}:{fout:"Werkcode Commercieel ontbreekt in de i7-werklijst"};}
+  if(isIndirect(d)){
+    if(!v)return{fout:"Een i7-regel moet een werkcode uit de vaste lijst hebben"};
+    const hit=codesFor(d).find(c=>c.code.toLowerCase()===v.toLowerCase()||
+      (c.naam||"").toLowerCase()===v.toLowerCase());
+    return hit?{code:hit.code}:{fout:'"'+kort(v,28)+'" staat niet in de vaste i7-werklijst'};}
+  if(!v)return{code:null};
+  const hit=codesFor(d).find(c=>c.code.toLowerCase()===v.toLowerCase()||
+    (c.naam||"").toLowerCase()===v.toLowerCase());
+  return hit?{code:hit.code}:{code:v,nieuweCode:v};}
+function openRegelEditor(id,bron){
+  const r=alle.find(x=>x.id===id);if(!r)return Promise.resolve(false);
+  const dlg=$("editregel");if(!dlg)return Promise.resolve(false);
+  const d=dosOf(r.dossierId),loopt=running&&running.id===r.id;
+  $("er-date").textContent=dagLabel(r.datum);
+  $("er-start").value=r.start||"";
+  $("er-eind").value=loopt?"":(r.eind||"");
+  $("er-eind").placeholder=loopt?"loopt":"";
+  $("er-dossier").value=dosVeld(d);
+  $("er-code").value=codeNaam(d,r.code);
+  $("er-oms").value=r.omschrijving||"";
+  $("er-uren").value=loopt?"":uu(urenOf(r));
+  $("er-uren").disabled=!!loopt;
+  const waars=[];
+  if(loopt)waars.push("Deze regel is de lopende timer. Een eindtijd invullen stopt hem bewust op die tijd.");
+  if(r.autoAanvul)waars.push("Dit is een automatische Diversen-aanvulregel. Aanpassen kan de dagafsluiting veranderen.");
+  if(regelIsGeboekt(r))waars.push("Deze regel hoort bij een Intapp-regel die als geboekt is gemarkeerd. Door wijzigen valt die boekstatus automatisch terug naar controle nodig.");
+  if(bron==="oldrun")waars.push("Deze taak is op een eerdere datum gestart. Kies expliciet een eindtijd als hij niet werkelijk moet doorlopen.");
+  $("er-warn").innerHTML=waars.map(esc).join("<br>");
+  $("er-warn").classList.toggle("on",waars.length>0);
+  dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
+  setTimeout(()=>$("er-start").focus(),0);
+  return new Promise(resolve=>{
+    const sluit=v=>{dlg.classList.remove("on");dlg.setAttribute("aria-hidden","true");
+      document.removeEventListener("keydown",key,true);resolve(v);};
+    const key=e=>{if(!dlg.classList.contains("on"))return;
+      if(e.key==="Escape"){e.preventDefault();sluit(false);}
+      if(e.key==="Enter"&&e.target&&e.target.tagName==="INPUT"){e.preventDefault();$("er-save").click();}};
+    document.addEventListener("keydown",key,true);
+    $("er-x").onclick=()=>sluit(false);$("er-cancel").onclick=()=>sluit(false);
+    $("er-save").onclick=async()=>{
+      const cur=alle.find(x=>x.id===id);if(!cur){toast("Regel bestaat niet meer");sluit(false);return;}
+      const voor=kopie1(cur),looptNu=running&&running.id===cur.id;
+      const start=$("er-start").value.trim(),eind=$("er-eind").value.trim();
+      const sm=hm2m(start),em=eind?hm2m(eind):null;
+      if(sm==null){toast("Ongeldige starttijd");$("er-start").focus();return;}
+      if(eind&&em==null){toast("Ongeldige eindtijd");$("er-eind").focus();return;}
+      if(eind&&em<sm){toast("Eindtijd ligt vóór de starttijd");$("er-eind").focus();return;}
+      if(!eind&&!looptNu){toast("Een opgeslagen regel moet een eindtijd hebben. Gebruik ▶ om hem lopend te maken.");$("er-eind").focus();return;}
+      if(looptNu&&sm>hm2m(nowHM())){toast("De starttijd van een lopende regel kan niet in de toekomst liggen");return;}
+      const op=opdrachtUitDossierTekst($("er-dossier").value,cur.dossierId);
+      if(op.fout){toast(op.fout);$("er-dossier").focus();return;}
+      let tmpD=null,tmpRule=Object.assign({},cur);
+      if(op.nieuwDossier)tmpD=bouwDossier(op.nieuwDossier);
+      else if(op.dossierId!==undefined)tmpD=op.dossierId?dosOf(op.dossierId):null;
+      else tmpD=dosOf(cur.dossierId);
+      if(op.dossierId!==undefined||op.nieuwDossier)tmpRule.dossierId=tmpD?tmpD.id:null;
+      const c=normaliseerCodeVoorOpslag(tmpD,tmpRule,$("er-code").value);
+      if(c.fout){toast(c.fout);$("er-code").focus();return;}
+      tmpRule.code=c.code;
+      tmpRule.start=m2hm(sm);
+      tmpRule.omschrijving=prefixVoor(tmpD,tmpRule.datum,$("er-oms").value||"");
+      if(eind){tmpRule.eind=m2hm(em);tmpRule.urenHand=false;tmpRule.uren=Math.ceil(Math.max(1,em-sm)/6)/10;}
+      if(!looptNu){
+        const uv=$("er-uren").value.trim();
+        if(uv){const n=Number(uv.replace(",","."));
+          if(!isFinite(n)||n<=0||n>DAGMAX){toast("Ongeldig aantal uren");$("er-uren").focus();return;}
+          tmpRule.uren=Math.max(0.1,Math.round(n*10)/10);tmpRule.urenHand=true;}
+        else tmpRule.urenHand=false;}
+      if(!dagRuimte(tmpRule.datum,urenOf(tmpRule),tmpRule.id))return;
+      if((cur.autoAanvul||regelIsGeboekt(cur))&&!confirm("Je wijzigt een bestaande tijdregel met administratieve status.\n\nDoorgaan en bewust opslaan?"))return;
+      tmpRule.gewijzigd=Date.now();delete tmpRule.hersteld;
+      if(c.nieuweCode&&tmpD&&!isIndirect(tmpD)&&!(tmpD.codes||[]).some(x=>x.code===c.nieuweCode)){
+        tmpD=Object.assign({},tmpD,{codes:(tmpD.codes||[]).concat([{code:c.nieuweCode,naam:c.nieuweCode}])});stempel(tmpD);}
+      try{
+        await rustig([tmpRule.id]);
+        await txAll(o=>{if(tmpD)o.dossiers.put(tmpD);o.regels.put(tmpRule);
+          if(looptNu&&eind){o.meta.delete("running");o.meta.delete("pending");}});
+      }catch(e){L("FOUT-regel-editor",String(e));toast("Opslaan mislukt — niets gewijzigd: "+e);return;}
+      if(tmpD)memDossier(tmpD);memRegel(tmpRule);
+      if(looptNu&&eind){running=null;pending=null;vergeetTimerUndo("regel gestopt via bewerksheet");}
+      else if(looptNu){running=alle.find(x=>x.id===tmpRule.id);liveId=null;}
+      undoData("regel bewerken",[voor]);
+      L("regel-editor",tmpRule.start+"-"+(tmpRule.eind||"loopt")+" · "+dosIdLog(tmpRule.dossierId));
+      viewDate=tmpRule.datum;refreshDay();bouwDag();renderAll();announce();
+      toast("Tijdregel opgeslagen");sluit(true);};});}
+function controleerOudeLopendeTaak(){
+  if(!running||running.datum>=today()||opBlok||Date.now()<oldRunSnooze||isModalOpen())return;
+  const dlg=$("oldrun");if(!dlg)return;
+  const r=running,d=dosOf(r.dossierId),tekst=(r.omschrijving||"geen omschrijving");
+  $("xr-date").textContent=dagLabel(r.datum);
+  $("xr-text").innerHTML="Deze taak loopt nog sinds "+esc(dagLabel(r.datum))+" om "+
+    esc(r.start)+". Laat hem alleen doorlopen als dit echt dezelfde werksessie is.";
+  $("xr-meta").innerHTML="<b>"+esc(d?dosVeld(d):"geen dossier")+"</b><br>"+
+    esc(codeNaam(d,r.code)||"geen werkcode")+"<br>"+esc(tekst);
+  $("xr-end").value=voorstelOudeTimerEind(r);
+  dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
+  setTimeout(()=>$("xr-end").focus(),0);
+}
+
 function renderRecent(){
   const recent=$("recent"),oudeScroll=recent.scrollTop;
   const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running));
@@ -259,21 +394,22 @@ function bouwDag(){
         '<td class="mono" style="text-align:right">'+uu(Math.ceil((row.g[1]-row.g[0])/6)/10)+
         '</td><td class="x"><button class="sm ghost" data-fill="'+row.g[0]+"-"+row.g[1]+
         '" title="Deze tijd invullen">&#9998;</button></td></tr>';return;}
-    const r=row.r,d=dosOf(r.dossierId),run=running&&running.id===r.id;
-    h+='<tr class="'+(run?"isrun ":"")+(r.soort==="pauze"?"ispauze ":"")+(r.autoAanvul?"isauto":"")+'" data-id="'+esc(r.id)+'">'+
-      '<td class="t"><input data-f="start" value="'+esc(r.start)+'"></td>'+
-      '<td class="t"><input data-f="eind" value="'+esc(run?"":(r.eind||""))+
+    const r=row.r,d=dosOf(r.dossierId),run=running&&running.id===r.id,booked=regelIsGeboekt(r);
+    h+='<tr class="'+(run?"isrun ":"")+(r.soort==="pauze"?"ispauze ":"")+(r.autoAanvul?"isauto ":"")+(booked?"needsreview":"")+'" data-id="'+esc(r.id)+'">'+
+      '<td class="t"><input data-f="start" readonly title="Open bewerksheet" value="'+esc(r.start)+'"></td>'+
+      '<td class="t"><input data-f="eind" readonly title="Open bewerksheet" value="'+esc(run?"":(r.eind||""))+
         '" placeholder="'+(run?"loopt":"")+'"></td>'+
-      '<td><input data-f="dossier" value="'+esc(dosVeld(d))+'" placeholder="&mdash;" autocomplete="off"></td>'+
-      '<td><input data-f="code" class="'+(codeFout(d,r)?"miss":"")+'" value="'+
+      '<td><input data-f="dossier" readonly title="Open bewerksheet" value="'+esc(dosVeld(d))+'" placeholder="&mdash;" autocomplete="off"></td>'+
+      '<td><input data-f="code" readonly title="Open bewerksheet" class="'+(codeFout(d,r)?"miss":"")+'" value="'+
         esc(codeNaam(d,r.code))+'" placeholder="'+
         (isIndirect(d)&&!d.voorlopig?"verplicht":"&mdash;")+'" autocomplete="off"'+
         (d&&d.voorlopig?' readonly title="Vast op '+esc(codeNaam(d,defaultCode(d)))+
           '"':"")+"></td>"+
-      '<td><input data-f="omschrijving" value="'+esc(r.omschrijving)+'" autocomplete="off"></td>'+
-      '<td class="u"><input data-f="uren" value="'+uu(urenOf(r))+'"></td>'+
+      '<td><input data-f="omschrijving" readonly title="Open bewerksheet" value="'+esc(r.omschrijving)+'" autocomplete="off"></td>'+
+      '<td class="u"><input data-f="uren" readonly title="Open bewerksheet" value="'+uu(urenOf(r))+'"></td>'+
       '<td class="x">'+
       (r.autoAanvul?'<span class="autobadge" title="Automatisch aangemaakt bij dagaanvulling">auto</span>':"")+
+      '<button class="sm ghost" data-edit="'+esc(r.id)+'" title="Tijdregel bewust bewerken">bewerk</button>'+ 
       ((!run&&r.eind&&viewDate===today()&&r.soort!=="pauze")?
         '<button class="sm ghost" data-maaklopend="'+esc(r.id)+
         '" title="Maak dit de lopende timer">&#9654;</button>':"")+
@@ -1039,6 +1175,8 @@ $("d-table").addEventListener("change",async e=>{
   if(f==="start"||f==="eind")bouwDag();else verversDag();
   renderLive();renderTot();announce();});
 $("d-table").addEventListener("click",async e=>{
+  const ed=e.target.closest("[data-edit], input[data-f][readonly]");
+  if(ed){const tr=ed.closest("tr[data-id]");if(tr)await openRegelEditor(tr.dataset.id,"dag");return;}
   const dl=e.target.closest("[data-del]");
   if(dl){const id=dl.dataset.del;
     const oud=regels.find(x=>x.id===id);if(!oud)return;

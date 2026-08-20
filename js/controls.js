@@ -37,7 +37,7 @@ $("open-days").addEventListener("click",async e=>{
   if(close)await sluitWerkdag(close.dataset.openClose);});
 
 document.addEventListener("keydown",async e=>{
-  if($("dayclose")&&$("dayclose").classList.contains("on"))return;
+  if(["dayclose","oldrun","editregel"].some(id=>$(id)&&$(id).classList.contains("on")))return;
   if(boek.aan){boekKeys(e);return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"&&!e.shiftKey){
     const t=e.target;
@@ -75,3 +75,24 @@ document.addEventListener("keydown",async e=>{
   else if(k==="d"){showTab("dag");}
   else if(k==="u"){showTab("week");}});
 
+
+/* ---------- oude lopende taak en bewerksheets ---------- */
+if($("oldrun")){
+  const sluitOudeTaak=()=>{$("oldrun").classList.remove("on");$("oldrun").setAttribute("aria-hidden","true");};
+  $("xr-x").onclick=()=>{oldRunSnooze=Date.now()+60*60*1000;sluitOudeTaak();};
+  $("xr-cancel").onclick=()=>{oldRunSnooze=Date.now()+60*60*1000;sluitOudeTaak();};
+  $("xr-continue").onclick=()=>{oldRunSnooze=Date.now()+24*60*60*1000;sluitOudeTaak();toast("Lopende taak blijft doorlopen");};
+  $("xr-edit").onclick=async()=>{const id=running&&running.id;sluitOudeTaak();if(id)await openRegelEditor(id,"oldrun");};
+  document.addEventListener("keydown",e=>{if($("oldrun").classList.contains("on")&&e.key==="Escape"){e.preventDefault();oldRunSnooze=Date.now()+60*60*1000;sluitOudeTaak();}},true);
+  $("xr-stop").onclick=async()=>{
+    if(!running){sluitOudeTaak();return;}
+    const r=running,e=$("xr-end").value.trim(),m=hm2m(e);
+    if(m==null){toast("Ongeldige eindtijd");$("xr-end").focus();return;}
+    if(hm2m(r.start)!=null&&m<hm2m(r.start)){toast("Eindtijd ligt vóór de starttijd");$("xr-end").focus();return;}
+    const oud=kopie1(r),dicht=await stopRunning(m2hm(m),"oude lopende taak stoppen");
+    if(!dicht)return;
+    undoTimer("oude lopende taak stoppen",[oud],{herstelRunning:oud.id,verwachtRunning:null,
+      verwacht:[{id:oud.id,gewijzigd:dicht.gewijzigd}]});
+    sluitOudeTaak();viewDate=dicht.datum;refreshDay();showTab("dag");renderAll();announce();
+    toast("Taak gestopt op "+dmy(dicht.datum)+" om "+dicht.eind);};
+}

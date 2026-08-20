@@ -306,6 +306,61 @@
   </div>
 </div>
 
+
+
+<div class="modal" id="oldrun" aria-hidden="true">
+  <div class="mbox closebox" role="dialog" aria-modal="true" aria-labelledby="xr-title">
+    <div class="mtop">
+      <strong id="xr-title">Lopende taak van eerdere dag</strong>
+      <span class="pill" id="xr-date">—</span>
+      <div class="spacer"></div>
+      <button class="sm ghost" id="xr-x" title="Sluiten">&#10005;</button>
+    </div>
+    <div class="mbody">
+      <div class="hint" id="xr-text"></div>
+      <div class="editmeta" id="xr-meta"></div>
+      <label class="timepick">Stop deze taak op de startdatum van de regel
+        <input id="xr-end" inputmode="numeric" autocomplete="off" placeholder="17:00">
+      </label>
+      <div class="closewarn on">Hour Hound kan een tijdregel niet over meerdere datums laten lopen. Kies daarom bewust een eindtijd op de oorspronkelijke datum, of laat de timer alleen doorlopen als dit echt dezelfde werksessie is.</div>
+    </div>
+    <div class="mfoot">
+      <button class="go" id="xr-stop">Stoppen op gekozen tijdstip</button>
+      <button id="xr-continue">Door laten lopen</button>
+      <button class="sm" id="xr-edit">Taak bekijken/bewerken</button>
+      <div class="spacer"></div>
+      <button class="sm ghost" id="xr-cancel">Later</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="editregel" aria-hidden="true">
+  <div class="mbox editbox" role="dialog" aria-modal="true" aria-labelledby="er-title">
+    <div class="mtop">
+      <strong id="er-title">Tijdregel bewerken</strong>
+      <span class="pill" id="er-date">—</span>
+      <div class="spacer"></div>
+      <button class="sm ghost" id="er-x" title="Sluiten">&#10005;</button>
+    </div>
+    <div class="mbody">
+      <div class="closewarn" id="er-warn"></div>
+      <div class="editgrid">
+        <label>Start<input id="er-start" inputmode="numeric" autocomplete="off"></label>
+        <label>Eind<input id="er-eind" inputmode="numeric" autocomplete="off" placeholder="loopt"></label>
+        <label>Dossier<input id="er-dossier" autocomplete="off" placeholder="nummer of naam"></label>
+        <label>Werkcode<input id="er-code" autocomplete="off" placeholder="alleen bij i7 verplicht"></label>
+        <label class="wide">Omschrijving<input id="er-oms" autocomplete="off"></label>
+        <label>Uren<input id="er-uren" inputmode="decimal" autocomplete="off"></label>
+      </div>
+      <div class="hint" id="er-help">Wijzigingen worden pas opgeslagen na je bevestiging.</div>
+    </div>
+    <div class="mfoot">
+      <button class="go" id="er-save">Wijzigingen opslaan</button>
+      <button class="sm ghost" id="er-cancel">Annuleren</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal" id="boek" role="dialog" aria-modal="true" aria-labelledby="bk-titel">
   <div class="mbox">
     <div class="mtop">

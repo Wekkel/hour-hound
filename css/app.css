@@ -317,3 +317,17 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
 tr.isauto td{background:rgba(197,139,64,.10)}
 .autobadge{display:inline-block;margin-right:.35rem;padding:.12rem .34rem;border:1px solid var(--amber);
   border-radius:999px;color:var(--amber);font:500 10px/1 var(--sans);text-transform:uppercase;letter-spacing:.04em}
+
+/* ---------- bewuste regelbewerking / oude timer ---------- */
+.editbox{width:min(760px,100%)}
+.editgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.7rem}
+.editgrid label{font-size:13px;color:var(--soft);display:block}
+.editgrid label.wide{grid-column:1/-1}
+.editgrid input{display:block;width:100%;margin-top:.25rem;font-size:16px}
+.editgrid #er-start,.editgrid #er-eind,.editgrid #er-uren{font-family:var(--mono)}
+.editmeta{margin:.75rem 0;padding:.65rem .75rem;border:1px solid var(--line);border-radius:9px;
+  background:var(--paper);font-size:14px;line-height:1.55}
+.editmeta b{font-weight:500}
+tr td input[readonly]{background:transparent;border-color:transparent;box-shadow:none;color:inherit;cursor:pointer}
+tr td input[readonly]:focus{border-color:var(--line);background:var(--paper)}
+tr.needsreview td{box-shadow:inset 3px 0 0 var(--amber)}

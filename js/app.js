@@ -203,12 +203,13 @@ async function boot(){
   await laadInstellingen();
   await herlaad();
   await herstelOmschr();
+  setTimeout(controleerOudeLopendeTaak,0);
   L("app-start","dossiers "+dossiers.length+" · regels "+alle.length+
     " · sjablonen "+templates.length+" · i7-codes "+i7codes.length+
     " · lopend "+(running?running.start:"nee"));
   if(tick)clearInterval(tick);
   tick=setInterval(()=>{middernachtCheck();checkWake();
-    if(running){renderLive();renderTot();}},10000);}
+    if(running){renderLive();renderTot();controleerOudeLopendeTaak();}},10000);}
 
 (async function(){
   try{db=await openDB();}catch(e){
