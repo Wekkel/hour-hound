@@ -33,7 +33,8 @@ const ASSETS = [
   "./js/storage/indexeddb.js",
   "./js/services/admin.js",
   "./js/services/day-rules.js",
-  "./js/services/timer.js"
+  "./js/services/timer.js",
+  "./js/state.js"
 ];
 
 self.addEventListener("install", (e) => {
