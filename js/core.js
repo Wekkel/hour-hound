@@ -101,39 +101,24 @@ let pending=null;    // alleen voor het opruimen van oude versies; nieuwe code g
 const TABID=Math.random().toString(36).slice(2);
 const bc=("BroadcastChannel" in window)?new BroadcastChannel("hourhound"):null;
 
-/* ---------- opslag ---------- */
-function openDB(){return new Promise((res,rej)=>{
-  const r=indexedDB.open("hourhound",4);
-  r.onupgradeneeded=()=>{const d=r.result;
-    if(!d.objectStoreNames.contains("days"))d.createObjectStore("days",{keyPath:"date"});
-    if(!d.objectStoreNames.contains("matters"))d.createObjectStore("matters",{keyPath:"id"});
-    if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta");
-    if(!d.objectStoreNames.contains("templates"))d.createObjectStore("templates",{keyPath:"id"});
-    if(!d.objectStoreNames.contains("codes"))d.createObjectStore("codes",{keyPath:"code"});
-    if(!d.objectStoreNames.contains("dossiers"))d.createObjectStore("dossiers",{keyPath:"id"});
-    if(!d.objectStoreNames.contains("overboekingen"))
-      d.createObjectStore("overboekingen",{keyPath:"id"});
-    if(!d.objectStoreNames.contains("regels")){
-      const s=d.createObjectStore("regels",{keyPath:"id"});s.createIndex("datum","datum");}};
-  r.onsuccess=()=>{r.result.onversionchange=()=>{r.result.close();
-    toast("Database elders bijgewerkt — herlaad de pagina");};res(r.result);};
-  r.onerror=()=>rej(r.error);});}
-function tx(s,mode,fn){return new Promise((res,rej)=>{
-  const t=db.transaction(s,mode),q=fn(Array.isArray(s)?
-    Object.fromEntries(s.map(n=>[n,t.objectStore(n)])):t.objectStore(s));
-  t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error);
-  t.onabort=()=>rej(t.error||new Error("afgebroken"));});}
-const getAll=s=>tx(s,"readonly",o=>o.getAll());
-const get=(s,k)=>tx(s,"readonly",o=>o.get(k));
-const put=(s,v)=>tx(s,"readwrite",o=>o.put(v));
-const putK=(s,v,k)=>tx(s,"readwrite",o=>o.put(v,k));
-const del=(s,k)=>tx(s,"readwrite",o=>o.delete(k));
-const replaceAll=(s,rows)=>tx(s,"readwrite",o=>{o.clear();rows.forEach(r=>o.put(r));});
+/* ---------- opslag ----------
+   Tijdelijke globale adapters houden bestaande scripts compatibel. Schema,
+   transacties en repositories hebben één implementatie in de storagegateway. */
+const storageGateway=HH.storage.indexedDB,storageRepos=HH.storage.repositories;
+function openDB(){return storageGateway.open({onVersionChange:()=>
+  toast("Database elders bijgewerkt — herlaad de pagina")});}
+const tx=(s,mode,fn)=>storageGateway.tx(s,mode,fn);
+const getAll=s=>storageGateway.getAll(s);
+const get=(s,k)=>storageGateway.get(s,k);
+const put=(s,v)=>storageGateway.put(s,v);
+const putK=(s,v,k)=>storageGateway.putKey(s,v,k);
+const del=(s,k)=>storageGateway.remove(s,k);
+const replaceAll=(s,rows)=>storageGateway.replaceAll(s,rows);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 /* Eén transactie over regels, meta en dossiers. Elke toestandsovergang van de timer
    wordt hierin volledig geschreven of helemaal niet, en het geheugen wordt pas
    bijgewerkt nadat de transactie is geslaagd.                                    */
-const TXALL=["regels","meta","dossiers","overboekingen"];
+const TXALL=storageGateway.TIMER_STORES;
 function txAll(fn){return tx(TXALL,"readwrite",fn);}
 
 /* ---------- één wachtrij voor alle timerovergangen ----------

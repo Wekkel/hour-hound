@@ -207,3 +207,25 @@ Houd de volgende scheiding vast:
 Een refactor van deze statuslogica vereist directe vergelijking met de vorige productiecode, naast
 gerichte tests voor ontbrekende bronregels, gewijzigd dossiernummer, resolved DVN, definitief i7,
 posted-terugval en beide terminale overboekingsroutes.
+
+## 20. Eén opslaggrens, maar de use-case bezit de transactie
+
+IndexedDB openen, schema-upgrades en de generieke transactie-afhandeling horen op één plek. Houd
+databasenaam `hourhound`, versie 4, stores, key paths en indices letterlijk stabiel: een
+modulariseringspatch is geen datamigratie. Kleine repositories voor regels, dossiers,
+configuratiemeta en overboekingen mogen hun eigen store kennen, maar geen UI, workflowtekst of
+runtime-array.
+
+Een repositorycall is niet automatisch een veilige workflow. Timerwissels, volledig terugzetten,
+samenvoegen en andere handelingen die meerdere stores raken moeten één transactie blijven. Splits
+zo'n handeling nooit op in achtereenvolgende repositorywrites; een fout halverwege zou dan een
+gedeeltelijke gebruikersactie bewaren.
+
+Boot en herladen lezen één consistente snapshot over alle relevante stores. Vervang runtime-state
+pas nadat de volledige readonly transactie is voltooid. Losse opeenvolgende `getAll()`-aanroepen
+kunnen bij een fout een half nieuwe, half oude geheugenstate achterlaten. Foutinjectietests horen
+daarom niet alleen de afwijzing te controleren, maar ook dat de oude geheugenwaarden intact blijven.
+
+De oude globale helpers (`tx`, `getAll`, `get`, `put`, `putK`, `del` en `replaceAll`) zijn tijdens
+de gefaseerde refactor uitsluitend compatibiliteitsadapters. Voeg daar geen tweede schema- of
+transactie-implementatie aan toe; verwijder ze pas wanneer alle productieconsumenten zijn gemigreerd.

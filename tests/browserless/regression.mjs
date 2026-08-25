@@ -36,6 +36,7 @@ const src = {
   bookingDomain: read('js/domain/booking.js'),
   dvnDomain: read('js/domain/dvn.js'),
   overbookingDomain: read('js/domain/overbooking.js'),
+  storage: read('js/storage/indexeddb.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
@@ -90,6 +91,7 @@ function evaluateCorePure(){
   vm.runInContext(src.bookingDomain, context, { filename: 'js/domain/booking.js' });
   vm.runInContext(src.dvnDomain, context, { filename: 'js/domain/dvn.js' });
   vm.runInContext(src.overbookingDomain, context, { filename: 'js/domain/overbooking.js' });
+  vm.runInContext(src.storage, context, { filename: 'js/storage/indexeddb.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
     `return true;\n};\n`+
@@ -104,6 +106,43 @@ function evaluateIoPure(){
     '\n;globalThis.__hhIoPure = { keurRegels, keurDossiers, keurOverboekingen, keurDagAudit, checksumVan, backupVersie: BACKUPVERSIE };',
     context,{filename:'js/io.js'});
   return context.__hhIoPure;
+}
+
+function evaluateStorage(){
+  const context={console,setTimeout,clearTimeout,queueMicrotask};
+  vm.createContext(context);
+  vm.runInContext(src.hh,context,{filename:'js/hh.js'});
+  vm.runInContext(src.storage,context,{filename:'js/storage/indexeddb.js'});
+  return context.HH.storage;
+}
+
+function fakeDatabase(values={},options={}){
+  const calls=[];
+  const store=name=>({
+    getAll(){calls.push({op:'getAll',store:name});return{result:values[name]||[]};},
+    get(key){calls.push({op:'get',store:name,key});
+      return{result:(values[name]&&values[name][key])};},
+    put(value,key){calls.push({op:'put',store:name,value,key});
+      return{result:key===undefined?(value&&value.id):key};},
+    delete(key){calls.push({op:'delete',store:name,key});return{result:undefined};},
+    clear(){calls.push({op:'clear',store:name});return{result:undefined};}
+  });
+  const database={calls,transaction(stores,mode){
+    calls.push({op:'transaction',stores:Array.isArray(stores)?[...stores]:stores,mode});
+    let aborted=false;
+    const transaction={error:null,objectStore:store,abort(){
+      if(aborted)return;aborted=true;transaction.error=new Error('afgebroken door test');
+      queueMicrotask(()=>transaction.onabort&&transaction.onabort());
+    }};
+    queueMicrotask(()=>{
+      if(aborted)return;
+      if(options.fail){transaction.error=new Error('geïnjecteerde databasefout');
+        if(transaction.onabort)transaction.onabort();}
+      else if(transaction.oncomplete)transaction.oncomplete();
+    });
+    return transaction;
+  }};
+  return database;
 }
 
 // 1. Algemene bronkwaliteit --------------------------------------------------
@@ -127,6 +166,7 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/domain/booking.js',
     'js/domain/dvn.js',
     'js/domain/overbooking.js',
+    'js/storage/indexeddb.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
@@ -136,6 +176,111 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/booking.js',
     'js/app.js'
   ].join('\n'), 'Scriptvolgorde gewijzigd. Bij klassieke globals kan dat runtime breken.');
+});
+
+test('IndexedDB-gateway bewaart exact database 4 en het bestaande schema', async() => {
+  const storage=evaluateStorage(),gateway=storage.indexedDB;
+  const created=[],indices=[];
+  let closed=false,versionChanged=false,openArgs=null;
+  const opened={
+    objectStoreNames:{contains(){return false;}},
+    createObjectStore(name,options){created.push({name,options:options||null});
+      return{createIndex(name,keyPath,options){indices.push({name,keyPath,options:options||null});}};},
+    close(){closed=true;}
+  };
+  const indexedDB={open(name,version){
+    openArgs={name,version};const request={result:opened,error:null};
+    queueMicrotask(()=>{request.onupgradeneeded();request.onsuccess();});return request;
+  }};
+  const result=await gateway.open({indexedDB,onVersionChange(){versionChanged=true;}});
+  assertEq(result,opened,'open() moet de geopende database teruggeven');
+  assertEq(JSON.stringify(openArgs),JSON.stringify({name:'hourhound',version:4}),
+    'Databasenaam en versie mogen niet veranderen');
+  assertEq(created.map(x=>x.name).join(','),
+    'days,matters,meta,templates,codes,dossiers,overboekingen,regels',
+    'Stores en upgradevolgorde moeten gelijk blijven');
+  assertEq(JSON.stringify(created.map(x=>x.options)),JSON.stringify([
+    {keyPath:'date'},{keyPath:'id'},null,{keyPath:'id'},{keyPath:'code'},
+    {keyPath:'id'},{keyPath:'id'},{keyPath:'id'}]),'Key paths mogen niet veranderen');
+  assertEq(JSON.stringify(indices),JSON.stringify([
+    {name:'datum',keyPath:'datum',options:null}]),'Alleen de bestaande datumindex hoort erbij');
+  opened.onversionchange();
+  assert(closed&&versionChanged,'Versiewijziging moet sluiten en de UI-adapter waarschuwen');
+  assertNotIncludes(src.storage,'document','Storagegateway mag de DOM niet kennen');
+  assertNotIncludes(src.storage,'toast(','Storagegateway mag geen gebruikersmelding tonen');
+});
+
+test('repositories laden één snapshot en laten geheugen intact bij databasefout', async() => {
+  const storage=evaluateStorage(),gateway=storage.indexedDB,repos=storage.repositories;
+  const values={
+    dossiers:[{id:'d1'}],templates:[{id:'t1'}],codes:[{code:'c1'}],
+    regels:[{id:'r1'}],overboekingen:[{id:'o1'}],
+    meta:{stack:['r1'],dagEinde:{'2026-08-25':'17:00'},running:'r1',thema:'donker'}
+  };
+  const ok=fakeDatabase(values);gateway.use(ok);
+  const snapshot=await repos.loadSnapshot();
+  assertEq(snapshot.dossiers[0].id,'d1','Snapshot moet dossiers laden');
+  assertEq(snapshot.regels[0].id,'r1','Snapshot moet regels laden');
+  assertEq(snapshot.overboekingen[0].id,'o1','Snapshot moet overboekingen laden');
+  assertEq(snapshot.meta.running,'r1','Snapshot moet configuratiemeta laden');
+  const transactions=ok.calls.filter(x=>x.op==='transaction');
+  assertEq(transactions.length,1,'loadSnapshot() moet één transactie gebruiken');
+  assertEq(transactions[0].mode,'readonly','Snapshot hoort alleen te lezen');
+  assertEq(transactions[0].stores.join(','),
+    'dossiers,templates,codes,regels,overboekingen,meta',
+    'Bootsnapshot moet alle runtime-stores consistent lezen');
+  for(const name of ['regels','dossiers','config','overboekingen'])
+    assert(repos[name]&&Object.isFrozen(repos[name]),`Kleine repository ontbreekt: ${name}`);
+  await repos.regels.put({id:'r2'});
+  await repos.dossiers.put({id:'d2'});
+  await repos.config.put('thema','licht');
+  await repos.overboekingen.remove('o1');
+  const writes=ok.calls.filter(x=>x.op==='transaction').slice(1);
+  assertEq(JSON.stringify(writes.map(x=>[x.stores,x.mode])),JSON.stringify([
+    ['regels','readwrite'],['dossiers','readwrite'],['meta','readwrite'],
+    ['overboekingen','readwrite']]),'Iedere kleine repository moet naar haar eigen store delegeren');
+  const themePut=ok.calls.find(x=>x.op==='put'&&x.store==='meta'&&x.key==='thema');
+  assert(themePut&&themePut.value==='licht','Configuratierepository moet waarde en metakey bewaren');
+
+  const memory={regels:[{id:'oud'}],dossiers:[{id:'oud'}]};
+  gateway.use(fakeDatabase(values,{fail:true}));
+  let failed=false;
+  try{
+    const next=await repos.loadSnapshot();
+    memory.regels=next.regels;memory.dossiers=next.dossiers;
+  }catch(error){failed=true;}
+  assert(failed,'Geïnjecteerde databasefout moet loadSnapshot laten afwijzen');
+  assertEq(memory.regels[0].id,'oud','Regelgeheugen mag na leesfout niet veranderen');
+  assertEq(memory.dossiers[0].id,'oud','Dossiergeheugen mag na leesfout niet veranderen');
+
+  const reloadBegin=src.app.indexOf('async function herlaad(metInstellingen)');
+  const reloadEnd=src.app.indexOf('\n/* W2:',reloadBegin);
+  const reload=reloadBegin>=0&&reloadEnd>reloadBegin
+    ?src.app.slice(reloadBegin,reloadEnd):'';
+  assert(reload,'herlaad() met snapshot ontbreekt');
+  const loaded=reload.indexOf('await storageRepos.loadSnapshot()');
+  assert(loaded>=0&&reload.indexOf('dossiers=snapshot.dossiers')>loaded&&
+    reload.indexOf('alle=snapshot.regels')>loaded,
+  'Productiecode moet database eerst afwachten en geheugen pas daarna vervangen');
+  assertNotIncludes(reload,'await getAll(','Herlaad mag geen gedeeltelijke losse storelezingen doen');
+});
+
+test('compatibiliteitshelpers delegeren en use-case-transacties blijven heel', () => {
+  for(const line of [
+    'const tx=(s,mode,fn)=>storageGateway.tx(s,mode,fn)',
+    'const getAll=s=>storageGateway.getAll(s)',
+    'const get=(s,k)=>storageGateway.get(s,k)',
+    'const put=(s,v)=>storageGateway.put(s,v)',
+    'const putK=(s,v,k)=>storageGateway.putKey(s,v,k)',
+    'const del=(s,k)=>storageGateway.remove(s,k)',
+    'const replaceAll=(s,rows)=>storageGateway.replaceAll(s,rows)'])
+    assertIncludes(src.core,line,'Bestaande opslaghelper moet rechtstreeks delegeren');
+  assertIncludes(src.core,'const TXALL=storageGateway.TIMER_STORES',
+    'Timertransacties moeten dezelfde centrale storelijst gebruiken');
+  assertIncludes(src.io,'tx(["dossiers","regels","templates","codes","overboekingen","meta"],"readwrite"',
+    'Volledige import moet één transactie over alle betrokken stores blijven');
+  assertIncludes(src.io,'tx(["dossiers","regels","templates","codes","overboekingen"],"readwrite"',
+    'Samenvoegen moet één transactie over alle betrokken stores blijven');
 });
 
 test('DVN-domein houdt classificatie, resolutie en audit puur', () => {
@@ -449,9 +594,12 @@ test('bestaande 0.1.7-data en voorlopige DVN-records blijven migreerbaar', () =>
     'Een oude open DVN zonder nummer moet in de actuele DVN-werkvoorraad blijven');
   assertEq(api.dvnRegels(oudDvn).map(r=>r.id).join(','),'oud-regel',
     'Bestaande DVN-uren moeten aan hun oude dossier-id gekoppeld blijven');
-  assertIncludes(src.core,'indexedDB.open("hourhound",4)',
+  assertIncludes(src.storage,'const DB_NAME="hourhound",DB_VERSION=4',
     'De update moet dezelfde IndexedDB-database blijven openen');
-  const upgrade=(src.core.match(/r\.onupgradeneeded=\(\)=>\{[\s\S]*?\n  r\.onsuccess=/)||[''])[0];
+  const upgradeBegin=src.storage.indexOf('function upgrade(d)');
+  const upgradeEnd=src.storage.indexOf('\n  function open(',upgradeBegin);
+  const upgrade=upgradeBegin>=0&&upgradeEnd>upgradeBegin
+    ?src.storage.slice(upgradeBegin,upgradeEnd):'';
   assert(upgrade,'IndexedDB-upgradepad ontbreekt');
   assertIncludes(upgrade,'if(!d.objectStoreNames.contains("overboekingen"))',
     'De nieuwe wachtrijstore moet alleen worden toegevoegd wanneer hij ontbreekt');
@@ -677,8 +825,9 @@ test('DVN kan bewust en traceerbaar naar definitief i7', () => {
 });
 
 test('Patch H houdt gewone blokkade los van DVN en echte boekstatus', () => {
-  assertIncludes(src.core, 'd.createObjectStore("overboekingen"', 'Aparte IndexedDB-wachtrij ontbreekt');
-  assertIncludes(src.core, 'indexedDB.open("hourhound",4)', 'Databaseversie moet de wachtrij-store aanmaken');
+  assertIncludes(src.storage, 'd.createObjectStore("overboekingen"', 'Aparte IndexedDB-wachtrij ontbreekt');
+  assertIncludes(src.storage, 'const DB_NAME="hourhound",DB_VERSION=4',
+    'Databaseversie moet de wachtrij-store aanmaken');
   assertIncludes(src.html, 'Nog over te boeken naar dossier', 'Beheer mist de overboekingswerkvoorraad');
   assertIncludes(src.html, 'Tijdelijk niet boekbaar', 'Dagwizard mist de parkeeractie');
   assertIncludes(src.html, 'Op i7 geboekt · parkeren', 'Expliciete tijdelijke i7-bevestiging ontbreekt');
@@ -817,7 +966,7 @@ test('oude timer en editor volgen timerOp-contract', () => {
 });
 
 test('timer-invariant herstelt alleen eenduidige state en blokkeert conflicten', () => {
-  const begin=src.app.indexOf('async function herstelInvariant()');
+  const begin=src.app.indexOf('async function herstelInvariant(snapshotMeta)');
   const einde=src.app.indexOf('\nfunction openRegels()',begin);
   const herstel=begin>=0&&einde>begin?src.app.slice(begin,einde):'';
   assert(herstel,'herstelInvariant() ontbreekt');
@@ -921,7 +1070,7 @@ test('service-worker-assets zijn compleet en cachevrij van tests', () => {
 
 for (const { name, fn } of tests) {
   try {
-    fn();
+    await fn();
     console.log(`✓ ${name}`);
   } catch (err) {
     failures++;

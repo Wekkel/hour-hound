@@ -53,12 +53,13 @@ async function migrate(){
    regel met een ontbrekende of verkeerde pointer. Bij meerdere open regels wordt er
    niets gewijzigd; dan verschijnt het herstelvenster en liggen alle timeracties stil
    tot de gebruiker heeft bevestigd.                                            */
-async function herstelInvariant(){
-  const rid=await get("meta","running");
+async function herstelInvariant(snapshotMeta){
+  const uitSnapshot=!!snapshotMeta;
+  const rid=uitSnapshot?snapshotMeta.running:await get("meta","running");
   /* Oude versies konden een uitgestelde taakwissel in meta.pending bewaren. De
      huidige versie kent dat concept niet meer; de oude marker wordt daarom alleen
      opgeruimd, zonder retroactief een tijdknip te verzinnen. */
-  const oudPending=(await get("meta","pending"))||null;
+  const oudPending=(uitSnapshot?snapshotMeta.pending:await get("meta","pending"))||null;
   pending=null;
   if(oudPending){try{await del("meta","pending");}catch(e){}
     L("migratie-pending","oude uitgestelde taakwissel verwijderd");}
@@ -140,15 +141,19 @@ $("h-ok").onclick=async()=>{
   L("herstel-bevestigd",nieuw.length+" afgesloten · lopend "+(gekozen?"ja":"nee"));
   toast(nieuw.length+" regel(s) afgesloten — de oorspronkelijke waarden zijn bewaard");};
 
-async function herlaad(){
-  dossiers=await getAll("dossiers");templates=await getAll("templates");
-  i7codes=await getAll("codes");alle=await getAll("regels");
-  overboekingen=await getAll("overboekingen");
-  stack=(await get("meta","stack"))||[];
-  dagEinde=(await get("meta","dagEinde"))||{};
-  dagAudit=(await get("meta","dagAudit"))||{};
+async function herlaad(metInstellingen){
+  /* Eerst één consistente database-snapshot; pas na een volledig geslaagde
+     transactie wordt runtime-state vervangen. Een leesfout laat alles intact. */
+  const snapshot=await storageRepos.loadSnapshot();
+  dossiers=snapshot.dossiers;templates=snapshot.templates;
+  i7codes=snapshot.codes;alle=snapshot.regels;
+  overboekingen=snapshot.overboekingen;
+  stack=snapshot.meta.stack||[];
+  dagEinde=snapshot.meta.dagEinde||{};
+  dagAudit=snapshot.meta.dagAudit||{};
+  if(metInstellingen)pasInstellingenToe(snapshot.meta);
   refreshDay();
-  await herstelInvariant();
+  await herstelInvariant(snapshot.meta);
   /* Niet awaiten: herlaad() kan vanuit de foutafhandeling van een timerOp worden
      aangeroepen, en middernachtCheck() zet zelf weer een timerOp in de wachtrij.  */
   setTimeout(middernachtCheck,0);
@@ -190,22 +195,26 @@ async function zorgVoorI7(){
     voorlopig:false,codes:[],c:ds.length,used:999,isI7:true,archief:false,
     gewijzigd:Date.now()});}
 
-async function laadInstellingen(){
-  codeGebruik=(await get("meta","codeGebruik"))||{};
-  geboekt=(await get("meta","geboekt"))||{};
-  logboek=(await get("meta","log"))||[];
-  logOms=!!(await get("meta","logOms"));
+function pasInstellingenToe(meta){
+  codeGebruik=meta.codeGebruik||{};
+  geboekt=meta.geboekt||{};
+  logboek=meta.log||[];
+  logOms=!!meta.logOms;
   $("b-logoms").checked=logOms;$("logstat").textContent=logboek.length+" regels";
-  zetThema((await get("meta","thema"))||"donker");
-  rondMode=(await get("meta","rondMode"))||"groep";
-  $("d-mode").value=rondMode;}
+  zetThema(meta.thema||"donker");
+  rondMode=meta.rondMode||"groep";
+  $("d-mode").value=rondMode;
+}
+async function laadInstellingen(){
+  pasInstellingenToe(await storageRepos.config.getMany([
+    "codeGebruik","geboekt","log","logOms","thema","rondMode"]));
+}
 
 let tick=null;
 async function boot(){
   await zorgVoorI7();
   await laadWerkcodes();
-  await laadInstellingen();
-  await herlaad();
+  await herlaad(true);
   await herstelOmschr();
   setTimeout(controleerOudeLopendeTaak,0);
   L("app-start","dossiers "+dossiers.length+" · regels "+alle.length+

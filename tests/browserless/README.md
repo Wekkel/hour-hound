@@ -10,7 +10,12 @@ Deze map bevat de kleine regressiesuite die zonder browser draait. Het doel is n
 2. **Pure helpers uit productiecode**
    De suite laadt `js/core.js` in een Node `vm` met minimale DOM-stubs. Daardoor worden echte productiehelpers getest, zoals tijdconversie, datumhelpers, afronding naar 0,1 uur, DVN-statushelpers en `takenVandaag()`.
 
-3. **Statische workflow-invarianten**
+3. **Opslagcontracten met foutinjectie**
+   Een kleine fake IndexedDB controleert databaseversie, stores, index, repositories en de ene
+   consistente bootsnapshot. Een geïnjecteerde transactiefout moet afwijzen voordat runtimegeheugen
+   wordt vervangen.
+
+4. **Statische workflow-invarianten**
    Sommige contracten zitten nu nog verspreid over HTML, CSS en globale JS. Die worden bewust als broninvarianten getest, bijvoorbeeld:
    - de recente-takenlijst mag niet meer hard op vier items worden afgekapt;
    - sneltoetsen voor recente taken blijven beperkt tot 1–4;
@@ -106,3 +111,15 @@ terug naar `Gewijzigd — controleren`.
 De brede ronde controleert daarnaast de timer-invariant, de lokale i7-codeplicht, strikte
 restore-keuring, schema-9-checksum, DOM-id-referenties en de exacte service-worker-assetlijst. Die
 laatste test mag nooit worden versoepeld door testbestanden aan `ASSETS` toe te voegen.
+
+### Patch M-contract
+
+`js/storage/indexeddb.js` is de enige eigenaar van database openen, schema-upgrade en generieke
+transacties. Databasenaam `hourhound`, versie 4, alle bestaande stores, key paths en de index
+`regels.datum` blijven exact gelijk. Regels, dossiers, configuratiemeta en overboekingen hebben
+kleine repositories; dit is geen generiek repositoryframework.
+
+Boot en herladen lezen dossiers, sjablonen, codes, regels, overboekingen en relevante metadata in
+één readonly transactie via `loadSnapshot()`. De runtime-arrays worden pas vervangen nadat die
+hele transactie is geslaagd. Timer- en importworkflows houden hun bestaande transacties over
+meerdere stores; repositories mogen zo'n use-case nooit opdelen in losse schrijfacties.
