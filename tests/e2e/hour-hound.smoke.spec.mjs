@@ -493,6 +493,76 @@ test('DVN-nummer en Beheer-mutaties laten recente taken direct zichtbaar', async
   expect(maxHeight).toBeGreaterThan(0);
 });
 
+test('N-wizard eist een i7-code en bewaart de lokale werklijst na herladen', async ({ page }) => {
+  await openAndSeed(page, {
+    dossiers:[i7Dossier],regels:[],codes:baseCodes,meta:{}
+  });
+
+  await page.locator('#b-switch').click();
+  await expect(page.locator('#nt-wizard')).toHaveClass(/on/);
+  await page.locator('#nt-wizard [data-ntkind="i7"]').click();
+  await expect(page.locator('#nt-i7-q')).toBeVisible();
+  await expect(page.locator('#nt-oms')).toHaveCount(0);
+  const zonderCode=await page.evaluate(async()=>{
+    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('hourhound',4);
+      q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+    const rows=await new Promise((resolve,reject)=>{const q=db.transaction('regels').objectStore('regels').getAll();
+      q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});db.close();return rows[0];
+  });
+  expect(zonderCode.code).toBeNull();
+
+  await page.locator('#nt-wizard [data-nti7="ADM"]').click();
+  await expect(page.locator('#nt-oms')).toBeVisible();
+  await page.locator('#nt-oms').fill('interne administratie');
+  await page.locator('#nt-oms').press('Enter');
+  await expect(page.locator('#nt-wizard')).not.toHaveClass(/on/);
+  await expect(page.locator('#l-code')).toHaveValue('Praktijkorganisatie/administratie');
+
+  await page.reload();
+  await expect(page.locator('#l-code')).toHaveValue('Praktijkorganisatie/administratie');
+  const opgeslagen=await page.evaluate(async()=>{
+    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('hourhound',4);
+      q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+    const all=store=>new Promise((resolve,reject)=>{const q=db.transaction(store).objectStore(store).getAll();
+      q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+    const codes=await all('codes'),regels=await all('regels');db.close();return{codes,regels};
+  });
+  expect(opgeslagen.codes.map(c=>c.code).sort()).toEqual(['ADM','COM']);
+  expect(opgeslagen.regels).toHaveLength(1);
+  expect(opgeslagen.regels[0].code).toBe('ADM');
+});
+
+test('gewijzigde geparkeerde regel moet onder Beheer opnieuw worden bevestigd', async ({ page }) => {
+  const today=todayLocal(),stamp=Date.now();
+  await openAndSeed(page, {
+    dossiers:[i7Dossier,
+      {id:'d-check',nummer:'304000012',naam:'Controle dossier',lang:'nl',codes:[],c:1}],
+    regels:[{id:'r-check',datum:today,start:'09:00',eind:'10:00',dossierId:'d-check',
+      code:null,omschrijving:'oorspronkelijk werk',soort:'werk',gemaakt:stamp,gewijzigd:stamp}],
+    codes:baseCodes,meta:{}
+  });
+
+  await page.locator('#tabs [data-v="dag"]').click();
+  await page.locator('#d-boek').click();
+  await page.locator('#bk-park').click();
+  await page.locator('#pb-save').click();
+  await page.locator('#bk-close').click();
+  await page.locator('#d-table [data-edit="r-check"]').click();
+  await expect(page.locator('#editregel')).toContainText(/geparkeerd/i);
+  await page.locator('#er-oms').fill('bijgewerkt werk');
+  await page.locator('#er-save').click();
+  await expect(page.locator('#editregel')).not.toHaveClass(/on/);
+
+  await page.locator('#tabs [data-v="beheer"]').click();
+  const voorraad=page.locator('#overboek-intapp');
+  await expect(voorraad).toContainText('Gewijzigd — controleren');
+  await expect(voorraad.getByRole('button',{name:'Boeken op dossier'})).toBeDisabled();
+  await voorraad.getByRole('button',{name:'Bijgewerkte gegevens gebruiken'}).click();
+  await expect(voorraad).toContainText('Wacht op dossierboeking');
+  await expect(voorraad).toContainText('bijgewerkt werk');
+  await expect(voorraad.getByRole('button',{name:'Boeken op dossier'})).toBeEnabled();
+});
+
 test('parkeert geblokkeerd dossier en handelt later af zonder i7-correctie', async ({ page }) => {
   const today = todayLocal(),stamp=Date.now();
   await openAndSeed(page, {
@@ -514,6 +584,12 @@ test('parkeert geblokkeerd dossier en handelt later af zonder i7-correctie', asy
   await expect(page.locator('#d-boekstat')).toContainText('0 geboekt · 1 geparkeerd · 0 open');
   await page.locator('#bk-close').click();
 
+  /* De geparkeerde bronregel is de enige koppeling met de latere dossierboeking.
+     Verwijderen moet daarom vóór de gewone delete-confirm bewust worden geblokkeerd. */
+  await page.locator('#d-table [data-del="r-park"]').click();
+  await expect(page.locator('#toast')).toContainText(/wacht nog op dossierboeking/i);
+  await expect(page.locator('#d-table tr[data-id="r-park"]')).toHaveCount(1);
+
   await page.locator('#tabs [data-v="beheer"]').click();
   await expect(page.locator('#overboek-intapp')).toContainText('Tijdelijk geblokkeerd dossier');
   await expect(page.locator('#overboek-intapp')).toContainText('Wacht op dossierboeking');
@@ -522,6 +598,29 @@ test('parkeert geblokkeerd dossier en handelt later af zonder i7-correctie', asy
   await expect(page.locator('#overboekpost')).toContainText('advieswerk');
   await page.locator('#op-save').click();
   await expect(page.locator('#overboek-intapp')).toContainText('Geen regels die nog naar een dossier moeten');
+
+  await page.locator('#tabs [data-v="dag"]').click();
+  await expect(page.locator('#d-boekstat')).toContainText('1 geboekt · 0 geparkeerd · 0 open');
+  await page.locator('#d-boek').click();
+  await expect(page.locator('#bk-tel')).toContainText('1 geboekt · 0 geparkeerd · 0 open');
+  await expect(page.locator('#bk-kaart')).toContainText('geboekt');
+  await page.locator('#bk-close').click();
+
+  /* Nieuw identiek werk ná afhandeling is een nieuwe boeking. Zonder lifecyclegrens
+     zou sumVan() dit met de oude bron samenvoegen en de duurzame status verliezen. */
+  await page.evaluate(async ({datum,stamp})=>{
+    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('hourhound',4);
+      q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+    await new Promise((resolve,reject)=>{const tx=db.transaction('regels','readwrite');
+      tx.objectStore('regels').put({id:'r-park-new',datum,start:'10:00',eind:'11:00',
+        dossierId:'d-target',code:null,omschrijving:'advieswerk',soort:'werk',
+        gemaakt:stamp+1,gewijzigd:stamp+1});
+      tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error);});db.close();
+  },{datum:today,stamp});
+  await page.reload();
+  await page.locator('#tabs [data-v="dag"]').click();
+  await expect(page.locator('#d-sum tbody tr')).toHaveCount(2);
+  await expect(page.locator('#d-boekstat')).toContainText('1 geboekt · 0 geparkeerd · 1 open');
 
   const state=await page.evaluate(async()=>{
     const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('hourhound',4);

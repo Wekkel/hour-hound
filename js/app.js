@@ -47,8 +47,8 @@ async function migrate(){
 /* Invariant bij elke start: er is hooguit één open regel, en meta.running wijst
    precies naar die regel. Wijkt de database daarvan af — na een crash, een gesloten
    tabblad of een mislukte schrijfactie — dan wordt dat hier hersteld voordat de
-   gebruiker iets kan doen. Verweesde open regels worden afgesloten op hun eigen
-   starttijd (0,1 uur) en gemarkeerd, zodat ze in de dagcontrole opvallen.      */
+   gebruiker iets kan doen. Een ontbrekende pointer bij nul of één open regel wordt
+   veilig rechtgezet; meerdere open regels worden nooit stilzwijgend afgesloten. */
 /* Alleen een ondubbelzinnige situatie wordt automatisch rechtgezet: nul of één open
    regel met een ontbrekende of verkeerde pointer. Bij meerdere open regels wordt er
    niets gewijzigd; dan verschijnt het herstelvenster en liggen alle timeracties stil

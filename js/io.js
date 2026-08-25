@@ -4,6 +4,10 @@ $("b-import").onclick=()=>$("file").click();
 $("file").onchange=e=>{const f=e.target.files[0];if(f)importFile(f);e.target.value="";};
 const str=(v,max)=>typeof v==="string"?v.slice(0,max||400):"";
 const BACKUPVERSIE=9;
+/* Een samenvattingsvingerafdruk bevat alle bron-id's en gewijzigd-stempels. Bij een
+   grote groep kan die legitiem ruim boven 4.000 tekens uitkomen; afkappen zou na
+   restore dezelfde boeking ten onrechte weer als open laten verschijnen. */
+const VINGERAFDRUK_MAX=100000;
 /* Een datum is pas geldig als hij na parsen exact dezelfde tekst oplevert: zo vallen
    2026-02-30 en 2026-13-01 er ook uit.                                          */
 const isDatum=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&
@@ -125,7 +129,12 @@ function keurOverboekingen(arr){
       boekdatum:a.boekdatum&&isDatum(a.boekdatum)?a.boekdatum:null})):[];
     goed.push({id:x.id,status:x.status,targetDossierId:str(x.targetDossierId,120),
       targetNumberSnapshot:str(x.targetNumberSnapshot,60),targetNameSnapshot:str(x.targetNameSnapshot,200),
-      sourceDate:x.sourceDate,sourceRuleIds:ids,sourceFingerprint:str(x.sourceFingerprint,4000),sourceSnapshot:snap,
+      sourceDate:x.sourceDate,sourceRuleIds:ids,
+      sourceFingerprint:str(x.sourceFingerprint,VINGERAFDRUK_MAX),
+      sourceFingerprints:Array.isArray(x.sourceFingerprints)?x.sourceFingerprints
+        .filter(fp=>typeof fp==="string").map(fp=>str(fp,VINGERAFDRUK_MAX)).slice(0,500):[],
+      rondModeSnapshot:x.rondModeSnapshot==="regel"?"regel":(x.rondModeSnapshot==="groep"?"groep":null),
+      sourceSnapshot:snap,
       targetLines:lines,description:str(x.description,2000),hours:Math.max(0,+x.hours||0),
       i7DossierId:x.i7DossierId?str(x.i7DossierId,120):null,i7NumberSnapshot:str(x.i7NumberSnapshot,60),
       i7Code:str(x.i7Code,60),temporaryDescription:str(x.temporaryDescription,2000),
@@ -133,7 +142,7 @@ function keurOverboekingen(arr){
       targetBookedDate:x.targetBookedDate&&isDatum(x.targetBookedDate)?x.targetBookedDate:null,
       doneAt:x.doneAt?str(x.doneAt,40):null,finalI7At:x.finalI7At?str(x.finalI7At,40):null,
       finalI7Fingerprints:Array.isArray(x.finalI7Fingerprints)?x.finalI7Fingerprints
-        .filter(fp=>typeof fp==="string").slice(0,500):[],
+        .filter(fp=>typeof fp==="string").map(fp=>str(fp,VINGERAFDRUK_MAX)).slice(0,500):[],
       updatedAt:str(x.updatedAt,40)||str(x.parkedAt,40)||new Date().toISOString(),audit});});
   return{goed,fout};}
 function keurTemplates(arr){

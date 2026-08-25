@@ -94,3 +94,15 @@ gemarkeerd. De suite bewaakt de aparte IndexedDB-store, de drie dagstatusaantall
 `Gewijzigd — controleren`, de latere dossierboeking zonder i7-correctie en de alternatieve
 terminale omzetting van de HH-bronregels naar definitief i7. Backupversie 9 neemt deze wachtrij
 mee bij export, terugzetten en samenvoegen.
+
+### Brede regressieronde na Patch H
+
+De suite bewaakt aanvullend de volledige levenscyclus rond die wachtrij. Een afgeronde overboeking
+blijft op de oorspronkelijke dag als geboekt herkenbaar, maar alleen zolang de actuele
+inhoudsvingerafdruk nog overeenkomt. Nieuw identiek werk blijft een afzonderlijke Intapp-regel,
+open bronregels kunnen niet worden verwijderd en wijzigingen in brondata of afrondingsmodus vallen
+terug naar `Gewijzigd — controleren`.
+
+De brede ronde controleert daarnaast de timer-invariant, de lokale i7-codeplicht, strikte
+restore-keuring, schema-9-checksum, DOM-id-referenties en de exacte service-worker-assetlijst. Die
+laatste test mag nooit worden versoepeld door testbestanden aan `ASSETS` toe te voegen.

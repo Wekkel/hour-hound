@@ -17,7 +17,8 @@ let parkBoek=null;
    niet-geboekt.                                                                */
 const isGeboekt=fp=>(geboekt[boek.datum]||[]).indexOf(fp)>=0;
 const isGeparkeerd=row=>!!overboekingVoorRow(row,boek.datum);
-const isAfgehandeld=row=>isGeboekt(row.fp)||isGeparkeerd(row);
+const isDossierGeboekt=row=>isGeboekt(row.fp)||!!overboekingAfgerondVoorRow(row,boek.datum);
+const isAfgehandeld=row=>isDossierGeboekt(row)||isGeparkeerd(row);
 function kanParkeren(row){
   if(!row||isAfgehandeld(row)||!Array.isArray(row.dosIds)||row.dosIds.length!==1)return false;
   const d=dosOf(row.dosIds[0]);
@@ -40,7 +41,7 @@ async function zetGeboekt(fp,aan){
 function boekStat(){
   const el=$("d-boekstat");if(!el)return;
   const rs=sumRows(),k=geboekt[viewDate]||[];
-  const n=rs.filter(x=>k.indexOf(x.fp)>=0).length;
+  const n=rs.filter(x=>k.indexOf(x.fp)>=0||overboekingAfgerondVoorRow(x,viewDate)).length;
   const p=rs.filter(x=>overboekingVoorRow(x,viewDate)).length,open=rs.length-n-p;
   el.textContent=!rs.length?"":n+" geboekt · "+p+" geparkeerd · "+open+" open";}
 async function kopieer(tekst,btn,label){
@@ -74,7 +75,7 @@ function volgendeOpen(){
   return false;}
 function tekenBoek(){
   const rs=boek.rows,x=rs[boek.i];if(!x)return;
-  const geboekte=rs.filter(r=>isGeboekt(r.fp)),geparkeerde=rs.filter(isGeparkeerd);
+  const geboekte=rs.filter(isDossierGeboekt),geparkeerde=rs.filter(isGeparkeerd);
   const klaar=rs.filter(isAfgehandeld);
   const uTot=rs.reduce((s,r)=>s+r.u,0),uKlaar=klaar.reduce((s,r)=>s+r.u,0);
   $("bk-titel").textContent="Boeken in Intapp · "+kortDag(boek.datum);
@@ -84,7 +85,7 @@ function tekenBoek(){
   $("bk-toggle").innerHTML=(boek.lijst?"Eén voor één":"Hele lijst")+" <kbd>L</kbd>";
   $("bk-kaart").style.display=boek.lijst?"none":"block";
   $("bk-lijst").style.display=boek.lijst?"block":"none";
-  const g=isGeboekt(x.fp),p=isGeparkeerd(x);
+  const g=isDossierGeboekt(x),p=isGeparkeerd(x);
   $("bk-kaart").className="kaart"+(g||p?" gedaan":"");
   $("bk-kaart").innerHTML=
     '<div class="rij"><span class="nr">'+esc(x.nummer||"—")+"</span>"+
@@ -99,7 +100,7 @@ function tekenBoek(){
       "dossier, een werkcode of een omschrijving.</div>":"");
   let h="";
   rs.forEach((r,i)=>{
-    const rg=isGeboekt(r.fp),rp=isGeparkeerd(r);
+    const rg=isDossierGeboekt(r),rp=isGeparkeerd(r);
     h+='<div class="bkrow'+(i===boek.i?" nu":"")+(rg||rp?" gedaan":"")+
       '" data-i="'+i+'">'+
       '<span class="bn">'+esc(r.nummer||"—")+"</span>"+
@@ -149,6 +150,7 @@ async function bevestigParkeer(){
   const nu=new Date().toISOString(),o={id:uid(),status:"waiting",targetDossierId:p.doel.id,
     targetNumberSnapshot:p.doel.nummer||"",targetNameSnapshot:p.doel.naam||"",
     sourceDate:boek.datum,sourceRuleIds:ids,sourceFingerprint:p.row.fp,
+    sourceFingerprints:[p.row.fp],rondModeSnapshot:rondMode,
     sourceSnapshot:bron.map(r=>({id:r.id,datum:r.datum,start:r.start,eind:r.eind,
       dossierId:r.dossierId,code:r.code||null,omschrijving:r.omschrijving||"",
       uren:urenOf(r),gewijzigd:r.gewijzigd||0})),

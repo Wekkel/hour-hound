@@ -189,7 +189,8 @@ async function sluitWerkdag(datum){
 
 
 /* ---------- bewuste regelbewerking en oude lopende timer ---------- */
-const isModalOpen=()=>["dayclose","oldrun","editregel","dvnnum","dvnpost","boek","herstel"].some(id=>{
+const isModalOpen=()=>["dayclose","oldrun","editregel","dvnnum","dvnpost","boek",
+  "parkboek","overboekpost","herstel"].some(id=>{
   const el=$(id);return el&&el.classList.contains("on");});
 function voorstelOudeTimerEind(r){
   const na=alle.filter(x=>x.datum===r.datum&&x.id!==r.id&&hm2m(x.start)!=null&&
@@ -198,14 +199,16 @@ function voorstelOudeTimerEind(r){
   const s=hm2m(r.start),e17=hm2m("17:00");
   if(s!=null&&s<e17)return "17:00";
   return r.start;}
-function regelBoekFingerprint(r){
+function regelBoekRow(r){
   const oude=viewDate,oudeRegels=regels;
   viewDate=r.datum;regels=alle.filter(x=>x.datum===r.datum)
     .sort((a,b)=>(hm2m(a.start)||0)-(hm2m(b.start)||0));
   const hit=sumRows().find(x=>x.bron&&x.bron.some(b=>b.id===r.id));
   viewDate=oude;regels=oudeRegels;
-  return hit?hit.fp:null;}
-function regelIsGeboekt(r){const fp=regelBoekFingerprint(r);return !!(fp&&(geboekt[r.datum]||[]).indexOf(fp)>=0);}
+  return hit||null;}
+function regelBoekFingerprint(r){const hit=regelBoekRow(r);return hit?hit.fp:null;}
+function regelIsGeboekt(r){const hit=regelBoekRow(r);return !!(hit&&
+  ((geboekt[r.datum]||[]).indexOf(hit.fp)>=0||overboekingAfgerondVoorRow(hit,r.datum)));}
 function opdrachtUitDossierTekst(v,huidigId){
   const txt=(v||"").trim(),h=dosOf(huidigId);
   if(!txt)return{dossierId:null,code:null};
@@ -250,6 +253,7 @@ function openRegelEditor(id,bron){
   if(d&&isDvn(d)&&dvnIntappState(d)==="posted")
     waars.push("Deze regel hoort bij een DVN die als ingevoerd in Intapp is gemarkeerd. Opslaan zet die DVN terug naar controle nodig.");
   if(regelIsGeboekt(r))waars.push("Deze regel hoort bij een Intapp-regel die als geboekt is gemarkeerd. Door wijzigen valt die boekstatus automatisch terug naar controle nodig.");
+  if(overboekingOpenVoorRegel(r.id))waars.push("Deze regel staat geparkeerd voor latere dossierboeking. Wijzigen zet de overboeking op Gewijzigd — controleren.");
   if(bron==="oldrun")waars.push("Deze taak is op een eerdere datum gestart. Kies expliciet een eindtijd als hij niet werkelijk moet doorlopen.");
   $("er-warn").innerHTML=waars.map(esc).join("<br>");
   $("er-warn").classList.toggle("on",waars.length>0);
@@ -293,7 +297,8 @@ function openRegelEditor(id,bron){
           tmpRule.uren=Math.max(0.1,Math.round(n*10)/10);tmpRule.urenHand=true;}
         else tmpRule.urenHand=false;}
       if(!dagRuimte(tmpRule.datum,urenOf(tmpRule),tmpRule.id))return;
-      if((cur.autoAanvul||regelIsGeboekt(cur))&&!confirm("Je wijzigt een bestaande tijdregel met administratieve status.\n\nDoorgaan en bewust opslaan?"))return;
+      if((cur.autoAanvul||regelIsGeboekt(cur)||overboekingOpenVoorRegel(cur.id))&&
+        !confirm("Je wijzigt een bestaande tijdregel met administratieve status.\n\nDoorgaan en bewust opslaan?"))return;
       tmpRule.gewijzigd=Date.now();delete tmpRule.hersteld;
       const extraDos={};
       [cur.dossierId,tmpRule.dossierId].forEach(id=>{
@@ -480,7 +485,11 @@ function sumVan(lijst){
   lijst.filter(r=>r.soort!=="pauze").forEach(r=>{
     const d=dosOf(r.dossierId),info=intappDossierInfo(d);
     const nummer=info.nummer,naam=info.naam;
-    const k=nummer+"|"+(r.code||"")+"|"+(r.omschrijving||"");
+    /* Een regel uit de overboekingslifecycle blijft een eigen Intapp-eenheid. Zo
+       kan later toegevoegde identieke tijd niet samensmelten met reeds geparkeerde
+       of afgehandelde uren en daardoor opnieuw dubbel geboekt lijken. */
+    const over=overboekingVoorBronId(r.id);
+    const k=nummer+"|"+(r.code||"")+"|"+(r.omschrijving||"")+"|"+(over?over.id:"");
     if(!map[k])map[k]={k,nummer,naam,code:codeNaam(d,r.code),oms:r.omschrijving||"",
       min:0,hand:0,los:0,dosIds:[],bron:[],dvnStatus:info.status,
       mist:(!d)||codeFout(d,r)||!(r.omschrijving||"").trim()};
@@ -825,9 +834,10 @@ function overboekingLijnen(o){
   return ls.length?ls:[{werkcode:"",omschrijving:o&&o.description||"",uren:+(o&&o.hours)||0}];}
 function overboekingHuidig(o){
   const rs=bronIdsVan(o).map(id=>alle.find(r=>r.id===id)).filter(Boolean);
-  if(rs.length!==bronIdsVan(o).length)return{regels:rs,lijnen:[],uren:0};
-  const lijnen=sumVan(rs).map(x=>({werkcode:x.code||"",omschrijving:x.oms||"",uren:x.u}));
-  return{regels:rs,lijnen,uren:lijnen.reduce((s,x)=>s+(+x.uren||0),0)};}
+  if(rs.length!==bronIdsVan(o).length)return{regels:rs,rows:[],lijnen:[],uren:0};
+  const rows=sumVan(rs);
+  const lijnen=rows.map(x=>({werkcode:x.code||"",omschrijving:x.oms||"",uren:x.u}));
+  return{regels:rs,rows,lijnen,uren:lijnen.reduce((s,x)=>s+(+x.uren||0),0)};}
 function overboekingKaartHtml(o){
   const st=overboekingState(o),wijz=overboekingWijzigingen(o),cur=overboekingHuidig(o);
   const opgeslagen=overboekingLijnen(o),d=dosOf(o.targetDossierId);
@@ -886,12 +896,18 @@ async function handelOverboekingenAf(){
   const ids=overboekPostIds.slice(),os=ids.map(id=>overboekingen.find(o=>o.id===id)).filter(Boolean);
   if(!os.length||os.some(o=>overboekingState(o)!=="waiting")){
     toast("De wachtrij is gewijzigd — open de boekingswizard opnieuw");sluitOverboekPost();return;}
-  const nu=new Date().toISOString();
-  try{await tx("overboekingen","readwrite",s=>os.forEach(o=>s.put(Object.assign({},o,{status:"done",
-    targetBookedAt:nu,targetBookedDate:today(),doneAt:nu,updatedAt:nu,
-    audit:(o.audit||[]).slice(-49).concat([{type:"op-dossier-geboekt",t:nu,boekdatum:today()}])}))));}
+  const nu=new Date().toISOString(),boekNieuw=JSON.parse(JSON.stringify(geboekt||{}));
+  const klaar=os.map(o=>{const cur=overboekingHuidig(o),fps=cur.rows.map(x=>x.fp);
+    boekNieuw[o.sourceDate]=[...new Set((boekNieuw[o.sourceDate]||[]).concat(fps))];
+    return Object.assign({},o,{status:"done",sourceFingerprints:fps,
+      sourceFingerprint:fps.length===1?fps[0]:(o.sourceFingerprint||""),rondModeSnapshot:rondMode,
+      targetBookedAt:nu,targetBookedDate:today(),doneAt:nu,updatedAt:nu,
+      audit:(o.audit||[]).slice(-49).concat([{type:"op-dossier-geboekt",t:nu,boekdatum:today()}])});});
+  const boekDagen=Object.keys(boekNieuw).sort();while(boekDagen.length>60)delete boekNieuw[boekDagen.shift()];
+  try{await tx(["overboekingen","meta"],"readwrite",s=>{klaar.forEach(o=>s.overboekingen.put(o));
+    s.meta.put(boekNieuw,"geboekt");});}
   catch(e){L("FOUT-overboeking-afhandelen",String(e));toast("Afhandelen mislukt — er is niets gewijzigd");return;}
-  overboekingen=await getAll("overboekingen");sluitOverboekPost();renderBeheer();
+  geboekt=boekNieuw;overboekingen=await getAll("overboekingen");sluitOverboekPost();renderBeheer();boekStat();
   L("overboeking-afgehandeld",os.length+" item(s)");toast("Afgehandeld — de eerdere i7-boeking blijft staan");}
 async function verversOverboeking(id){
   const o=overboekingen.find(x=>x.id===id);if(!o||!overboekingOpen(o))return;
@@ -907,6 +923,8 @@ async function verversOverboeking(id){
     sourceSnapshot:rs.map(r=>({id:r.id,datum:r.datum,start:r.start,eind:r.eind,
       dossierId:r.dossierId,code:r.code||null,omschrijving:r.omschrijving||"",
       uren:urenOf(r),gewijzigd:r.gewijzigd||0})),targetLines:cur.lijnen,
+    sourceFingerprints:cur.rows.map(x=>x.fp),
+    sourceFingerprint:cur.rows.length===1?cur.rows[0].fp:"",rondModeSnapshot:rondMode,
     description:cur.lijnen.map(x=>x.omschrijving).join(" / "),hours:cur.uren,updatedAt:nu,
     audit:(o.audit||[]).slice(-49).concat([{type:"bijgewerkte-gegevens-gebruikt",t:nu}])});
   await put("overboekingen",nieuw);overboekingen=await getAll("overboekingen");renderBeheer();
@@ -1215,6 +1233,8 @@ $("d-table").addEventListener("click",async e=>{
   const dl=e.target.closest("[data-del]");
   if(dl){const id=dl.dataset.del;
     const oud=regels.find(x=>x.id===id);if(!oud)return;
+    if(overboekingOpenVoorRegel(id)){
+      toast("Deze regel wacht nog op dossierboeking — rond de overboeking eerst af onder Beheer");return;}
     if(!confirm("Deze regel verwijderen?"))return;
     const wasRunning=!!(running&&running.id===id);
     const kop=kopie1(oud),od=dosOf(oud.dossierId);

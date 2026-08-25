@@ -20,7 +20,7 @@
   - Als HH naar ES-modules gaat, vervang evaluateCorePure() door directe imports.
 */
 
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import vm from 'node:vm';
@@ -56,6 +56,11 @@ function scriptOrderFromHtml(){
   return [...src.html.matchAll(/<script\s+src="\.\/(js\/[^"?]+)"/g)].map(m => m[1]);
 }
 
+function serviceWorkerAssets(){
+  const block=(src.sw.match(/const ASSETS\s*=\s*\[([\s\S]*?)\];/)||[])[1]||'';
+  return [...block.matchAll(/"([^"]+)"/g)].map(m=>m[1]);
+}
+
 function evaluateCorePure(){
   const dummyEl = () => ({
     classList: { add(){}, remove(){}, toggle(){}, contains(){ return false; } },
@@ -76,17 +81,32 @@ function evaluateCorePure(){
   };
   vm.createContext(context);
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
-    `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{};\n`+
+    `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
     `return true;\n};\n`+
-    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp, overboekingState, overboekingStatusTekst, overboekingWijzigingen };`;
+    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp, overboekingOpenVoorRegel, overboekingVoorBronId, overboekingVoorRow, overboekingFingerprints, overboekingAfgerondVoorRow, overboekingState, overboekingStatusTekst, overboekingWijzigingen };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
+  /* sumVan() is pure maar staat zolang de app nog klassieke scripts gebruikt in
+     views.js. Laad alleen dat afgebakende productiefragment; zo testen we echte
+     aggregatie/fingerprints zonder alle DOM-eventhandlers te simuleren. */
+  const sumStart=src.views.indexOf('const normOms=');
+  const sumEnd=src.views.indexOf('\nfunction sumRows()',sumStart);
+  assert(sumStart>=0&&sumEnd>sumStart,'Pure sumVan-productiecode niet gevonden');
+  vm.runInContext(src.views.slice(sumStart,sumEnd)+
+    '\n;globalThis.__hhPure.sumVan=sumVan;',context,{filename:'js/views.sumVan.js'});
+  const foutStart=src.views.indexOf('function codeFout(');
+  const foutEnd=src.views.indexOf('\n/* Blokkerende fouten',foutStart);
+  assert(foutStart>=0&&foutEnd>foutStart,'Pure codeFout-productiecode niet gevonden');
+  vm.runInContext(src.views.slice(foutStart,foutEnd),context,{filename:'js/views.codeFout.js'});
   return { api: context.__hhPure, setState: context.__hhSetState, context };
 }
 
 function evaluateIoPure(){
   const { context } = evaluateCorePure();
+  const dagMax=(src.views.match(/const DAGMAX\s*=\s*[\d.]+;/)||[])[0];
+  assert(dagMax,'DAGMAX-productieconstante niet gevonden');
+  vm.runInContext(dagMax,context,{filename:'js/views.DAGMAX.js'});
   vm.runInContext(src.io+
-    '\n;globalThis.__hhIoPure = { keurDossiers, keurOverboekingen, backupVersie: BACKUPVERSIE };',
+    '\n;globalThis.__hhIoPure = { keurRegels, keurDossiers, keurOverboekingen, keurDagAudit, checksumVan, backupVersie: BACKUPVERSIE };',
     context,{filename:'js/io.js'});
   return context.__hhIoPure;
 }
@@ -110,6 +130,21 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/booking.js',
     'js/app.js'
   ].join('\n'), 'Scriptvolgorde gewijzigd. Bij klassieke globals kan dat runtime breken.');
+});
+
+test('statische DOM-id’s en JavaScriptverwijzingen blijven onderling compleet', () => {
+  const js=Object.entries(src).filter(([k])=>
+    ['core','timer','wizard','views','controls','io','booking','app'].includes(k))
+    .map(([,v])=>v).join('\n');
+  const htmlIds=[...src.html.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
+  assertEq(new Set(htmlIds).size,htmlIds.length,'index.html bevat dubbele id-attributen');
+  /* Wizardvelden worden als HTML-string in wizard.js opgebouwd. Neem daarom ook
+     statische id-attributen uit de productie-JS mee in de referentieset. */
+  const dynamisch=[...js.matchAll(/\bid="([^"]+)"/g)].map(m=>m[1]);
+  const bekend=new Set(htmlIds.concat(dynamisch));
+  const refs=[...js.matchAll(/\$\("([^"]+)"\)/g)].map(m=>m[1]);
+  const ontbreekt=[...new Set(refs.filter(id=>!bekend.has(id)))];
+  assertEq(ontbreekt.join(','),'','Letterlijke $()-verwijzingen missen een statisch of dynamisch element');
 });
 
 // 2. Pure helpers uit productiecode -----------------------------------------
@@ -209,6 +244,28 @@ test('Nu toont de compacte declarabel-i7-DVN-breakdown', () => {
   assertIncludes(src.views, 'Declarabel "+uu(b.declarabel)', 'Declarabele tijd moet apart worden gelabeld');
   assertIncludes(src.views, 'DVN "+uu(b.dvn)', 'DVN-tijd moet apart tussen haakjes worden getoond');
   assertIncludes(src.core, 'function nuBreakdown(lijst)', 'Historische Nu-registratieclassificatie ontbreekt');
+});
+
+test('i7-codeplicht heeft geen stille standaard en lokale codes blijven leidend', () => {
+  const { api, setState } = evaluateCorePure();
+  const ind={id:'d-i7-contract',nummer:'I700000000',naam:'Indirect',isI7:true};
+  const dvn={id:'d-dvn-contract',naam:'Nummer volgt',voorlopig:true,dvn:true};
+  setState({dossiers:[ind,dvn],i7codes:[
+    {code:'COM',naam:'Commercieel'},
+    {code:'ADM',naam:'Praktijkorganisatie/administratie'}
+  ]});
+  assertEq(api.defaultCode(ind),null,'Een gewone i7-regel mag geen stille werkcode krijgen');
+  assertEq(api.codeVoor(ind,null),null,'Ook codeVoor() moet i7 zonder expliciete keuze leeg laten');
+  assertEq(api.codeVoor(ind,'ADM'),'ADM','Een expliciete geldige i7-code moet behouden blijven');
+  assertEq(api.defaultCode(dvn),'COM','DVN moet juist wel vast op Commercieel staan');
+  assertIncludes(src.app, 'if(lokaal.length){\n    i7codes=lokaal;',
+    'laadWerkcodes() moet een lokale werklijst vóór netwerkbootstrap gebruiken');
+  assertIncludes(src.app, 'return false;}\n  let d=null;',
+    'Een bestaande lokale werklijst moet de werkcodes.json-bootstrap overslaan');
+  assertIncludes(src.wizard, 'if(d&&d.isI7&&!running.code)',
+    'De N-wizard moet i7 zonder expliciete code blokkeren');
+  assertIncludes(src.wizard, 'if(!i7codes.some(c=>c.code===code))',
+    'De wizard moet een stale i7-keuze tegen de actuele lokale lijst controleren');
 });
 
 test('DVN pure statushelpers onderscheiden ontbrekend, klaar, ingevoerd en controle nodig', () => {
@@ -459,6 +516,91 @@ test('Patch H detecteert wijzigingen en heeft twee terminale routes', () => {
   assertIncludes(src.views, 's.overboekingen.put(klaar)', 'Bronregels en terminale status moeten transactioneel schrijven');
 });
 
+test('afgeronde overboeking blijft geboekt totdat de broninhoud wijzigt', () => {
+  const { api, setState } = evaluateCorePure();
+  const datum='2026-08-25';
+  const doel={id:'d-over-doel',nummer:'304000020',naam:'Doeldossier'};
+  const a={id:'r-over-a',datum,start:'09:00',eind:'09:01',dossierId:doel.id,
+    code:null,omschrijving:'zelfde werk',soort:'werk',uren:0.1,urenHand:false,gewijzigd:10};
+  const b={id:'r-over-b',datum,start:'09:02',eind:'09:03',dossierId:doel.id,
+    code:null,omschrijving:'zelfde werk',soort:'werk',uren:0.1,urenHand:false,gewijzigd:10};
+  setState({dossiers:[doel],alle:[a,b],regels:[a,b],viewDate:datum,rondMode:'groep'});
+  const voor=api.sumVan([a,b]);
+  assertEq(voor.length,1,'Identieke bronregels horen vóór parkeren één Intapp-regel te zijn');
+  const wacht={id:'o-contract',status:'waiting',targetDossierId:doel.id,
+    targetNumberSnapshot:doel.nummer,targetNameSnapshot:doel.naam,sourceDate:datum,
+    sourceRuleIds:[a.id,b.id],sourceFingerprint:voor[0].fp,sourceFingerprints:[voor[0].fp],
+    rondModeSnapshot:'groep',sourceSnapshot:[a,b].map(r=>({id:r.id,datum:r.datum,
+      start:r.start,eind:r.eind,dossierId:r.dossierId,code:r.code,
+      omschrijving:r.omschrijving,uren:0.1,gewijzigd:r.gewijzigd}))};
+  setState({dossiers:[doel],alle:[a,b],regels:[a,b],overboekingen:[wacht],
+    viewDate:datum,rondMode:'groep'});
+  const geparkeerd=api.sumVan([a,b]);
+  assertEq(geparkeerd.length,1,'De lifecyclegrens mag de eigen geparkeerde groep niet splitsen');
+  assertEq(geparkeerd[0].fp,voor[0].fp,'Parkeren zelf mag de inhoudsvingerafdruk niet wijzigen');
+  assertEq(api.overboekingWijzigingen(wacht).length,0,
+    'Een zojuist geparkeerde ongewijzigde regel mag niet direct controle nodig krijgen');
+
+  const c={...a,id:'r-over-new',start:'09:04',eind:'09:05'};
+  setState({dossiers:[doel],alle:[a,b,c],regels:[a,b,c],overboekingen:[wacht],
+    viewDate:datum,rondMode:'groep'});
+  const metNieuweTijd=api.sumVan([a,b,c]);
+  assertEq(metNieuweTijd.length,2,
+    'Nieuw identiek werk mag niet samensmelten met de al geparkeerde bronregels');
+  const oudeGroep=metNieuweTijd.find(x=>x.bron.length===2);
+  assert(oudeGroep&&oudeGroep.fp===voor[0].fp,
+    'De geparkeerde groep moet haar eigen stabiele vingerafdruk behouden');
+
+  const ouder={...wacht,id:'o-ouder',status:'done'};
+  setState({dossiers:[doel],alle:[a,b,c],regels:[a,b,c],overboekingen:[ouder,wacht],
+    viewDate:datum,rondMode:'groep'});
+  assertEq(api.overboekingOpenVoorRegel(a.id).id,wacht.id,
+    'Een oudere terminale historie mag een nieuwe open wachtrij niet maskeren');
+
+  const klaar={...wacht,status:'done',sourceFingerprints:[oudeGroep.fp]};
+  setState({dossiers:[doel],alle:[a,b,c],regels:[a,b,c],overboekingen:[klaar],
+    viewDate:datum,rondMode:'groep'});
+  assertEq(api.overboekingAfgerondVoorRow(oudeGroep,datum).id,klaar.id,
+    'De terminale wachtrijstatus moet dezelfde bronregel duurzaam als geboekt herkennen');
+  const legacy={...klaar,sourceFingerprints:[],sourceFingerprint:oudeGroep.fp};
+  setState({dossiers:[doel],alle:[a,b,c],regels:[a,b,c],overboekingen:[legacy],
+    viewDate:datum,rondMode:'groep'});
+  assertEq(api.overboekingAfgerondVoorRow(oudeGroep,datum).id,legacy.id,
+    'Een bestaande Patch H-record met één oude sourceFingerprint moet compatibel blijven');
+  const gewijzigd={...a,gewijzigd:11};
+  setState({dossiers:[doel],alle:[gewijzigd,b,c],regels:[gewijzigd,b,c],
+    overboekingen:[klaar],viewDate:datum,rondMode:'groep'});
+  const gewijzigdeGroep=api.sumVan([gewijzigd,b]).find(x=>x.bron.length===2);
+  assertEq(api.overboekingAfgerondVoorRow(gewijzigdeGroep,datum),null,
+    'Een inhoudswijziging moet de oude terminale boekstatus automatisch ongeldig maken');
+
+  setState({dossiers:[doel],alle:[a,b],regels:[a,b],overboekingen:[wacht],
+    viewDate:datum,rondMode:'regel'});
+  assert(api.overboekingWijzigingen(wacht).includes('Intapp-samenvatting gewijzigd'),
+    'Een gewijzigde afrondingsmodus moet de geparkeerde Intapp-samenvatting laten controleren');
+});
+
+test('brede H-regressie bewaakt modal, verwijdering, groepering en atomaire afhandeling', () => {
+  for(const id of ['parkboek','overboekpost']){
+    assertIncludes(src.views, `"${id}"`, `Centrale modalcheck mist ${id}`);
+    assertIncludes(src.controls, `"${id}"`, `Globale sneltoetsblokkade mist ${id}`);
+  }
+  assertIncludes(src.views, 'if(overboekingOpenVoorRegel(id))',
+    'Een bronregel in de open overboekingswachtrij mag niet verwijderbaar zijn');
+  assertIncludes(src.views, 'rond de overboeking eerst af onder Beheer',
+    'De verwijderblokkade moet de gebruiker naar de herstelplek verwijzen');
+  assertIncludes(src.views, 'const over=overboekingVoorBronId(r.id)',
+    'Aggregatie moet een overboekingslifecycle als eigen groeperingsgrens gebruiken');
+  assertIncludes(src.views, 'tx(["overboekingen","meta"],"readwrite"',
+    'Afhandelen en duurzame boekstatus moeten in één transactie worden opgeslagen');
+  assertIncludes(src.views, 'sourceFingerprints:fps',
+    'Afhandelen moet de actuele inhoudsvingerafdrukken bewaren');
+  assertIncludes(src.views, 's.meta.put(boekNieuw,"geboekt")',
+    'Afhandelen moet ook de gewone boekstatus duurzaam bijwerken');
+  assertIncludes(src.booking, 'overboekingAfgerondVoorRow(row,boek.datum)',
+    'De Intapp-wizard moet terminale overboekingen als werkelijk geboekt herkennen');
+});
+
 test('hervatten van een recente taak start exact één nieuwe timerwissel', () => {
   const m = src.views.match(/async function hervat\(k\)\{[\s\S]*?\n\}/);
   assert(m, 'hervat() ontbreekt');
@@ -477,6 +619,27 @@ test('oude timer en editor volgen timerOp-contract', () => {
     'Bewerken van de lopende regel moet door timerOp() lopen');
   assertNotIncludes(src.views, 'meta.delete("running");});\n        Object.values(extraDos).forEach(memDossier);',
     'Editor mag meta.running niet buiten het timerOp-pad wijzigen');
+});
+
+test('timer-invariant herstelt alleen eenduidige state en blokkeert conflicten', () => {
+  const begin=src.app.indexOf('async function herstelInvariant()');
+  const einde=src.app.indexOf('\nfunction openRegels()',begin);
+  const herstel=begin>=0&&einde>begin?src.app.slice(begin,einde):'';
+  assert(herstel,'herstelInvariant() ontbreekt');
+  assertIncludes(herstel,'const open=alle.filter(r=>!r.eind)',
+    'De invariant moet alle regels zonder eindtijd inspecteren');
+  assertIncludes(herstel,'if(open.length<=1)',
+    'Alleen nul of één open regel mag automatisch worden hersteld');
+  assertIncludes(herstel,'await txAll',
+    'Pointerherstel moet transactioneel via het centrale timerpad schrijven');
+  assertIncludes(herstel,'opBlok=true',
+    'Meerdere open regels moeten nieuwe timeracties blokkeren');
+  assertIncludes(herstel,'toonHerstel()',
+    'Een conflict moet het expliciete herstelvenster openen');
+  assertNotIncludes(herstel,'o.regels.put',
+    'De opstartcontrole mag conflicterende open regels niet stilzwijgend afsluiten');
+  assertIncludes(src.app, 'if(open.length<2){$("herstel").classList.remove("on");return;}',
+    'Het herstelvenster moet alleen voor een werkelijk meervoudig conflict verschijnen');
 });
 
 
@@ -504,24 +667,61 @@ test('backup/import bewaart dag-, DVN- en overboekingsmetadata', () => {
   }]).goed[0];
   assertEq(finalI7.dvnDisposition,'final_i7','Restore moet de terminale DVN-dispositie bewaren');
   assertEq(finalI7.dvnFinalI7RuleIds.join(','),'r-c','Restore moet de betrokken regel-id’s bewaren');
+  const langeFp='x'.repeat(5001);
   const over=io.keurOverboekingen([{id:'o-backup',status:'waiting',targetDossierId:'d-doel',
     targetNumberSnapshot:'304000010',targetNameSnapshot:'Doel',sourceDate:'2026-08-25',
-    sourceRuleIds:['r-a'],sourceSnapshot:[{id:'r-a',datum:'2026-08-25',start:'09:00',
+    sourceRuleIds:['r-a'],sourceFingerprint:langeFp,sourceFingerprints:[langeFp,'fp-b'],
+    rondModeSnapshot:'regel',sourceSnapshot:[{id:'r-a',datum:'2026-08-25',start:'09:00',
       eind:'10:00',dossierId:'d-doel',omschrijving:'werk',uren:1,gewijzigd:12}],
     targetLines:[{omschrijving:'werk',uren:1}],hours:1,i7DossierId:'d-i7',i7Code:'COM',
     parkedAt:'2026-08-25T10:00:00.000Z',updatedAt:'2026-08-25T10:00:00.000Z',
     audit:[{type:'op-i7-geboekt-geparkeerd',t:'2026-08-25T10:00:00.000Z'}]}]).goed[0];
   assertEq(over.status,'waiting','Restore moet open overboekingsstatus bewaren');
   assertEq(over.sourceRuleIds.join(','),'r-a','Restore moet gekoppelde bronregels bewaren');
+  assertEq(over.sourceFingerprint.length,5001,
+    'Restore mag een geldige samengestelde vingerafdruk niet op 4.000 tekens afkappen');
+  assertEq(over.sourceFingerprints[0].length,5001,
+    'Restore moet ook de lijst met duurzame boekstatusvingerafdrukken volledig bewaren');
+  assertEq(over.sourceFingerprints[1],'fp-b','Restore moet alle boekstatusvingerafdrukken bewaren');
+  assertEq(over.rondModeSnapshot,'regel','Restore moet de gebruikte afrondingsmodus bewaren');
   assertEq(over.targetLines[0].uren,1,'Restore moet latere dossierboekingsregels bewaren');
   assertIncludes(src.io, 'o.overboekingen.clear()', 'Volledig terugzetten moet de wachtrij vervangen');
   assertIncludes(src.io, 'nO.forEach', 'Samenvoegen moet overboekingen meenemen');
 });
 
-test('service worker cacheert geen testbestanden', () => {
+test('importkeuring en checksum signaleren beschadigde kerngegevens', () => {
+  const io=evaluateIoPure();
+  const goed=io.keurRegels([{id:'r-ok',datum:'2026-08-25',start:'09:00',eind:'10:00',
+    dossierId:'d-ok',uren:1,soort:'werk'}]);
+  assertEq(goed.goed.length,1,'Een geldige tijdregel moet restore-keuring passeren');
+  const fout=io.keurRegels([{id:'r-bad',datum:'2026-02-30',start:'09:00',eind:'10:00',
+    dossierId:'d-ok',uren:1,soort:'werk'}]);
+  assertEq(fout.goed.length,0,'Een kalendertechnisch ongeldige datum mag niet worden hersteld');
+  const basis=[{id:'d-ok',nummer:'304000099',naam:'Dossier'}];
+  const regels=[{id:'r-ok',datum:'2026-08-25',start:'09:00',eind:'10:00',uren:1}];
+  const wacht=[{id:'o-ok',status:'waiting',targetDossierId:'d-ok',
+    updatedAt:'2026-08-25T10:00:00.000Z'}];
+  const a=io.checksumVan(basis,regels,[],[],wacht);
+  const b=io.checksumVan(basis,regels,[],[],[{...wacht[0],status:'done'}]);
+  assert(a!==b,'De schema-9-checksum moet een gewijzigde overboekingsstatus detecteren');
+  assertIncludes(src.io, 'if(sv>BACKUPVERSIE)',
+    'Een back-up uit een nieuwere onbekende versie moet worden geweigerd');
+  assertIncludes(src.io, 'Een open regel wordt nooit automatisch de lopende timer',
+    'Restore mag een open regel alleen na expliciete keuze hervatten');
+});
+
+test('service-worker-assets zijn compleet en cachevrij van tests', () => {
   assertNotIncludes(src.sw, 'tests/', 'Service worker mag tests niet cachen');
   assertNotIncludes(src.sw, 'regression.mjs', 'Service worker mag de testsuite niet cachen');
-  assertIncludes(src.sw, './js/app.js', 'Productie-assets horen in de service worker');
+  const refs=[...src.html.matchAll(/(?:src|href)="(\.\/[^"?#]+)"/g)].map(m=>m[1]);
+  const verwacht=[...new Set(['./','./index.html'].concat(refs))].sort();
+  const assets=[...new Set(serviceWorkerAssets())].sort();
+  assertEq(assets.join('\n'),verwacht.join('\n'),
+    'De service-workerlijst moet exact alle statische runtime-assets uit index.html bevatten');
+  for(const asset of assets){
+    const lokaal=asset==='.'||asset==='./'?root:join(root,asset.replace(/^\.\//,''));
+    assert(existsSync(lokaal),`Service-workerasset bestaat niet: ${asset}`);
+  }
 });
 
 for (const { name, fn } of tests) {

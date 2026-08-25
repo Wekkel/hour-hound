@@ -40,7 +40,19 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
    Een gewone dossierregel kan in de Intapp-wizard na bevestigde invoer op `i7 · Commercieel`
    worden geparkeerd. Dag toont hem apart als geparkeerd; Beheer groepeert hem onder het echte
    doeldossier. De latere bevestiging handelt alleen de wachtrij af, laat de HH-bronregel op het
-   gewone dossier staan en vraagt geen correctie van de eerdere i7-boeking.
+   gewone dossier staan en vraagt geen correctie van de eerdere i7-boeking. De test bewaakt ook
+   dat de bronregel tijdens het wachten niet kan worden verwijderd, dat de terminale boekstatus
+   na herladen blijft staan en dat later identiek werk als nieuwe open boeking zichtbaar blijft.
+
+10. **i7-codeplicht en lokale persistence**
+    De N-wizard gaat bij i7 pas naar de omschrijving na een expliciete keuze uit de vaste lokale
+    werklijst. De gekozen code en de lokaal geïmporteerde codes blijven na herladen aanwezig;
+    `werkcodes.json` mag een bestaande IndexedDB-lijst niet vervangen.
+
+11. **Gewijzigde geparkeerde bronregel**
+    Bewust bewerken van een geparkeerde regel zet de Beheer-werkvoorraad op
+    `Gewijzigd — controleren` en blokkeert `Boeken op dossier`. Pas
+    `Bijgewerkte gegevens gebruiken` maakt de actuele omschrijving en uren weer boekbaar.
 
 Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 

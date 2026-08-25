@@ -62,6 +62,10 @@
        na handmatige boeking op i7 · Commercieel in een aparte overboekingswachtrij.
        Dat is geen DVN en geen echte dossierboeking. De latere boeking op het doel-
        dossier maakt alleen de wachtrijregel af; de eerdere i7-boeking blijft staan.
+   B7. Een afgeronde overboeking blijft als dossierboeking herkenbaar via de inhouds-
+       vingerafdruk van haar bronregels. Een latere inhouds- of afrondingswijziging
+       maakt die herkenning bewust ongeldig. Zolang de wachtrij open is, mogen bron-
+       regels niet worden verwijderd of met nieuw identiek werk worden samengevoegd.
 
    LOGBOEK
    L1. Standaard komen er uitsluitend technische gegevens in het logboek. Vrije tekst,
@@ -351,11 +355,25 @@ const dosVeld=d=>d?(d.nummer||d.naam):"";
 const overboekingOpen=o=>!!o&&o.status==="waiting";
 const bronIdsVan=o=>(o&&Array.isArray(o.sourceRuleIds)?o.sourceRuleIds:[])
   .filter(Boolean).slice().sort();
-function overboekingVoorRow(row,datum){
+const overboekingOpenVoorRegel=id=>overboekingen.find(o=>overboekingOpen(o)&&
+  bronIdsVan(o).indexOf(id)>=0)||null;
+const overboekingVoorBronId=id=>overboekingOpenVoorRegel(id)||overboekingen.slice().reverse()
+  .find(o=>bronIdsVan(o).indexOf(id)>=0)||null;
+function overboekingBronMatch(row,o,datum){
   const ids=(row&&Array.isArray(row.bron)?row.bron.map(b=>b.id):[]).filter(Boolean).sort();
-  if(!ids.length)return null;
-  return overboekingen.find(o=>{const bron=bronIdsVan(o);return overboekingOpen(o)&&
-    o.sourceDate===(datum||viewDate)&&ids.every(id=>bron.indexOf(id)>=0);})||null;}
+  const bron=bronIdsVan(o);
+  return !!ids.length&&o.sourceDate===(datum||viewDate)&&ids.every(id=>bron.indexOf(id)>=0);}
+function overboekingVoorRow(row,datum){
+  return overboekingen.find(o=>overboekingOpen(o)&&overboekingBronMatch(row,o,datum))||null;}
+function overboekingFingerprints(o){
+  if(!o)return[];
+  const lijst=o.status==="final_i7"?o.finalI7Fingerprints:o.sourceFingerprints;
+  if(Array.isArray(lijst)&&lijst.length)return lijst.filter(x=>typeof x==="string");
+  return o.sourceFingerprint?[o.sourceFingerprint]:[];}
+function overboekingAfgerondVoorRow(row,datum){
+  if(!row||!row.fp)return null;
+  return overboekingen.find(o=>(o.status==="done"||o.status==="final_i7")&&
+    o.sourceDate===(datum||viewDate)&&overboekingFingerprints(o).indexOf(row.fp)>=0)||null;}
 function overboekingWijzigingen(o){
   if(!overboekingOpen(o))return[];
   const uit=[],snap=Array.isArray(o.sourceSnapshot)?o.sourceSnapshot:[];
@@ -367,6 +385,12 @@ function overboekingWijzigingen(o){
     if(r.dossierId!==o.targetDossierId)uit.push("doeldossier van tijdregel gewijzigd");
   });
   if(snap.length!==bronIdsVan(o).length)uit.push("bronselectie gewijzigd");
+  const bron=bronIdsVan(o).map(id=>act[id]).filter(Boolean);
+  if(bron.length===bronIdsVan(o).length&&typeof sumVan==="function"){
+    const oud=overboekingFingerprints(o).slice().sort();
+    const huidig=sumVan(bron).map(x=>x.fp).sort();
+    if(oud.length&&oud.join("\n")!==huidig.join("\n"))
+      uit.push("Intapp-samenvatting gewijzigd");}
   const d=dosOf(o.targetDossierId);
   if(!d)uit.push("doeldossier ontbreekt");
   else{

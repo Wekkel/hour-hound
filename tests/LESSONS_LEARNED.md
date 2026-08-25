@@ -130,3 +130,23 @@ staan. Bij `Naar definitief i7` worden de oorspronkelijke HH-bronregels transact
 naar het hoofd-i7-dossier met werkcode Commercieel verplaatst. Wijzigingen aan bronregels of
 doeldossiermetadata moeten eerst zichtbaar worden als `Gewijzigd — controleren`; overschrijf de
 opgeslagen herkenningsgegevens nooit stilzwijgend. Backupversie 9 bewaart de hele wachtrij.
+
+## 16. Een terminale overboeking heeft blijvende, inhoudsgebonden status
+
+De bevestiging `Op dossier geboekt · afhandelen` mag de werkvoorraad niet alleen verbergen. De
+oorspronkelijke dag moet daarna ook na herladen als `geboekt` blijven gelden, anders vraagt de
+gewone Intapp-wizard dezelfde uren opnieuw in te voeren. Bewaar daarom de actuele
+Intapp-vingerafdrukken tegelijk met de terminale wachtrijstatus en de gewone boekstatus, in één
+transactie. De terminale historie is aanvullend van belang wanneer oude boekstatusdagen later uit
+`meta.geboekt` worden opgeruimd. Een vingerafdruk kan door veel bron-id's langer dan 4.000 tekens
+zijn; importkeuring moet hem volledig bewaren en mag hem niet als gewone vrije tekst afkappen.
+
+Die herkenning blijft bewust inhoudsgebonden: wijzigt een bronregel of de afrondingsmodus, dan moet
+de oude vingerafdruk niet meer passen en verschijnt de gewijzigde tijd opnieuw als open. Zolang een
+overboeking nog wacht, mag een bronregel niet worden verwijderd; zonder die bron is de latere
+dossierboeking niet meer betrouwbaar te reconstrueren.
+
+Ten slotte vormt iedere open of terminale overboekingslifecycle een aggregatiegrens. Nieuw werk met
+dezelfde dossiergegevens en omschrijving mag niet met al geparkeerde of afgehandelde uren
+samensmelten. De grens hoort alleen in de groepeeridentiteit: parkeren zelf mag de inhoudsvingerafdruk
+van de bestaande groep niet veranderen. De browserloze test bewaakt beide kanten van dit contract.
