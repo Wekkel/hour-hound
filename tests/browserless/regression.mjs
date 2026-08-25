@@ -78,7 +78,7 @@ function evaluateCorePure(){
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{};\n`+
     `return true;\n};\n`+
-    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
+    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
   return { api: context.__hhPure, setState: context.__hhSetState, context };
 }
@@ -170,7 +170,9 @@ test('Nu-breakdown bewaart registratiebron en afgeronde uren', () => {
   const gewoon = { id: 'd-gewoon', nummer: '304000001', naam: 'Dossier', codes: [] };
   const i7d = { id: 'd-i7-breakdown', nummer: 'I700000001', naam: 'Indirecte uren', isI7: true };
   const dvn = { id: 'd-dvn-breakdown', naam: 'DVN', dvn: true, voorlopig: false, dvnResolvedNr: '304000002' };
-  setState({ dossiers: [gewoon, i7d, dvn] });
+  const finalI7 = { id: 'd-final-i7', naam: 'Geen nummer', dvn: true, dvnDisposition: 'final_i7', archief: true };
+  setState({ dossiers: [gewoon, i7d, dvn, finalI7],
+    i7codes: [{ code: 'COM', naam: 'Commercieel' }] });
   const regel = (id, dossierId, start, eind, extra = {}) =>
     Object.assign({ id, dossierId, datum: '2026-08-25', start, eind, soort: 'werk' }, extra);
   assertEq(JSON.stringify(api.nuBreakdown([regel('r-only-dos', gewoon.id, '08:00', '09:00')])),
@@ -189,6 +191,14 @@ test('Nu-breakdown bewaart registratiebron en afgeronde uren', () => {
   assertEq(resolved.declarabel, 0, 'Opgeloste DVN mag niet declarabel worden');
   assertEq(resolved.i7, 0.1, 'Opgeloste DVN blijft i7');
   assertEq(resolved.dvn, 0.1, 'Opgeloste DVN blijft apart herkenbaar');
+  assertEq(JSON.stringify(api.nuBreakdown([regel('r-final-i7', finalI7.id, '13:00', '14:00')])),
+    JSON.stringify({ declarabel: 0, i7: 1, dvn: 0 }),
+    'Definitief i7 blijft i7 maar valt uit de DVN-breakdown');
+  assertEq(api.intappDossierInfo(finalI7).nummer, 'I700000001',
+    'Definitief i7 moet in de Intapp-samenvatting het gewone i7-dossier gebruiken');
+  assertEq(api.intappDossierInfo(finalI7).dvn, false,
+    'Definitief i7 mag in de Intapp-samenvatting geen open DVN meer zijn');
+  assertEq(api.defaultCode(finalI7), 'COM', 'Definitief i7 blijft vast op Commercieel');
   assertEq(api.nuBreakdown([regel('r-hand', gewoon.id, '14:00', '14:01', { urenHand: true, uren: 0.4 })]).declarabel,
     0.4, 'Afgeronde handmatige uren moeten behouden blijven');
 });
@@ -208,7 +218,8 @@ test('DVN pure statushelpers onderscheiden ontbrekend, klaar, ingevoerd en contr
   const ready = { id: 'dvn-ready', naam: 'DVN ready', dvn: true, dvnResolvedNr: '304999998' };
   const linked = { id: 'dvn-linked', naam: 'DVN linked', dvn: true, dvnTo: doel.id };
   const posted = { id: 'dvn-posted', naam: 'DVN posted', dvn: true, dvnResolvedNr: '304999997', dvnIntappStatus: 'posted' };
-  setState({ dossiers: [doel, open, ready, linked, posted] });
+  const finalI7 = { id: 'dvn-final-i7', naam: 'DVN final', dvn: true, dvnDisposition: 'final_i7' };
+  setState({ dossiers: [doel, open, ready, linked, posted, finalI7] });
   assertEq(api.isDvn(open), true, 'voorlopig dossier moet DVN zijn');
   assertEq(api.dvnResolvedNummer(open), '', 'open DVN heeft nog geen nummer');
   assertEq(api.dvnResolvedNummer(ready), '304999998', 'resolved nummer moet worden gebruikt');
@@ -216,6 +227,9 @@ test('DVN pure statushelpers onderscheiden ontbrekend, klaar, ingevoerd en contr
   assertEq(api.dvnIntappState(open), 'missing', 'open DVN mist dossiernummer');
   assertEq(api.dvnIntappState(ready), 'ready', 'resolved DVN moet klaar voor Intapp zijn');
   assertEq(api.dvnIntappState(posted), 'posted', 'posted status moet blijven staan');
+  assertEq(api.dvnIntappState(finalI7), 'final_i7', 'Definitief i7 moet een terminale DVN-status zijn');
+  assertEq(api.dvnStatusTekst(finalI7), 'definitief i7', 'Definitief-i7-status moet begrijpelijk zijn');
+  assertEq(api.intappDossierInfo(finalI7).nummer, '', 'Zonder i7-dossier is definitief i7 niet declarabel');
   assertEq(api.dvnStatusTekst(posted), 'dossiernummer 304999997 · afgehandeld',
     'De gebruikersstatus van een posted DVN moet afgehandeld zijn');
   const checked = api.markDvnControleNodig(posted, 'testwijziging');
@@ -399,6 +413,17 @@ test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', ()
   assertNotIncludes(week, 'kenNummerToe', 'Week mag de nummerworkflow niet aanroepen');
 });
 
+test('DVN kan bewust en traceerbaar naar definitief i7', () => {
+  assertIncludes(src.html, 'Naar definitief i7', 'Beheer moet de bewuste eindactie uitleggen');
+  assertIncludes(src.timer, 'async function maakDvnDefinitiefI7', 'Definitief-i7-transactie ontbreekt');
+  assertIncludes(src.timer, 'dvnDisposition:"final_i7"', 'Terminale DVN-dispositie moet worden opgeslagen');
+  assertIncludes(src.timer, 'dvnFinalI7RuleIds:rs.map', 'Betrokken regel-id’s moeten traceerbaar blijven');
+  assertIncludes(src.timer, 'i7CodeOp(VAST_VOORLOPIG,"-704")', 'Commercieel moet verplicht blijven');
+  assertIncludes(src.views, 'data-dvn-final-i7', 'Open DVN-kaart mist de definitief-i7-actie');
+  assertIncludes(src.views, '!dvnDefinitiefI7(d)', 'Definitief i7 mag niet in de DVN-werkvoorraad blijven');
+  assertIncludes(src.core, '!dvnDefinitiefI7(d)', 'Definitief i7 mag niet in het DVN-deel van Nu blijven');
+});
+
 test('hervatten van een recente taak start exact één nieuwe timerwissel', () => {
   const m = src.views.match(/async function hervat\(k\)\{[\s\S]*?\n\}/);
   assert(m, 'hervat() ontbreekt');
@@ -422,8 +447,8 @@ test('oude timer en editor volgen timerOp-contract', () => {
 
 test('backup/import bewaart nieuwe dag- en DVN-metadata', () => {
   const io = evaluateIoPure();
-  assertEq(io.backupVersie, 7, 'Backupversie moet Patch C/F-metadata dekken');
-  for (const key of ['dagAudit', 'dvnResolvedNr', 'dvnTo', 'dvnIntappStatus', 'dvnIntappAudit', 'dvnIntappPostedRuleIds', 'hersteld', 'herstelOrigineel']) {
+  assertEq(io.backupVersie, 8, 'Backupversie moet Patch G.1-metadata dekken');
+  for (const key of ['dagAudit', 'dvnResolvedNr', 'dvnTo', 'dvnDisposition', 'dvnFinalI7At', 'dvnFinalI7RuleIds', 'dvnIntappStatus', 'dvnIntappAudit', 'dvnIntappPostedRuleIds', 'hersteld', 'herstelOrigineel']) {
     assertIncludes(src.io, key, `Backup/import mist ${key}`);
   }
   const restored=io.keurDossiers([{
@@ -437,6 +462,13 @@ test('backup/import bewaart nieuwe dag- en DVN-metadata', () => {
   assertEq(restored.dvnIntappPostedRuleIds.join(','),'r-a,r-b',
     'Restore moet de gekoppelde afgehandelde regel-id’s bewaren');
   assertEq(restored.dvnIntappPostedHours,1.5,'Restore moet het bevestigde urentotaal bewaren');
+  const finalI7=io.keurDossiers([{
+    id:'dvn-final-backup',naam:'Definitief i7',dvn:true,archief:true,
+    dvnDisposition:'final_i7',dvnFinalI7At:'2026-08-25T10:00:00.000Z',
+    dvnFinalI7RuleIds:['r-c'],dvnIntappAudit:[{type:'definitief-i7',regels:1,uren:0.7}]
+  }]).goed[0];
+  assertEq(finalI7.dvnDisposition,'final_i7','Restore moet de terminale DVN-dispositie bewaren');
+  assertEq(finalI7.dvnFinalI7RuleIds.join(','),'r-c','Restore moet de betrokken regel-id’s bewaren');
 });
 
 test('service worker cacheert geen testbestanden', () => {

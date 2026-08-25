@@ -16,17 +16,22 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
    verhuist hij naar de inklapbare groep Afgehandeld. Week is alleen-lezen. Een latere
    tijdregelwijziging zet de DVN terug naar `controle nodig` in de open werkvoorraad.
 
-4. **Dagafsluiting**
+4. **DVN → Definitief i7**
+   Als bewust geen dossiernummer meer komt, zet Beheer alle betrokken regels definitief op
+   `i7 · Commercieel`. De DVN verdwijnt uit de werkvoorraad en uit het DVN-deel van Nu, terwijl
+   de i7-uren en auditmetadata bewaard blijven.
+
+5. **Dagafsluiting**
    Einde werkdag opent de afsluitsheet. Afsluiten zonder Diversen-aanvulling mag niets extra boeken.
 
-5. **Recente taken**
+6. **Recente taken**
    Alle taken van vandaag blijven zichtbaar; alleen de eerste vier hebben sneltoetsen 1–4 en de lijst gaat scrollen vanaf taak 5.
 
-6. **Weekend zonder afsluitplicht**
+7. **Weekend zonder afsluitplicht**
    Een open vrijdag blijft in de herinnering staan. Regels op zaterdag en zondag blijven zichtbaar
    en bewerkbaar, maar veroorzaken geen open-dagmelding, 8-uursnorm of aanvulactie.
 
-7. **Recente taken na Beheer-mutaties**
+8. **Recente taken na Beheer-mutaties**
    Na het toekennen van een dossiernummer aan een DVN en een andere Beheer-mutatie moet Nu alle
    recente taken onmiddellijk tonen. De gebruiker hoeft niet eerst `N` te drukken; een verborgen
    render mag geen `max-height: 0px` achterlaten.

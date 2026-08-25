@@ -215,6 +215,60 @@ test('doorloopt DVN naar dossiernummer, Intapp en Afgehandeld', async ({ page })
   await expect(page.locator('#dvn-done')).toHaveCount(0);
 });
 
+test('zet een DVN zonder toekomstig nummer definitief naar i7', async ({ page }) => {
+  const today = todayLocal();
+  await openAndSeed(page, {
+    dossiers: [
+      i7Dossier,
+      { id: 'd-dvn-final', nummer: null, naam: 'Geen nummer verwacht', lang: 'nl',
+        codes: [], c: 1, voorlopig: true, isI7: false, dvn: true }
+    ],
+    regels: [
+      { id: 'r-dvn-final-a', datum: today, start: '09:00', eind: '10:00',
+        dossierId: 'd-dvn-final', code: 'COM', omschrijving: 'DVN werk A', soort: 'werk',
+        gemaakt: Date.now(), gewijzigd: Date.now() },
+      { id: 'r-dvn-final-b', datum: today, start: '10:00', eind: '10:30',
+        dossierId: 'd-dvn-final', code: 'COM', omschrijving: 'DVN werk B', soort: 'werk',
+        gemaakt: Date.now(), gewijzigd: Date.now() }
+    ],
+    codes: baseCodes,
+    meta: {}
+  });
+
+  await expect(page.locator('#t-breakdown')).toHaveText('Declarabel 0,0 · i7 1,5 (DVN 1,5)');
+  await page.locator('#tabs [data-v="beheer"]').click();
+  await page.locator('#dvn-open').getByRole('button', { name: 'Naar definitief i7' }).click();
+  await expect(page.locator('#dvn-intapp')).toContainText('Geen DVN-dossiers');
+  await expect(page.locator('#b-list')).not.toContainText('Geen nummer verwacht');
+
+  await page.locator('#tabs [data-v="nu"]').click();
+  await expect(page.locator('#t-breakdown')).toHaveText('Declarabel 0,0 · i7 1,5 (DVN 0,0)');
+  await page.locator('#tabs [data-v="dag"]').click();
+  await expect(page.locator('#d-sum')).toContainText('I700000000');
+  await expect(page.locator('#d-sum')).toContainText('Commercieel');
+
+  const stored = await page.evaluate(async ({ dbName, id }) => {
+    const db = await new Promise((resolve, reject) => {
+      const req = indexedDB.open(dbName);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+    const result = await new Promise((resolve, reject) => {
+      const tx = db.transaction(['dossiers', 'regels'], 'readonly');
+      const dossierReq = tx.objectStore('dossiers').get(id);
+      const regelReq = tx.objectStore('regels').getAll();
+      tx.oncomplete = () => resolve({ dossier: dossierReq.result,
+        codes: regelReq.result.filter(r => r.dossierId === id).map(r => r.code) });
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();return result;
+  }, { dbName: DB_NAME, id: 'd-dvn-final' });
+  expect(stored.dossier.dvnDisposition).toBe('final_i7');
+  expect(stored.dossier.archief).toBe(true);
+  expect(stored.dossier.dvnFinalI7RuleIds).toEqual(['r-dvn-final-a', 'r-dvn-final-b']);
+  expect(stored.codes).toEqual(['COM', 'COM']);
+});
+
 test('sluit een werkdag af via de sheet zonder stilzwijgend Diversen aan te vullen', async ({ page }) => {
   const today = todayLocal();
   await openAndSeed(page, {

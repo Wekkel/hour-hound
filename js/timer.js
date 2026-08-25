@@ -300,6 +300,44 @@ async function markeerVolgt(){
   if(!await koppelRegel(running,op))return;
   liveId=null;renderAll();announce();naStart();
   toast("Gemarkeerd als dossier volgt nog");}
+async function maakDvnDefinitiefI7(id){
+  const d=dosOf(id);
+  if(!d||!isDvn(d)||dvnDefinitiefI7(d))return;
+  if(dvnResolvedNummer(d)){
+    toast("Deze DVN heeft al een dossiernummer en kan niet naar definitief i7");return;}
+  if(running&&running.dossierId===d.id){
+    toast("Stop eerst de lopende DVN-regel");return;}
+  const commercieel=i7CodeOp(VAST_VOORLOPIG,"-704");
+  if(!commercieel){
+    toast("Werkcode Commercieel ontbreekt — herstel werkcodes.json onder Beheer");return;}
+  const rs=alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze");
+  const uren=Math.round(rs.reduce((s,r)=>s+urenOf(r),0)*10)/10;
+  if(!confirm('Zet "'+d.naam+'" met '+rs.length+' regel(s) / '+uu(uren)+
+    " uur definitief om naar i7 · Commercieel?\n\nEr wordt geen dossiernummer meer verwacht. "+
+    "De regels verdwijnen uit de DVN-werkvoorraad en blijven als gewone i7-tijd bewaard."))return;
+  const nu=new Date().toISOString(),gewijzigd=Date.now();
+  const nwD=stempel(Object.assign({},d,{voorlopig:false,archief:true,dvn:true,
+    dvnOriginalName:d.dvnOriginalName||d.naam,dvnDisposition:"final_i7",
+    dvnFinalI7At:nu,dvnFinalI7RuleIds:rs.map(r=>r.id),dvnIntappStatus:null,
+    dvnIntappPostedAt:null,dvnIntappPostedCount:0,dvnIntappPostedHours:0,
+    dvnIntappPostedRuleIds:[],
+    dvnIntappNeedsCheckAt:null,dvnIntappNeedsCheckReason:null,
+    dvnIntappAudit:dvnAuditAdd(d,"definitief-i7",{regels:rs.length,uren})}));
+  delete nwD.dvnTo;delete nwD.dvnResolvedNr;delete nwD.dvnResolvedAt;
+  const nwRegels=rs.filter(r=>r.code!==commercieel).map(r=>Object.assign({},r,
+    {code:commercieel,gewijzigd}));
+  const stackRaakt=stack.some(it=>it.dossierId===d.id);
+  const nwStack=stack.filter(it=>it.dossierId!==d.id);
+  try{
+    await rustig(rs.map(r=>r.id));
+    await txAll(s=>{s.dossiers.put(nwD);nwRegels.forEach(r=>s.regels.put(r));
+      if(stackRaakt)s.meta.put(nwStack,"stack");});
+  }catch(e){L("FOUT-dvn-definitief-i7",String(e));
+    toast("Omzetten naar definitief i7 mislukt — niets gewijzigd");return;}
+  memDossier(nwD);nwRegels.forEach(memRegel);if(stackRaakt)stack=nwStack;
+  undoStack=[];liveId=null;refreshDay();renderAll();renderWeek();announce();
+  L("dvn-definitief-i7","dos"+idKort(d.id)+" · "+rs.length+" regel(s) · "+uu(uren)+" u");
+  toast("DVN is definitief i7 · Commercieel");}
 /* ---------- DVN dossiernummer toekennen ---------- */
 function dvnDossierVoorNummer(nr,id){
   const n=(nr||"").trim().toLowerCase();

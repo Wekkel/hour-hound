@@ -338,7 +338,8 @@ const dosOf=id=>dossiers.find(d=>d.id===id);
 const i7=()=>dossiers.find(d=>d.isI7);
 const actief=()=>dossiers.filter(d=>!d.archief);
 const isDvn=d=>!!d&&(d.voorlopig||d.dvn);
-const isIndirect=d=>!!d&&(d.isI7||d.voorlopig);
+const dvnDefinitiefI7=d=>!!d&&d.dvnDisposition==="final_i7";
+const isIndirect=d=>!!d&&(d.isI7||d.voorlopig||dvnDefinitiefI7(d));
 const dosVeld=d=>d?(d.nummer||d.naam):"";
 function dvnRegels(d){return d?alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze"):[];}
 function dvnResolvedDoel(d){return d&&d.dvnTo?dosOf(d.dvnTo):null;}
@@ -348,6 +349,7 @@ function dvnResolvedNummer(d){
   return (doel&&doel.nummer)||d.nummer||d.dvnResolvedNr||"";}
 function dvnIntappState(d){
   if(!isDvn(d))return"";
+  if(dvnDefinitiefI7(d))return"final_i7";
   if(!dvnResolvedNummer(d))return"missing";
   if(d.dvnIntappStatus==="posted")return"posted";
   if(d.dvnIntappStatus==="needs_check")return"needs_check";
@@ -358,6 +360,7 @@ function dvnStatusTekst(d){
   if(st==="posted")return"dossiernummer "+nr+" · afgehandeld";
   if(st==="needs_check")return"dossiernummer "+nr+" · controle nodig";
   if(st==="ready")return"dossiernummer "+nr+" · nog boeken in Intapp";
+  if(st==="final_i7")return"definitief i7";
   return"DVN";}
 function dvnSummaryStatus(d){
   const st=dvnIntappState(d);
@@ -365,6 +368,7 @@ function dvnSummaryStatus(d){
   if(st==="needs_check")return"DVN · controle nodig";
   if(st==="ready")return"DVN · nog boeken in Intapp";
   if(st==="missing")return"DVN · nummer ontbreekt";
+  if(st==="final_i7")return"";
   return"";}
 function dvnAuditAdd(d,type,extra){
   const ev=(Array.isArray(d&&d.dvnIntappAudit)?d.dvnIntappAudit:[]).slice(-19);
@@ -382,6 +386,8 @@ function dvnPutIfPosted(d,reden){
 function intappDossierInfo(d){
   const ind=i7();
   if(!d)return{nummer:"",naam:"",dvn:false,status:""};
+  if(dvnDefinitiefI7(d))return{nummer:ind?ind.nummer:"",
+    naam:ind?ind.naam:"Indirecte uren",dvn:false,status:""};
   if(d.dvnTo){
     const doel=dvnResolvedDoel(d);
     if(doel)return{nummer:doel.nummer||"",naam:doel.naam,dvn:true,
@@ -405,7 +411,7 @@ const codeNaam=(d,c)=>{if(!c)return"";const x=codesFor(d).find(k=>k.code===c);re
    dezelfde uitkomst leidt.                                                      */
 function codeVoor(d,gewenst){
   if(!isIndirect(d))return gewenst!==undefined?gewenst:null;
-  if(d.voorlopig)return defaultCode(d);
+  if(d.voorlopig||dvnDefinitiefI7(d))return defaultCode(d);
   if(gewenst&&codesFor(d).some(c=>c.code===gewenst))return gewenst;
   return defaultCode(d);}
 function passendeCode(nieuw,huidig){
@@ -432,7 +438,7 @@ function i7CodeOp(patroon,suffix){
    Alleen "dossier volgt nog" heeft een vaste code, want daar valt niets te kiezen. */
 function defaultCode(d){
   if(!isIndirect(d))return null;
-  if(d.voorlopig)return i7CodeOp(VAST_VOORLOPIG,"-704");
+  if(d.voorlopig||dvnDefinitiefI7(d))return i7CodeOp(VAST_VOORLOPIG,"-704");
   return null;}
 /* Alleen de automatisch gegenereerde aanvulregels ("Diversen") hebben een vaste code
    nodig; daar is geen gebruiker die kiest.                                      */
@@ -443,7 +449,7 @@ let codeGevraagd=null;
 function eisCode(){
   if(!running||ntWizard)return false;
   const d=dosOf(running.dossierId);
-  if(!isIndirect(d)||d.voorlopig||running.code)return false;
+  if(!isIndirect(d)||d.voorlopig||dvnDefinitiefI7(d)||running.code)return false;
   if(!i7codes.length){geenCodes();return false;}
   codeGevraagd=running.id;
   setTimeout(()=>{if(!running||running.code)return;
@@ -472,7 +478,7 @@ const vandaagRegels=()=>alle.filter(r=>r.datum===today());
 function nuBreakdown(lijst){
   const out={declarabel:0,i7:0,dvn:0};
   (lijst||[]).filter(r=>r&&r.soort!=="pauze").forEach(r=>{
-    const d=dosOf(r.dossierId),u=urenOf(r),isDvnRegel=!!d&&isDvn(d);
+    const d=dosOf(r.dossierId),u=urenOf(r),isDvnRegel=!!d&&isDvn(d)&&!dvnDefinitiefI7(d);
     if(isDvnRegel){out.dvn+=u;out.i7+=u;return;}
     if(!d||r.soort!=="werk"||isIndirect(d))out.i7+=u;
     else out.declarabel+=u;});
@@ -503,7 +509,8 @@ function takenVandaag(){
      "Verder op": daar kun je inhoudelijk niets zinnigs op hervatten. Een DVN blijft
      wel hervatbaar als die ooit via telefoon/onderbreking is ontstaan: de voorlopige
      dossieridentiteit is daarvoor belangrijker dan het oorspronkelijke regelsoort. */
-  vandaagRegels().filter(r=>r.dossierId&&(r.soort==="werk"||(dosOf(r.dossierId)||{}).voorlopig))
+  vandaagRegels().filter(r=>r.dossierId&&!dvnDefinitiefI7(dosOf(r.dossierId))&&
+    (r.soort==="werk"||(dosOf(r.dossierId)||{}).voorlopig))
     .forEach(r=>{
       const k=(r.dossierId||"-")+"|"+(r.code||"")+"|"+(r.omschrijving||"");
       const g=map.get(k)||{k,dossierId:r.dossierId,code:r.code,oms:r.omschrijving||"",

@@ -107,3 +107,12 @@ op de oorspronkelijke DVN-identiteit (`isDvn(d)`), niet op het latere Intapp-dos
 een opgeloste DVN mag nooit door de nummerkoppeling naar Declarabel verschuiven. Gebruik
 `urenOf()` per tijdregel, zodat afgeronde en handmatig vastgelegde uren gelijk blijven aan de
 bestaande Nu-totalen.
+
+## 14. Definitief i7 is een terminale DVN-beslissing
+
+Als bewust vaststaat dat een DVN geen dossiernummer krijgt, blijft de tijd `i7 · Commercieel`
+maar eindigt de open DVN-lifecycle. Bewaar de oorspronkelijke DVN-identiteit en de betrokken
+regel-id’s voor audit en back-up, terwijl `dvnDisposition: "final_i7"` de operationele waarheid
+is. De regels verdwijnen uit de DVN-werkvoorraad, uit recente hervatacties en uit het DVN-deel
+van Nu; ze blijven wel meetellen in i7 en gebruiken in de Intapp-samenvatting het gewone
+i7-dossier. Voer de overgang transactioneel uit en blokkeer hem zolang een betrokken regel loopt.

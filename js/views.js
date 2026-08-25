@@ -41,10 +41,10 @@ function renderLive(){
   if(running.code)codeGevraagd=null;
   else if(!ntWizard&&isIndirect(d)&&!d.voorlopig&&codeGevraagd!==running.id)eisCode();
 
-  $("l-code").readOnly=!!(d&&d.voorlopig);
+  $("l-code").readOnly=!!(d&&(d.voorlopig||dvnDefinitiefI7(d)));
   $("l-code").placeholder=isIndirect(d)&&!d.voorlopig?"verplicht":"—";
-  $("l-code").title=d&&d.voorlopig?
-    "Een dossier waarvan het nummer nog volgt boekt altijd op "+codeNaam(d,defaultCode(d)):
+  $("l-code").title=d&&(d.voorlopig||dvnDefinitiefI7(d))?
+    "Deze tijd boekt altijd op "+codeNaam(d,defaultCode(d)):
     (isIndirect(d)?"Een i7-regel moet een werkcode hebben":"");
   hideWake();ntRender();}
 function dagRegels(datum){return alle.filter(r=>r.datum===datum);} 
@@ -221,7 +221,7 @@ function opdrachtUitDossierTekst(v,huidigId){
 function normaliseerCodeVoorOpslag(d,r,txt){
   const v=(txt||"").trim();
   if(!d)return v?{fout:"Kies eerst een dossier voordat je een werkcode invult"}:{code:null};
-  if(d.voorlopig){const vast=defaultCode(d);return vast?{code:vast}:{fout:"Werkcode Commercieel ontbreekt in de i7-werklijst"};}
+  if(d.voorlopig||dvnDefinitiefI7(d)){const vast=defaultCode(d);return vast?{code:vast}:{fout:"Werkcode Commercieel ontbreekt in de i7-werklijst"};}
   if(isIndirect(d)){
     if(!v)return{fout:"Een i7-regel moet een werkcode uit de vaste lijst hebben"};
     const hit=codesFor(d).find(c=>c.code.toLowerCase()===v.toLowerCase()||
@@ -449,7 +449,7 @@ function bouwDag(){
       '<td><input data-f="code" readonly title="Open bewerksheet" class="'+(codeFout(d,r)?"miss":"")+'" value="'+
         esc(codeNaam(d,r.code))+'" placeholder="'+
         (isIndirect(d)&&!d.voorlopig?"verplicht":"&mdash;")+'" autocomplete="off"'+
-        (d&&d.voorlopig?' readonly title="Vast op '+esc(codeNaam(d,defaultCode(d)))+
+        (d&&(d.voorlopig||dvnDefinitiefI7(d))?' readonly title="Vast op '+esc(codeNaam(d,defaultCode(d)))+
           '"':"")+"></td>"+
       '<td><input data-f="omschrijving" readonly title="Open bewerksheet" value="'+esc(r.omschrijving)+'" autocomplete="off"></td>'+
       '<td class="u"><input data-f="uren" readonly title="Open bewerksheet" value="'+uu(urenOf(r))+'"></td>'+
@@ -506,7 +506,7 @@ function codeFout(d,r){
   if(!d||!isIndirect(d))return false;
   if(!r.code)return true;
   if(!codesFor(d).some(c=>c.code===r.code))return true;
-  if(d.voorlopig){const vast=defaultCode(d);return !vast||r.code!==vast;}
+  if(d.voorlopig||dvnDefinitiefI7(d)){const vast=defaultCode(d);return !vast||r.code!==vast;}
   return false;}
 /* Blokkerende fouten maken de dag onboekbaar: die kunnen niet met "toch boeken"
    worden gepasseerd. Waarschuwingen mogen wel bevestigd worden.                */
@@ -523,9 +523,9 @@ function controleer(){
     if(!d)add(r,"geen dossier gekozen",true);
     else if(isIndirect(d)&&!r.code)add(r,"i7-regel zonder werkcode",true);
     else if(codeFout(d,r)){
-      const vast=d.voorlopig?defaultCode(d):null;
-      add(r,d.voorlopig?(vast?
-        "een dossier waarvan het nummer nog volgt moet op "+codeNaam(d,vast)+" staan":
+      const vast=(d.voorlopig||dvnDefinitiefI7(d))?defaultCode(d):null;
+      add(r,(d.voorlopig||dvnDefinitiefI7(d))?(vast?
+        "een DVN- of definitief-i7-regel moet op "+codeNaam(d,vast)+" staan":
         "werkcode Commercieel ontbreekt in de i7-werklijst"):
         "werkcode staat niet in de i7-werklijst",true);}
     if(!(r.omschrijving||"").trim())add(r,"lege omschrijving",true);
@@ -788,7 +788,9 @@ function dvnKaartHtml(d,afgehandeld){
     '<button class="sm" data-dvn-num="'+esc(d.id)+'">Dossiernummer aanpassen</button>';
   const boekActie=!afgehandeld&&(st==="ready"||st==="needs_check")?
     '<button class="sm go" data-dvn-post="'+esc(d.id)+'">Boeken in Intapp</button>':'';
-  const acties=nummerActie+boekActie+
+  const eindActie=!afgehandeld&&st==="missing"?
+    '<button class="sm ghost warn" data-dvn-final-i7="'+esc(d.id)+'">Naar definitief i7</button>':'';
+  const acties=nummerActie+boekActie+eindActie+
     (rs.length?'<button class="sm" data-dvn-day="'+esc(rs[0].datum)+'">Toon eerste dag</button>':'');
   return '<div class="dvncard '+esc(st||'dvn')+'" data-dvn-card="'+esc(d.id)+'">'+
     '<div class="dvnhead"><div><strong>'+esc(d.naam)+'</strong> '+
@@ -803,7 +805,7 @@ function dvnKaartHtml(d,afgehandeld){
 function renderDvnIntapp(){
   const el=$("dvn-intapp");if(!el)return;
   const volg={needs_check:0,ready:1,missing:2,"":3};
-  const ds=actief().filter(d=>isDvn(d)).sort((a,b)=>
+  const ds=actief().filter(d=>isDvn(d)&&!dvnDefinitiefI7(d)).sort((a,b)=>
     (volg[dvnIntappState(a)]??9)-(volg[dvnIntappState(b)]??9)||a.naam.localeCompare(b.naam));
   if(!ds.length){el.innerHTML='<div class="hint">Geen DVN-dossiers.</div>';return;}
   const open=ds.filter(d=>dvnIntappState(d)!=="posted");
@@ -819,7 +821,7 @@ function renderDvnIntapp(){
 /* ---------- beheer ---------- */
 function renderBeheer(){
   renderDvnIntapp();
-  $("b-list").innerHTML=dossiers.map(d=>{
+  $("b-list").innerHTML=dossiers.filter(d=>!dvnDefinitiefI7(d)).map(d=>{
     const inGebruik=alle.some(r=>r.dossierId===d.id);
     const cs=(d.codes||[]).map(c=>'<span class="tag">'+esc(c.naam)+
       ' <button class="sm ghost warn" data-rmcode="'+esc(d.id)+"|"+esc(c.code)+
@@ -834,7 +836,8 @@ function renderBeheer(){
       '>NL</option><option value="en"'+(d.lang==="en"?" selected":"")+">EN</option></select>"+
       (isDvn(d)?'<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span>'+ 
         '<button class="sm" data-nr="'+esc(d.id)+'">'+(d.voorlopig?'Nummer toekennen':'Nummer aanpassen')+'</button>'+ 
-        ((dvnIntappState(d)==="ready"||dvnIntappState(d)==="needs_check")?'<button class="sm go" data-post="'+esc(d.id)+'">Boeken in Intapp</button>':""):"")+ 
+        ((dvnIntappState(d)==="ready"||dvnIntappState(d)==="needs_check")?'<button class="sm go" data-post="'+esc(d.id)+'">Boeken in Intapp</button>':"")+
+        (dvnIntappState(d)==="missing"?'<button class="sm ghost warn" data-final-i7="'+esc(d.id)+'">Naar definitief i7</button>':""):"")+ 
       (d.archief?'<span class="tag">archief</span>'+
         '<button class="sm" data-unarch="'+esc(d.id)+'">Activeren</button>':"")+
       (d.isI7||d.archief?"":'<button class="sm ghost warn" data-deldos="'+esc(d.id)+'">'+
@@ -855,6 +858,8 @@ $("dvn-intapp").addEventListener("click",async e=>{
   if(num){await kenNummerToe(num.dataset.dvnNum);return;}
   const post=e.target.closest("[data-dvn-post]");
   if(post){await openDvnPostSheet(post.dataset.dvnPost);return;}
+  const finalI7=e.target.closest("[data-dvn-final-i7]");
+  if(finalI7){await maakDvnDefinitiefI7(finalI7.dataset.dvnFinalI7);return;}
   const day=e.target.closest("[data-dvn-day]");
   if(day){viewDate=day.dataset.dvnDay;refreshDay();showTab("dag");return;}
 });
@@ -879,6 +884,8 @@ $("b-list").addEventListener("change",async e=>{
     dossiers=await getAll("dossiers");}});
 $("b-list").addEventListener("click",async e=>{
   const post=e.target.closest("[data-post]");if(post){openDvnPostSheet(post.dataset.post);return;}
+  const finalI7=e.target.closest("[data-final-i7]");
+  if(finalI7){await maakDvnDefinitiefI7(finalI7.dataset.finalI7);return;}
   const nr=e.target.closest("[data-nr]");if(nr){kenNummerToe(nr.dataset.nr);return;}
   const ua=e.target.closest("[data-unarch]");
   if(ua){const d=dosOf(ua.dataset.unarch);d.archief=false;await put("dossiers",d);
@@ -1028,15 +1035,15 @@ $("l-code").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
   if(pickBusy||!running)return;
   const d=dosOf(running.dossierId);
   const ingetypt=$("l-code").value.trim();
-  if(ingetypt&&ingetypt!==codeNaam(d,running.code)&&!(d&&d.voorlopig)){
+  if(ingetypt&&ingetypt!==codeNaam(d,running.code)&&!(d&&(d.voorlopig||dvnDefinitiefI7(d)))){
     await codeUitVeld(running,ingetypt);}
   else if($("l-code").value.trim()===""){
     /* Leegmaken mag niet op een indirecte regel: de code is daar verplicht. */
-    if(d&&d.voorlopig){
+    if(d&&(d.voorlopig||dvnDefinitiefI7(d))){
       const vast=codeVoor(d,null);
       if(!vast)geenCodes();
       else{if(running.code!==vast)await koppelRegel(running,{code:vast});
-        toast("Een dossier waarvan het nummer nog volgt boekt altijd op "+
+        toast("Deze tijd boekt altijd op "+
           codeNaam(d,vast));}}
     else if(isIndirect(d)){
       if(running.code!==null)await koppelRegel(running,{code:null});

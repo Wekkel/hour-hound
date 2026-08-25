@@ -3,7 +3,7 @@
 $("b-import").onclick=()=>$("file").click();
 $("file").onchange=e=>{const f=e.target.files[0];if(f)importFile(f);e.target.value="";};
 const str=(v,max)=>typeof v==="string"?v.slice(0,max||400):"";
-const BACKUPVERSIE=7;
+const BACKUPVERSIE=8;
 /* Een datum is pas geldig als hij na parsen exact dezelfde tekst oplevert: zo vallen
    2026-02-30 en 2026-13-01 er ook uit.                                          */
 const isDatum=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&
@@ -75,6 +75,10 @@ function keurDossiers(arr){
       dvnResolvedAt:x.dvnResolvedAt?str(x.dvnResolvedAt,40):null,
       dvnResolvedNr:x.dvnResolvedNr?str(x.dvnResolvedNr,60):null,
       dvnTo:x.dvnTo?str(x.dvnTo,80):null,
+      dvnDisposition:x.dvnDisposition==="final_i7"?"final_i7":null,
+      dvnFinalI7At:x.dvnFinalI7At?str(x.dvnFinalI7At,40):null,
+      dvnFinalI7RuleIds:Array.isArray(x.dvnFinalI7RuleIds)?
+        x.dvnFinalI7RuleIds.filter(id=>typeof id==="string").slice(0,500):[],
       dvnIntappStatus:["posted","needs_check"].indexOf(x.dvnIntappStatus)>=0?x.dvnIntappStatus:null,
       dvnIntappPostedAt:x.dvnIntappPostedAt?str(x.dvnIntappPostedAt,40):null,
       dvnIntappPostedCount:+x.dvnIntappPostedCount||0,
@@ -339,4 +343,3 @@ $("b-export").onclick=async()=>{
   L("export",dump.regels.length+" regels");
   toast("Export gedownload — "+dump.regels.length+" regels, "+
     uu(dump.manifest.uren)+" uur");};
-

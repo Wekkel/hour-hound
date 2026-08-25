@@ -77,3 +77,11 @@ Nu toont compact `Declarabel X · i7 Y (DVN Z)`. Gewone dossiers zijn declarabel
 niet-declarabele/i7-tijd, inclusief DVN, telt bij i7. DVN blijft daarnaast apart zichtbaar,
 ook nadat een echt dossiernummer is toegekend. De breakdown gebruikt de oorspronkelijke
 registratiesoort en de bestaande afgeronde uren.
+
+### Patch G.1-contract
+
+Een DVN zonder dossiernummer kan onder Beheer bewust naar `Definitief i7`. De terminale
+dispositie bewaart auditgegevens en regel-id’s, houdt alle regels op de vaste werkcode
+Commercieel en presenteert ze voortaan via het gewone i7-dossier. De DVN verdwijnt uit open
+DVN-acties en uit `(DVN Z)`, maar de uren blijven in het i7-totaal. Backupversie 8 bewaart
+deze beslissing en voorkomt dat een oudere importeur haar stilzwijgend verliest.
