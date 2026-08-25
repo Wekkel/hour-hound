@@ -5,7 +5,7 @@ function overboekingLijnen(o){
   const ls=Array.isArray(o&&o.targetLines)?o.targetLines:[];
   return ls.length?ls:[{werkcode:"",omschrijving:o&&o.description||"",uren:+(o&&o.hours)||0}];}
 function overboekingHuidig(o){
-  const rs=bronIdsVan(o).map(id=>alle.find(r=>r.id===id)).filter(Boolean);
+  const rs=bronIdsVan(o).map(id=>HH.state.read().rules.find(r=>r.id===id)).filter(Boolean);
   if(rs.length!==bronIdsVan(o).length)return{regels:rs,rows:[],lijnen:[],uren:0};
   const rows=sumVan(rs);
   const lijnen=rows.map(x=>({werkcode:x.code||"",omschrijving:x.oms||"",uren:x.u}));
@@ -33,8 +33,8 @@ function overboekingKaartHtml(o){
     '</tbody></table></div></details></div>';}
 function renderOverboekingen(){
   const el=$("overboek-intapp");if(!el)return;
-  const open=stateSelectors.overbookings({openOnly:true,isOpen:overboekingOpen}),
-    klaar=stateSelectors.overbookings().filter(o=>o.status==="done"),groepen={};
+  const open=HH.state.selectors.overbookings({openOnly:true,isOpen:overboekingOpen}),
+    klaar=HH.state.selectors.overbookings().filter(o=>o.status==="done"),groepen={};
   open.forEach(o=>{(groepen[o.targetDossierId]||(groepen[o.targetDossierId]=[])).push(o);});
   const ids=Object.keys(groepen);
   const openHtml=!ids.length?'<div class="hint">Geen regels die nog naar een dossier moeten.</div>':ids.map(id=>{const os=groepen[id].sort((a,b)=>a.sourceDate.localeCompare(b.sourceDate));

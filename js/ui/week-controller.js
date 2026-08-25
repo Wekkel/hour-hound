@@ -1,6 +1,9 @@
 "use strict";
-$("w-prev").onclick=()=>{appState.commit({weekAnchor:addD(weekAnchor,-7)});renderWeek();};
-$("w-next").onclick=()=>{appState.commit({weekAnchor:addD(weekAnchor,7)});renderWeek();};
-$("w-now").onclick=()=>{appState.commit({weekAnchor:today()});renderWeek();};
+$("w-prev").onclick=()=>{HH.state.commit({weekAnchor:addD(HH.state.read().weekAnchor,-7)});
+  HH.renderCoordinator.render("week");};
+$("w-next").onclick=()=>{HH.state.commit({weekAnchor:addD(HH.state.read().weekAnchor,7)});
+  HH.renderCoordinator.render("week");};
+$("w-now").onclick=()=>{HH.state.commit({weekAnchor:today()});
+  HH.renderCoordinator.render("week");};
 $("w-grid").addEventListener("click",e=>{const b=e.target.closest("[data-day]");if(!b)return;
-  appState.commit({viewDate:b.dataset.day});showTab("dag");});
+  HH.state.commit({viewDate:b.dataset.day});HH.app.showTab("dag");});

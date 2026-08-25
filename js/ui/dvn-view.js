@@ -37,7 +37,7 @@ function dvnKaartHtml(d,afgehandeld){
 function renderDvnIntapp(){
   const el=$("dvn-intapp");if(!el)return;
   const volg={needs_check:0,ready:1,missing:2,"":3};
-  const ds=stateSelectors.dvnDossiers({isDvn,isFinalI7:dvnDefinitiefI7})
+  const ds=HH.state.selectors.dvnDossiers({isDvn,isFinalI7:dvnDefinitiefI7})
     .filter(d=>!d.archief).sort((a,b)=>
     (volg[dvnIntappState(a)]??9)-(volg[dvnIntappState(b)]??9)||a.naam.localeCompare(b.naam));
   if(!ds.length){el.innerHTML='<div class="hint">Geen DVN-dossiers.</div>';return;}

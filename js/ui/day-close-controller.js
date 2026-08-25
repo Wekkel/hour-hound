@@ -42,7 +42,7 @@ function dagAfsluitKeuze(datum){
     $("dc-cancel").onclick=()=>done(null);
     $("dc-x").onclick=()=>done(null);});}
 async function sluitWerkdag(datum){
-  if(timerServices.isBlocked()){toast("Rond eerst het herstelvenster af");return false;}
+  if(HH.services.timer.isBlocked()){toast("Rond eerst het herstelvenster af");return false;}
   const ds=dagSluitStatus(datum);
   if(ds.gesloten){toast("Deze werkdag is al afgesloten om "+ds.eind);return false;}
   const list=dagRegels(datum);
@@ -50,24 +50,26 @@ async function sluitWerkdag(datum){
   const keuze=await dagAfsluitKeuze(datum);
   if(!keuze)return false;
   if(keuze.actie==="day"){
-    appState.commit({viewDate:datum});showTab("dag");renderCoordinator.render("openDays");return false;}
+    HH.state.commit({viewDate:datum});HH.app.showTab("dag");HH.renderCoordinator.render("openDays");return false;}
   const eind=keuze.eind.trim();
   if(hm2m(eind)==null){toast("Ongeldige eindtijd");return false;}
-  const wasRunning=running&&running.datum===datum,dicht=wasRunning?sluitObj(running,eind):null;
-  const uit=await timerServices.closeDay({currentTimer:running,readCurrentTimer:()=>running,
+  const wasRunning=HH.state.read().running&&HH.state.read().running.datum===datum,dicht=wasRunning?sluitObj(HH.state.read().running,eind):null;
+  const uit=await HH.services.timer.closeDay({currentTimer:HH.state.read().running,readCurrentTimer:()=>HH.state.read().running,
       date:datum,end,closedRule:dicht,
-      runningId:wasRunning?running.id:null,rules:alle,dossiers,overbookings:overboekingen,
-      dayEnds:dagEinde,dayAudit,stack,totalBefore:dagIntappTotaal(datum),
+      runningId:wasRunning?HH.state.read().running.id:null,rules:HH.state.read().rules,
+      dossiers:HH.state.read().dossiers,overbookings:HH.state.read().overbookings,
+      dayEnds:HH.state.read().dayEnds,dayAudit:HH.state.read().dayAudit,
+      stack:HH.state.read().stack,totalBefore:dagIntappTotaal(datum),
       bookingContext:boekRekenContext(),waitForRules:rustig,
       nowMs:Date.now(),nowIso:new Date().toISOString()});
   if(await meldTimerFout(uit,"Werkdag afsluiten is niet uitgevoerd")||
     meldDagRegelFout(uit,"Werkdag afsluiten is niet uitgevoerd"))return false;
-  const delta={dossiers:mergeById(dossiers,uit.dossiers),
-    rules:mergeById(alle,[uit.closedRule]),dayEnds:uit.dayEnds,dayAudit:uit.dayAudit,
+  const delta={dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
+    rules:mergeById(HH.state.read().rules,[uit.closedRule]),dayEnds:uit.dayEnds,dayAudit:uit.dayAudit,
     viewDate:datum};
   if(wasRunning){pending=null;delta.running=null;delta.stack=[];
     vergeetTimerUndo("einde werkdag");liveId=null;}
-  appState.commit(delta);showTab("dag");renderAll();announce();
+  HH.state.commit(delta);HH.app.showTab("dag");HH.app.render();announce();
   const totaalNaSluit=dagIntappTotaal(datum),naTekort=dagTekort(datum);
   L("einde-werkdag",datum+" om "+dagSluitStatus(datum).eind+" · "+uu(totaalNaSluit)+" u");
   if(!werkdag(datum))toast("Weekendregistratie afgesloten. "+uu(totaalNaSluit)+
@@ -80,5 +82,4 @@ async function sluitWerkdag(datum){
   else toast("Werkdag afgesloten. Er is "+uu(totaalNaSluit)+
     " uur verantwoord; er was geen Diversen-aanvulling nodig.");
   return true;}
-
 

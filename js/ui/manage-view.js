@@ -3,8 +3,8 @@
 function renderBeheer(){
   renderDvnIntapp();
   renderOverboekingen();
-  $("b-list").innerHTML=dossiers.filter(d=>!dvnDefinitiefI7(d)).map(d=>{
-    const inGebruik=alle.some(r=>r.dossierId===d.id);
+  $("b-list").innerHTML=HH.state.read().dossiers.filter(d=>!dvnDefinitiefI7(d)).map(d=>{
+    const inGebruik=HH.state.read().rules.some(r=>r.dossierId===d.id);
     const cs=(d.codes||[]).map(c=>'<span class="tag">'+esc(c.naam)+
       ' <button class="sm ghost warn" data-rmcode="'+esc(d.id)+"|"+esc(c.code)+
       '">&#10005;</button></span>').join(" ");
@@ -26,12 +26,12 @@ function renderBeheer(){
         (inGebruik?"Archiveren":"Verwijderen")+"</button>")+
       "</div>"+
       (isIndirect(d)?'<div class="hint" style="margin-top:.4rem">Gebruikt de i7-werklijst ('+
-        i7codes.length+" codes), "+(d.voorlopig?
+        HH.state.read().codes.length+" codes), "+(d.voorlopig?
           "vast op "+esc(codeNaam(d,defaultCode(d))):
           "per regel te kiezen")+"</div>":(d.dvn?'<div class="hint" style="margin-top:.4rem">Oorspronkelijke DVN-identiteit blijft bewaard; dossiercodes zijn nu optioneel.</div>':'' )+
       '<div style="margin-top:.45rem;display:flex;gap:.4rem;flex-wrap:wrap;align-items:center">'+
       cs+'<input placeholder="code" data-nc="'+esc(d.id)+'" style="width:110px" class="mono">'+
       '<input placeholder="naam" data-ncn="'+esc(d.id)+'" style="width:180px">'+
       '<button class="sm" data-addcode="'+esc(d.id)+'">+</button></div>')+"</div>";}).join("");
-  $("libstat").textContent=templates.length+" sjablonen · "+i7codes.length+
-    " i7-codes (vaste lijst uit werkcodes.json) · "+alle.length+" regels";}
+  $("libstat").textContent=HH.state.read().templates.length+" sjablonen · "+HH.state.read().codes.length+
+    " i7-codes (vaste lijst uit werkcodes.json) · "+HH.state.read().rules.length+" regels";}

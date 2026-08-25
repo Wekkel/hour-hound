@@ -1,8 +1,7 @@
 "use strict";
 /* Centrale runtime-state.
-   IndexedDB blijft de duurzame waarheid; dit object is de enige geheugenkopie. De
-   globale accessors houden de klassieke scripts tijdens de modularisering werkend,
-   maar bezitten zelf geen data. `regels` is uitsluitend een pure dagselectie. */
+   IndexedDB blijft de duurzame waarheid; dit object is de enige geheugenkopie.
+   Productiecode leest uitsluitend via HH.state.read() en HH.state.selectors. */
 (function(root){
   const HH=root.HH,time=HH.domain.time;
   const vandaag=time.today();
@@ -103,14 +102,4 @@
   const api={read,commit,upsert,remove,selectors,subscribe(fn){listeners.add(fn);
     return()=>listeners.delete(fn);}};
   HH.state=Object.freeze(api);HH.renderCoordinator=Object.freeze(coordinator);
-
-  const aliases={db:"db",dossiers:"dossiers",templates:"templates",i7codes:"codes",
-    alle:"rules",running:"running",stack:"stack",overboekingen:"overbookings",
-    dagEinde:"dayEnds",dagAudit:"dayAudit",geboekt:"booked",rondMode:"roundingMode",
-    codeGebruik:"codeUsage",viewDate:"viewDate",weekAnchor:"weekAnchor",tab:"tab"};
-  Object.keys(aliases).forEach(name=>Object.defineProperty(root,name,{configurable:false,
-    enumerable:false,get(){return data[aliases[name]];},set(value){commit({[aliases[name]]:value});}}));
-  Object.defineProperty(root,"regels",{configurable:false,enumerable:false,
-    get(){return selectors.day(data.viewDate);},set(){
-      throw new Error("regels is afgeleid; wijzig HH.state.rules");}});
 })(globalThis);

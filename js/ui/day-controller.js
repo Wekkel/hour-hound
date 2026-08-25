@@ -3,8 +3,8 @@ $("d-probs").addEventListener("click",e=>{
   const b=e.target.closest("[data-goto]");if(!b)return;
   openRegelEditor(b.dataset.goto,"dag");});
 $("d-mode").onchange=async e=>{const next=e.target.value;
-  await settingsServices.save("rondMode",next);
-  appState.commit({roundingMode:next});verversDag();};
+  await HH.services.settings.save("rondMode",next);
+  HH.state.commit({roundingMode:next});verversDag();};
 $("d-copy").onclick=()=>{
   const rs=sumRows(),probs=controleer(),blok=probs.filter(x=>x.blok);
   if(!rs.length){toast("Niets te kopiëren");return;}
@@ -13,7 +13,7 @@ $("d-copy").onclick=()=>{
   if(waar.length&&!confirm(waar.length+" waarschuwing(en) op deze dag.\nToch kopiëren?"))return;
   const kop="Dag\tDossiernummer\tDossiernaam\tWerkcode\nOmschrijving\nUren";
   const tekst=rs.map(x=>
-    [kortDag(viewDate),schoon(x.nummer),schoon(x.naam),schoon(x.code)].join("\t")+"\n"+
+    [kortDag(HH.state.read().viewDate),schoon(x.nummer),schoon(x.naam),schoon(x.code)].join("\t")+"\n"+
     schoon(x.oms)+"\n"+uu(x.u)).join("\n\n");
   navigator.clipboard.writeText(kop+"\n\n"+tekst+"\n").then(
     ()=>{L("kopieer-intapp",rs.length+" regels · "+uu(rs.reduce((a,x)=>a+x.u,0))+" u");
@@ -30,7 +30,7 @@ function dagRuimte(datum,extra,exclId){
     " uur kan niet");
   return false;}
 function nieuweRegel(o){
-  return Object.assign({id:uid(),datum:viewDate,start:nowHM(),eind:null,dossierId:null,
+  return Object.assign({id:uid(),datum:HH.state.read().viewDate,start:nowHM(),eind:null,dossierId:null,
     code:null,omschrijving:"",uren:0.1,urenHand:false,soort:"werk",
     gemaakt:Date.now(),gewijzigd:Date.now()},o);}
 
@@ -39,18 +39,21 @@ function nieuweRegel(o){
    gebruiker vult inhoudelijke ontbrekende regels eerst zelf aan; daarna vult deze
    functie uitsluitend het resterende verschil tot 8,0 uur met i7/Diversen. */
 function maakAanvulPlan(){
-  const ind=i7(),code=i7Standaard(),ds=dagSluitStatus(viewDate),nowMs=Date.now();
-  const input={date:viewDate,isWorkday:werkdag(viewDate),dayEnds:dagEinde,dayAudit,
-    dayEnd:ds.eind||voorstelDagEinde(viewDate),rules:alle,dossiers,
-    overbookings:overboekingen,runningId:running?running.id:null,i7Dossier:ind,code,
-    currentTotal:simIntappTotaal(regels),bookingContext:boekRekenContext(),
+  const ind=i7(),code=i7Standaard(),ds=dagSluitStatus(HH.state.read().viewDate),nowMs=Date.now();
+  const input={date:HH.state.read().viewDate,isWorkday:werkdag(HH.state.read().viewDate),
+    dayEnds:HH.state.read().dayEnds,dayAudit:HH.state.read().dayAudit,
+    dayEnd:ds.eind||voorstelDagEinde(HH.state.read().viewDate),rules:HH.state.read().rules,
+    dossiers:HH.state.read().dossiers,
+    overbookings:HH.state.read().overbookings,runningId:HH.state.read().running?HH.state.read().running.id:null,i7Dossier:ind,code,
+    currentTotal:simIntappTotaal(HH.state.selectors.day(HH.state.read().viewDate)),
+    bookingContext:boekRekenContext(),
     id:uid(),batchId:uid(),nowMs,nowIso:new Date(nowMs).toISOString(),waitForRules:rustig};
-  return Object.assign({input,ind,code},dayRuleServices.planAutoFill(input));}
+  return Object.assign({input,ind,code},HH.services.dayRules.planAutoFill(input));}
 async function vulAanTot8(){
-  if(timerServices.isBlocked()){toast("Rond eerst het herstelvenster af");return false;}
-  if(!werkdag(viewDate)){toast("Weekenddagen hebben geen 8-uursaanvulling");return false;}
-  if(dagSluitStatus(viewDate).open){toast("Sluit deze werkdag eerst af met E");return false;}
-  if(running&&running.datum===viewDate){
+  if(HH.services.timer.isBlocked()){toast("Rond eerst het herstelvenster af");return false;}
+  if(!werkdag(HH.state.read().viewDate)){toast("Weekenddagen hebben geen 8-uursaanvulling");return false;}
+  if(dagSluitStatus(HH.state.read().viewDate).open){toast("Sluit deze werkdag eerst af met E");return false;}
+  if(HH.state.read().running&&HH.state.read().running.datum===HH.state.read().viewDate){
     toast("Sluit eerst de lopende regel af met E");return false;}
   const plan=maakAanvulPlan();
   if(!plan.ok){meldDagRegelFout(plan,"Aanvullen is niet uitgevoerd");
@@ -69,21 +72,21 @@ async function vulAanTot8(){
     "\n\nBestaande tijdregels en kloktijden worden niet aangepast.\n\nDoorgaan?"))return false;
   let uit;
   try{
-    uit=await dayRuleServices.autoFillDay(plan.input);
+    uit=await HH.services.dayRules.autoFillDay(plan.input);
   }catch(e){L("FOUT-aanvullen",String(e));
     toast("Aanvullen mislukt — er is niets gewijzigd: "+e);return false;}
   if(meldDagRegelFout(uit,"Aanvullen is niet uitgevoerd"))return false;
-  appState.commit({dayAudit:uit.dayAudit,rules:mergeById(alle,[uit.rule])});
-  pasMutatieUndoToe(uit.undo);renderCoordinator.render(["day","totals","openDays"]);announce();
+  HH.state.commit({dayAudit:uit.dayAudit,rules:mergeById(HH.state.read().rules,[uit.rule])});
+  pasMutatieUndoToe(uit.undo);HH.renderCoordinator.render(["day","totals","openDays"]);announce();
   const werkelijk=Math.round(intappTotaal()*10)/10;
   L("aanvullen","1 administratieve regel · +"+uu(extra)+" u · nu "+uu(werkelijk)+" u");
   toast("Er was "+uu(plan.currentTotal)+" uur verantwoord. Hour Hound heeft "+uu(extra)+
     " uur Diversen toegevoegd. Totaal: "+uu(werkelijk)+" uur.");
   return true;}
 async function heropenWerkdag(datum){
-  if(timerServices.isBlocked()){toast("Rond eerst het herstelvenster af");return;}
+  if(HH.services.timer.isBlocked()){toast("Rond eerst het herstelvenster af");return;}
   if(dagSluitStatus(datum).open){toast("Deze dag is al open");return;}
-  if(running&&running.datum===datum){toast("Er loopt nog een regel op deze dag");return;}
+  if(HH.state.read().running&&HH.state.read().running.datum===datum){toast("Er loopt nog een regel op deze dag");return;}
   const autos=autoAanvulRegels(datum);
   let verwijder=false;
   if(autos.length){
@@ -99,22 +102,24 @@ async function heropenWerkdag(datum){
   }else if(!confirm("Werkdag "+dagLabel(datum)+" heropenen?"))return;
   let uit;
   try{
-    uit=await dayRuleServices.reopenDay({date:datum,removeAutomatic:verwijder,
-      rules:alle,dossiers,overbookings:overboekingen,runningId:running?running.id:null,
-      dayEnds:dagEinde,dayAudit,waitForRules:rustig,
+    uit=await HH.services.dayRules.reopenDay({date:datum,removeAutomatic:verwijder,
+      rules:HH.state.read().rules,dossiers:HH.state.read().dossiers,
+      overbookings:HH.state.read().overbookings,
+      runningId:HH.state.read().running?HH.state.read().running.id:null,
+      dayEnds:HH.state.read().dayEnds,dayAudit:HH.state.read().dayAudit,waitForRules:rustig,
       nowMs:Date.now(),nowIso:new Date().toISOString()});
   }catch(e){L("FOUT-heropen",String(e));toast("Heropenen mislukt — niets gewijzigd: "+e);return;}
   if(meldDagRegelFout(uit,"Heropenen is niet uitgevoerd"))return;
   const delta={dayEnds:uit.dayEnds,dayAudit:uit.dayAudit,viewDate:datum};
   if(verwijder&&autos.length){
-    const ids=new Set(uit.removedRules.map(r=>r.id));delta.rules=zonderIds(alle,[...ids]);
+    const ids=new Set(uit.removedRules.map(r=>r.id));delta.rules=zonderIds(HH.state.read().rules,[...ids]);
     undoStack=undoStack.filter(a=>!(a.soort==="data"&&(a.weg||[]).some(id=>ids.has(id))));}
-  appState.commit(delta);renderAll(["day","live","recent","totals","openDays"]);announce();
+  HH.state.commit(delta);HH.app.render(["day","live","recent","totals","openDays"]);announce();
   L("dag-heropend",datum+" · auto verwijderd "+(verwijder?autos.length:0));
   toast("Werkdag heropend"+(verwijder&&autos.length?" — automatische Diversen-regels verwijderd":""));}
 $("d-fill").onclick=vulAanTot8;
 $("d-status").addEventListener("click",async e=>{
-  if(e.target.closest("[data-close-current]")){await sluitWerkdag(viewDate);return;}
+  if(e.target.closest("[data-close-current]")){await sluitWerkdag(HH.state.read().viewDate);return;}
   if(e.target.closest("[data-fill-current]")){await vulAanTot8();return;}
-  if(e.target.closest("[data-reopen-current]")){await heropenWerkdag(viewDate);return;}
+  if(e.target.closest("[data-reopen-current]")){await heropenWerkdag(HH.state.read().viewDate);return;}
 });

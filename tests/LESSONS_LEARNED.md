@@ -370,3 +370,27 @@ state. Test daarbij zowel de veldnamen van het servicecontract als de concrete s
 Voor Hour Hound delen N, T, O en P dezelfde timerinputgrens. Een kleine matrix met werk-, telefoon-
 en pauze-invoer vangt daardoor fouten vóór persistence, zonder dat een volledige browser nodig is.
 Playwright blijft daarnaast nodig voor knopbinding, focus, zichtbaarheid en de complete workflow.
+
+## 28. Verwijder compatibiliteitsglobals pas met een dependencycontract
+
+Een tijdelijke getter naar centrale state bezit weliswaar geen tweede data-array, maar verbergt nog
+steeds waar een klassiek script zijn invoer vandaan haalt. Verwijder zulke getters daarom pas nadat
+alle productieconsumenten rechtstreeks via `HH.state.read()` en selectors lezen. Controleer
+tegelijk lexicaal dat de oude state-, service- en opslagaliases niet ongemerkt in een zelden gebruikt
+entrypoint zijn achtergebleven.
+
+Een namespace alleen lost voorwaartse referenties niet op. Registreer render-, navigatie- en
+keyboardentrypoints expliciet, leg hun scriptvolgorde vast en laat de laatste bootlaag controleren
+dat alle services, UI-entrypoints en renderers aanwezig zijn. Zo verandert een ontbrekend bestand of
+onjuiste cachelijst in één duidelijke opstartfout, in plaats van losse `ReferenceError`s bij N, P,
+DVN of de boekingswizard.
+
+Test na deze afronding drie niveaus afzonderlijk:
+
+- syntax en statische dependency-/aliascontracten voor alle klassieke scripts;
+- daadwerkelijke browserloze aanroepen van basale adapters en probleemroutes;
+- volledige Playwright-flows voor DOM, focus, IndexedDB-upgrade en zichtbare workflows.
+
+Houd een modulariseringspatch data-neutraal: wijzig geen databasenaam, versie, stores, key paths of
+recordvormen. Een nieuw runtimebestand vereist uitsluitend een extra service-workerasset; de
+persistente 0.1.7- en DVN-data blijft dan zonder conversie bruikbaar.

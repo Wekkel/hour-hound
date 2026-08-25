@@ -1,22 +1,9 @@
 "use strict";
 /* ---------- render en start ---------- */
-const renderCoordinator=HH.renderCoordinator;
-renderCoordinator.register("live",renderLive).register("recent",renderRecent)
+HH.renderCoordinator.register("live",renderLive).register("recent",renderRecent)
   .register("totals",renderTot).register("openDays",renderOpenDagen)
   .register("day",bouwDag).register("week",renderWeek).register("manage",renderBeheer);
-function zichtbareRender(){return tab==="dag"?"day":tab==="week"?"week":
-  tab==="beheer"?"manage":null;}
-function renderAll(doelen){
-  renderCoordinator.render(doelen||["live","recent","totals","openDays",zichtbareRender()]
-    .filter(Boolean));}
-function showTab(v){
-  appState.commit({tab:v});["nu","dag","week","beheer"].forEach(x=>$("v-"+x).classList.toggle("on",x===v));
-  [...$("tabs").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===v));
-  /* renderRecent() meet de natuurlijke hoogte van vier taken. Doe dat opnieuw
-     nadat Nu zichtbaar is; metingen tijdens een verborgen Beheer-tab zijn nul. */
-  if(v==="nu")renderCoordinator.render("recent");
-  if(v==="dag")renderCoordinator.render("day");if(v==="week")renderCoordinator.render("week");
-  if(v==="beheer")renderCoordinator.render("manage");}
+HH.app.assertReady();
 
 async function migrate(){
   if(await get("meta","v3done"))return;
@@ -67,22 +54,22 @@ async function herstelInvariant(snapshotMeta){
      huidige versie kent dat concept niet meer; de oude marker wordt daarom alleen
      opgeruimd, zonder retroactief een tijdknip te verzinnen. */
   const oudPending=(uitSnapshot?snapshotMeta.pending:await get("meta","pending"))||null;
-  const uit=await timerServices.repairInvariant({currentTimer:running,
-    readCurrentTimer:()=>running,rules:alle,pointerId:rid||null,pendingId:oudPending});
+  const uit=await HH.services.timer.repairInvariant({currentTimer:HH.state.read().running,
+    readCurrentTimer:()=>HH.state.read().running,rules:HH.state.read().rules,pointerId:rid||null,pendingId:oudPending});
   if(await meldTimerFout(uit,"Timerstatus herstellen is niet uitgevoerd"))return;
   pending=null;if(oudPending)L("migratie-pending","oude uitgestelde taakwissel verwijderd");
-  appState.commit({running:uit.currentTimer});
+  HH.state.commit({running:uit.currentTimer});
   if(!uit.blocked){
-    if(uit.pointerChanged){L("herstel","pointer "+(running?"gezet op open regel":"gewist"));
-      if(running)toast("Lopende regel hersteld — loopt sinds "+running.start);}
+    if(uit.pointerChanged){L("herstel","pointer "+(HH.state.read().running?"gezet op open regel":"gewist"));
+      if(HH.state.read().running)toast("Lopende regel hersteld — loopt sinds "+HH.state.read().running.start);}
     $("l-herstel").classList.remove("on");return;}
   $("l-herstel").classList.add("on");
   L("herstel-nodig",uit.openRules.length+" open regels");
   toonHerstel();}
-function openRegels(){return alle.filter(r=>!r.eind)
+function openRegels(){return HH.state.read().rules.filter(r=>!r.eind)
   .sort((a,b)=>(a.datum+a.start)<(b.datum+b.start)?-1:1);}
 function voorstelEind(r){
-  const na=alle.filter(x=>x.datum===r.datum&&x.id!==r.id&&hm2m(x.start)!=null&&
+  const na=HH.state.read().rules.filter(x=>x.datum===r.datum&&x.id!==r.id&&hm2m(x.start)!=null&&
     hm2m(x.start)>hm2m(r.start)).sort((a,b)=>hm2m(a.start)-hm2m(b.start))[0];
   if(na)return na.start;
   if(r.datum===today())return nowHM();
@@ -116,7 +103,7 @@ $("h-ok").onclick=async()=>{
   const gekozen=($("h-lijst").querySelector('input[name="hloopt"]:checked')||{}).value||"";
   const nieuw=[];
   for(const rij of rijen){
-    const r=alle.find(x=>x.id===rij.dataset.id);
+    const r=HH.state.read().rules.find(x=>x.id===rij.dataset.id);
     if(!r)continue;
     if(r.id===gekozen)continue;
     const v=rij.querySelector("[data-eind]").value.trim();
@@ -128,34 +115,34 @@ $("h-ok").onclick=async()=>{
       hersteld:true,herstelOp:Date.now(),
       herstelOrigineel:{eind:null,uren:r.uren,urenHand:!!r.urenHand},
       gewijzigd:Date.now()}));}
-  const uit=await timerServices.confirmRecovery({currentTimer:running,readCurrentTimer:()=>running,
-    rules:alle,replacements:nieuw,chosenId:gekozen||null,waitForRules:rustig});
+  const uit=await HH.services.timer.confirmRecovery({currentTimer:HH.state.read().running,readCurrentTimer:()=>HH.state.read().running,
+    rules:HH.state.read().rules,replacements:nieuw,chosenId:gekozen||null,waitForRules:rustig});
   if(await meldTimerFout(uit,"Herstel is niet uitgevoerd")){alert("Herstel mislukt");return;}
-  const nextRules=mergeById(alle,uit.rules);
-  appState.commit({rules:nextRules,running:uit.currentTimerId?
+  const nextRules=mergeById(HH.state.read().rules,uit.rules);
+  HH.state.commit({rules:nextRules,running:uit.currentTimerId?
     (nextRules.find(x=>x.id===uit.currentTimerId)||null):null});
   vergeetTimerUndo("herstel bevestigd");
   $("herstel").classList.remove("on");$("l-herstel").classList.remove("on");
-  liveId=null;refreshDay();bouwDag();renderAll();announce();
+  liveId=null;refreshDay();bouwDag();HH.app.render();announce();
   L("herstel-bevestigd",nieuw.length+" afgesloten · lopend "+(gekozen?"ja":"nee"));
   toast(nieuw.length+" regel(s) afgesloten — de oorspronkelijke waarden zijn bewaard");};
 
 async function herlaad(metInstellingen){
   /* Eerst één consistente database-snapshot; pas na een volledig geslaagde
      transactie wordt runtime-state vervangen. Een leesfout laat alles intact. */
-  const snapshot=await storageRepos.loadSnapshot();
+  const snapshot=await HH.storage.repositories.loadSnapshot();
   const delta={dossiers:snapshot.dossiers,templates:snapshot.templates,
     codes:snapshot.codes,rules:snapshot.regels,overbookings:snapshot.overboekingen,
     stack:snapshot.meta.stack||[],dayEnds:snapshot.meta.dagEinde||{},
     dayAudit:snapshot.meta.dagAudit||{}};
   if(metInstellingen)Object.assign(delta,instellingenDelta(snapshot.meta));
-  appState.commit(delta);
+  HH.state.commit(delta);
   if(metInstellingen)pasInstellingenUiToe(snapshot.meta);
   await herstelInvariant(snapshot.meta);
   /* Niet awaiten: herlaad() kan vanuit de foutafhandeling van TimerService worden
      aangeroepen, en middernachtCheck() raadpleegt daarna dezelfde service.       */
   setTimeout(middernachtCheck,0);
-  liveId=null;renderAll();}
+  liveId=null;HH.app.render();}
 
 /* W2: de handmatig geïmporteerde i7-werklijst in IndexedDB is leidend. De gebruiker
    bewaart werkcodes.json bewust niet in de repository, dus een bestaande lokale lijst
@@ -166,7 +153,7 @@ async function herlaad(metInstellingen){
 async function laadWerkcodes(){
   const lokaal=await getAll("codes");
   if(lokaal.length){
-    appState.commit({codes:lokaal});
+    HH.state.commit({codes:lokaal});
     L("werkcodes-lokaal","behouden · "+lokaal.length+" codes");
     return false;}
   let d=null;
@@ -179,7 +166,7 @@ async function laadWerkcodes(){
   const rij=keurCodes(d&&Array.isArray(d.codes)?d.codes:d);
   if(!rij.goed.length){L("werkcodes-json","geen bruikbare codes · lokale lijst leeg");return false;}
   await replaceAll("codes",rij.goed);
-  appState.commit({codes:await getAll("codes")});
+  HH.state.commit({codes:await getAll("codes")});
   L("werkcodes-json","bootstrap · "+rij.goed.length+" codes"+
     (rij.fout.length?" · "+rij.fout.length+" afgekeurd":""));
   toast("Werkcodelijst geladen uit werkcodes.json — "+rij.goed.length+" codes");
@@ -200,11 +187,11 @@ function pasInstellingenUiToe(meta){
   logOms=!!meta.logOms;
   $("b-logoms").checked=logOms;$("logstat").textContent=logboek.length+" regels";
   zetThema(meta.thema||"donker");
-  $("d-mode").value=rondMode;
+  $("d-mode").value=HH.state.read().roundingMode;
 }
-function pasInstellingenToe(meta){appState.commit(instellingenDelta(meta));pasInstellingenUiToe(meta);}
+function pasInstellingenToe(meta){HH.state.commit(instellingenDelta(meta));pasInstellingenUiToe(meta);}
 async function laadInstellingen(){
-  pasInstellingenToe(await storageRepos.config.getMany([
+  pasInstellingenToe(await HH.storage.repositories.config.getMany([
     "codeGebruik","geboekt","log","logOms","thema","rondMode"]));
 }
 
@@ -215,16 +202,16 @@ async function boot(){
   await herlaad(true);
   await herstelOmschr();
   setTimeout(controleerOudeLopendeTaak,0);
-  L("app-start","dossiers "+dossiers.length+" · regels "+alle.length+
-    " · sjablonen "+templates.length+" · i7-codes "+i7codes.length+
-    " · overboekingen "+overboekingen.filter(overboekingOpen).length+
-    " · lopend "+(running?running.start:"nee"));
+  L("app-start","dossiers "+HH.state.read().dossiers.length+" · regels "+HH.state.read().rules.length+
+    " · sjablonen "+HH.state.read().templates.length+" · i7-codes "+HH.state.read().codes.length+
+    " · overboekingen "+HH.state.read().overbookings.filter(overboekingOpen).length+
+    " · lopend "+(HH.state.read().running?HH.state.read().running.start:"nee"));
   if(tick)clearInterval(tick);
   tick=setInterval(()=>{middernachtCheck();checkWake();
-    if(running){renderCoordinator.render(["live","totals"]);controleerOudeLopendeTaak();}},10000);}
+    if(HH.state.read().running){HH.renderCoordinator.render(["live","totals"]);controleerOudeLopendeTaak();}},10000);}
 
 (async function(){
-  try{db=await openDB();}catch(e){
+  try{HH.state.commit({db:await openDB()});}catch(e){
     document.body.innerHTML="<main><section>IndexedDB niet beschikbaar: "+esc(e)+"</section></main>";return;}
   if(navigator.storage&&navigator.storage.persist){
     try{if(!(await navigator.storage.persisted()))await navigator.storage.persist();}catch(e){}}
@@ -237,7 +224,7 @@ if("serviceWorker" in navigator){
       w.addEventListener("statechange",()=>{
         if(w.state==="installed"&&navigator.serviceWorker.controller)check();});});
     $("btn-update").onclick=()=>{
-      if(running&&!confirm("Er loopt een regel. De pagina herlaadt na de update.\nDoorgaan?"))return;
+      if(HH.state.read().running&&!confirm("Er loopt een regel. De pagina herlaadt na de update.\nDoorgaan?"))return;
       flushOmschr();
       setTimeout(()=>{if(reg.waiting)reg.waiting.postMessage({type:"SKIP_WAITING"});},250);};
     setInterval(()=>reg.update(),15*60*1000);}).catch(()=>{});

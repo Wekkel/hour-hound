@@ -14,7 +14,7 @@ let parkBoek=null;
    plus gewijzigd-waarden van alle onderliggende tijdregels. Wijzigt er iets aan de
    uren, de bronregels of de afrondingsmodus, dan valt de regel automatisch terug op
    niet-geboekt.                                                                */
-const isGeboekt=fp=>(geboekt[boek.datum]||[]).indexOf(fp)>=0;
+const isGeboekt=fp=>(HH.state.read().booked[boek.datum]||[]).indexOf(fp)>=0;
 const isGeparkeerd=row=>!!overboekingVoorRow(row,boek.datum);
 const isDossierGeboekt=row=>isGeboekt(row.fp)||!!overboekingAfgerondVoorRow(row,boek.datum);
 const isAfgehandeld=row=>isDossierGeboekt(row)||isGeparkeerd(row);
@@ -24,22 +24,22 @@ function kanParkeren(row){
   return !!d&&!isIndirect(d)&&!isDvn(d)&&!!d.nummer;
 }
 async function zetGeboekt(fp,aan){
-  const next=Object.assign({},geboekt);
-  const lijst=(geboekt[boek.datum]||[]).filter(x=>x!==fp);
+  const next=Object.assign({},HH.state.read().booked);
+  const lijst=(HH.state.read().booked[boek.datum]||[]).filter(x=>x!==fp);
   if(aan)lijst.push(fp);
   if(lijst.length)next[boek.datum]=lijst;else delete next[boek.datum];
   const dagen=Object.keys(next).sort();
   while(dagen.length>60)delete next[dagen.shift()];
-  try{await settingsServices.save("geboekt",next);appState.commit({booked:next});return true;}
+  try{await HH.services.settings.save("geboekt",next);HH.state.commit({booked:next});return true;}
   catch(e){
     L("FOUT-geboekt",String(e));
     toast("Boekstatus kon niet worden opgeslagen — de markering is teruggedraaid");
     tekenBoek();boekStat();return false;}}
 function boekStat(){
   const el=$("d-boekstat");if(!el)return;
-  const rs=sumRows(),k=geboekt[viewDate]||[];
-  const n=rs.filter(x=>k.indexOf(x.fp)>=0||overboekingAfgerondVoorRow(x,viewDate)).length;
-  const p=rs.filter(x=>overboekingVoorRow(x,viewDate)).length,open=rs.length-n-p;
+  const rs=sumRows(),k=HH.state.read().booked[HH.state.read().viewDate]||[];
+  const n=rs.filter(x=>k.indexOf(x.fp)>=0||overboekingAfgerondVoorRow(x,HH.state.read().viewDate)).length;
+  const p=rs.filter(x=>overboekingVoorRow(x,HH.state.read().viewDate)).length,open=rs.length-n-p;
   el.textContent=!rs.length?"":n+" geboekt · "+p+" geparkeerd · "+open+" open";}
 async function kopieer(tekst,btn,label){
   try{await navigator.clipboard.writeText(tekst);
@@ -56,7 +56,7 @@ function openBoek(){
   if(waar.length&&!confirm(waar.length+" waarschuwing(en):\n\n"+
     waar.slice(0,6).map(x=>"• "+x.tekst).join("\n")+(waar.length>6?"\n• …":"")+
     "\n\nDoorgaan met boeken?"))return;
-  boek={aan:true,i:0,rows:rs,datum:viewDate,lijst:false};
+  boek={aan:true,i:0,rows:rs,datum:HH.state.read().viewDate,lijst:false};
   const eerste=rs.findIndex(x=>!isAfgehandeld(x));
   boek.i=eerste<0?0:eerste;
   $("boek").classList.add("on");tekenBoek();
@@ -132,7 +132,7 @@ function openParkeer(row){
   $("pb-i7").textContent=(ind.nummer||"—")+" · "+ind.naam+" · "+codeNaam(ind,com);
   $("pb-hours").textContent=uu(row.u)+" u";
   $("pb-oms").textContent=tijdelijkI7Omschrijving(row);
-  $("pb-source").innerHTML=(row.bron||[]).map(b=>{const r=alle.find(x=>x.id===b.id);
+  $("pb-source").innerHTML=(row.bron||[]).map(b=>{const r=HH.state.read().rules.find(x=>x.id===b.id);
     return r?'<tr><td class="mono">'+esc(r.start+'–'+(r.eind||'loopt'))+'</td><td>'+esc(r.omschrijving||'')+
       '</td><td class="mono" style="text-align:right">'+uu(urenOf(r))+'</td></tr>':"";}).join("");
   $("parkboek").classList.add("on");
@@ -141,13 +141,13 @@ function sluitParkeer(){parkBoek=null;$("parkboek").classList.remove("on");}
 async function bevestigParkeer(){
   const p=parkBoek;if(!p)return;
   const nowIso=new Date().toISOString();let uit;
-  try{uit=await adminServices.parkOverbooking({row:p.row,target:p.doel,i7Dossier:p.ind,
-    commercialCode:p.com,rules:alle,overbookings:overboekingen,sourceDate:boek.datum,
-    roundingMode:rondMode,id:uid(),nowIso,hoursOf,waitForRules:rustig});}
+  try{uit=await HH.services.admin.parkOverbooking({row:p.row,target:p.doel,i7Dossier:p.ind,
+    commercialCode:p.com,rules:HH.state.read().rules,overbookings:HH.state.read().overbookings,sourceDate:boek.datum,
+    roundingMode:HH.state.read().roundingMode,id:uid(),nowIso,hoursOf,waitForRules:rustig});}
   catch(e){L("FOUT-overboeking-parkeren",String(e));toast("Parkeren mislukt — er is niets gewijzigd");return;}
   if(meldAdminFout(uit,"Parkeren is niet uitgevoerd")){
     if(uit&&uit.error==="source_changed")sluitParkeer();return;}
-  const o=uit.overbooking;appState.upsert("overbookings",o);
+  const o=uit.overbooking;HH.state.upsert("overbookings",o);
   L("overboeking-geparkeerd","regels "+bronIdsVan(o).length+" · "+uu(o.hours)+" u");
   sluitParkeer();tekenBoek();boekStat();
   if(!volgendeOpen())toast("Alle regels zijn geboekt of geparkeerd");
@@ -204,6 +204,7 @@ function boekKeys(e){
   if(k==="arrowdown"||k==="arrowright"){e.preventDefault();boekGa(boek.i+1);return;}
   if(k==="arrowup"||k==="arrowleft"){e.preventDefault();boekGa(boek.i-1);return;}
   if(k==="l"){e.preventDefault();boek.lijst=!boek.lijst;tekenBoek();}}
+HH.ui.bookingKeys=boekKeys;
 $("d-boek").onclick=openBoek;
 $("pb-copy").onclick=()=>parkBoek&&kopieer(tijdelijkI7Omschrijving(parkBoek.row),
   $("pb-copy"),"Kopieer tijdelijke omschrijving");

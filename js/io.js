@@ -201,13 +201,13 @@ async function importFile(file){
       /* Werk de geheugenstate meteen bij. herlaad() doet dit straks nogmaals als
          integriteitsstap, maar hierdoor is ook tijdens een open N-wizard de nieuwe
          lijst al de actuele bron van waarheid. */
-      appState.commit({codes:await getAll("codes")});soort="werkcodes";
-      L("werkcodes-import",i7codes.length+" codes"+
+      HH.state.commit({codes:await getAll("codes")});soort="werkcodes";
+      L("werkcodes-import",HH.state.read().codes.length+" codes"+
         (gekeurd.fout.length?" · "+gekeurd.fout.length+" afgekeurd":""));
-      toast(i7codes.length+" werkcodes geïmporteerd"+
+      toast(HH.state.read().codes.length+" werkcodes geïmporteerd"+
         (gekeurd.fout.length?" · "+gekeurd.fout.length+" overgeslagen":""));}
     else if(d.app==="hourhound"){
-      if(running){toast("Sluit eerst de lopende regel af (E)");return;}
+      if(HH.state.read().running){toast("Sluit eerst de lopende regel af (E)");return;}
       const sv=+d.schemaVersion||0;
       if(sv>BACKUPVERSIE){
         toast("Deze back-up komt uit een nieuwere versie van hourhound");return;}
@@ -309,8 +309,8 @@ async function importFile(file){
             r.herstelOrigineel=orig;}});}
 
       if(herstel){
-        if(!confirm("Terugzetten wist de huidige "+alle.length+" tijdregels en "+
-          dossiers.length+" dossiers.\n\nZeker weten?"))return;
+        if(!confirm("Terugzetten wist de huidige "+HH.state.read().rules.length+" tijdregels en "+
+          HH.state.read().dossiers.length+" dossiers.\n\nZeker weten?"))return;
         /* Expliciet: wat gaat er wel en niet mee terug?
            altijd terug : dagafsluitingen, dag-audit, afrondingsmodus, codegebruik, boekstatus, thema
            op keuze     : de geparkeerde terugkeerstapel en een lopende timer
@@ -341,15 +341,15 @@ async function importFile(file){
           o.meta.put(mCode,"codeGebruik");
           o.meta.put(mBoek,"geboekt");
           o.meta.put(mThema,"thema");});
-        appState.commit({running:null,stack:neemStack?mStack:[]});pending=null;
+        HH.state.commit({running:null,stack:neemStack?mStack:[]});pending=null;
         toast("Teruggezet: "+D.goed.length+" dossiers, "+R.goed.length+" regels"+
           (hervatId?" · lopende timer hervat":"")+
           (neemStack?" · stapel meegenomen":""));
       }else{
         const hR={},hD={},hO={};
-        alle.forEach(r=>{hR[r.id]=r;});
-        dossiers.forEach(x=>{hD[x.id]=x;});
-        overboekingen.forEach(x=>{hO[x.id]=x;});
+        HH.state.read().rules.forEach(r=>{hR[r.id]=r;});
+        HH.state.read().dossiers.forEach(x=>{hD[x.id]=x;});
+        HH.state.read().overbookings.forEach(x=>{hO[x.id]=x;});
         const nR=R.goed.filter(r=>!hR[r.id]||(r.gewijzigd||0)>(hR[r.id].gewijzigd||0));
         const nD=D.goed.filter(x=>!hD[x.id]||(x.gewijzigd||0)>(hD[x.id].gewijzigd||0));
         const nO=O.goed.filter(x=>!hO[x.id]||(x.updatedAt||"")>(hO[x.id].updatedAt||""));

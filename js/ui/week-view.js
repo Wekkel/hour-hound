@@ -1,11 +1,11 @@
 "use strict";
 /* ---------- weergave: WEEK ---------- */
 function renderWeek(){
-  const dow=(parseD(weekAnchor).getDay()+6)%7,mon=addD(weekAnchor,-dow);
+  const dow=(parseD(HH.state.read().weekAnchor).getDay()+6)%7,mon=addD(HH.state.read().weekAnchor,-dow);
   $("w-label").textContent="Week van "+dmy(mon);
   let h="";
   for(let i=0;i<7;i++){
-    const ds=addD(mon,i),list=alle.filter(r=>r.datum===ds);
+    const ds=addD(mon,i),list=HH.state.read().rules.filter(r=>r.datum===ds);
     const t=totaal(list),g=gapHours(gapsFor(list,ds));
     const isWerkdag=werkdag(ds),tekort=isWerkdag?Math.max(0,Math.round((NORM-t)*10)/10):0;
     h+='<button data-day="'+ds+'"><div class="dd">'+
@@ -19,7 +19,7 @@ function renderWeek(){
   $("w-grid").innerHTML=h;
   const prov=actief().filter(d=>isDvn(d));
   $("w-prov").innerHTML=prov.length?prov.map(p=>{
-    const rs=alle.filter(r=>r.dossierId===p.id),dagen={},info=intappDossierInfo(p);
+    const rs=HH.state.read().rules.filter(r=>r.dossierId===p.id),dagen={},info=intappDossierInfo(p);
     rs.forEach(r=>{dagen[r.datum]=(dagen[r.datum]||0)+urenOf(r);});
     const det=Object.keys(dagen).sort().map(k=>kortDag(k)+"  "+uu(dagen[k])).join("   ·   ");
     return '<div style="padding:.7rem 0;border-top:1px solid var(--line)">'+

@@ -1,10 +1,10 @@
 "use strict";
 function renderDagStatus(){
   const el=$("d-status");if(!el)return;
-  const isWerkdag=werkdag(viewDate);
-  const huidig=dagIntappTotaal(viewDate),tekort=dagTekort(viewDate),ds=dagSluitStatus(viewDate),gesloten=ds.gesloten;
-  const oudOpen=isWerkdag&&viewDate<today()&&!gesloten&&dagRegels(viewDate).some(r=>r.soort!=="pauze");
-  const loopt=running&&running.datum===viewDate;
+  const isWerkdag=werkdag(HH.state.read().viewDate);
+  const huidig=dagIntappTotaal(HH.state.read().viewDate),tekort=dagTekort(HH.state.read().viewDate),ds=dagSluitStatus(HH.state.read().viewDate),gesloten=ds.gesloten;
+  const oudOpen=isWerkdag&&HH.state.read().viewDate<today()&&!gesloten&&dagRegels(HH.state.read().viewDate).some(r=>r.soort!=="pauze");
+  const loopt=HH.state.read().running&&HH.state.read().running.datum===HH.state.read().viewDate;
   const cls=gesloten?"closed":"open";
   el.className="daystatus "+cls;
   const status=!isWerkdag?(gesloten?("Weekenddag · afgesloten om "+ds.eind):"Weekenddag"):
@@ -13,7 +13,7 @@ function renderDagStatus(){
     (isWerkdag?'<span>Verantwoord <b class="metric">'+uu(huidig)+'</b> / '+uu(NORM)+' u</span>'+ 
       '<span>Nog nodig <b class="metric">'+uu(tekort)+'</b> u</span>':
       '<span>Verantwoord <b class="metric">'+uu(huidig)+'</b> u · geen 8,0-uursnorm</span>');
-  const autos=autoAanvulRegels(viewDate),audit=auditSamenvatting(viewDate);
+  const autos=autoAanvulRegels(HH.state.read().viewDate),audit=auditSamenvatting(HH.state.read().viewDate);
   if(autos.length)h+='<span class="warnline">Automatische Diversen-regels: '+autos.length+'</span>';
   if(audit)h+='<span class="auditline">'+esc(audit)+'</span>';
   if(loopt)h+='<span class="warnline">Er loopt nog een regel op deze dag.</span>';
@@ -23,15 +23,16 @@ function renderDagStatus(){
     if(isWerkdag)h+='<button class="sm go" data-close-current="1">Sluit deze dag af</button>';
   }else{
     h+='<button class="sm ghost" data-reopen-current="1">Heropen dag</button>';
-    if(tekort>0.05&&!(running&&running.datum===viewDate))h+='<button class="sm" data-fill-current="1">Aanvullen tot 8,0</button>';
+    if(tekort>0.05&&!(HH.state.read().running&&HH.state.read().running.datum===HH.state.read().viewDate))h+='<button class="sm" data-fill-current="1">Aanvullen tot 8,0</button>';
   }
   el.innerHTML=h;}
 
 /* ---------- weergave: DAG ---------- */
 function bouwDag(){
-  $("d-label").textContent=dagLabel(viewDate)+
-    (dagSluitStatus(viewDate).gesloten?" · afgesloten om "+dagSluitStatus(viewDate).eind:"");
-  const gaps=gapsFor(regels,viewDate),rows=[];
+  const regels=HH.state.selectors.day(HH.state.read().viewDate);
+  $("d-label").textContent=dagLabel(HH.state.read().viewDate)+
+    (dagSluitStatus(HH.state.read().viewDate).gesloten?" · afgesloten om "+dagSluitStatus(HH.state.read().viewDate).eind:"");
+  const gaps=gapsFor(regels,HH.state.read().viewDate),rows=[];
   regels.forEach(r=>rows.push({t:"r",r,k:hm2m(r.start)||0}));
   gaps.forEach(g=>rows.push({t:"g",g,k:g[0]}));
   rows.sort((a,b)=>a.k-b.k);
@@ -44,7 +45,7 @@ function bouwDag(){
         '<td class="mono" style="text-align:right">'+uu(Math.ceil((row.g[1]-row.g[0])/6)/10)+
         '</td><td class="x"><button class="sm ghost" data-fill="'+row.g[0]+"-"+row.g[1]+
         '" title="Deze tijd invullen">&#9998;</button></td></tr>';return;}
-    const r=row.r,d=dosOf(r.dossierId),run=running&&running.id===r.id,booked=regelIsGeboekt(r);
+    const r=row.r,d=dosOf(r.dossierId),run=HH.state.read().running&&HH.state.read().running.id===r.id,booked=regelIsGeboekt(r);
     h+='<tr class="'+(run?"isrun ":"")+(r.soort==="pauze"?"ispauze ":"")+(r.autoAanvul?"isauto ":"")+(booked?"needsreview":"")+'" data-id="'+esc(r.id)+'">'+
       (r.autoAanvul?'<td class="t"><span class="muted">admin.</span></td><td class="t"><span class="muted">—</span></td>':
         '<td class="t"><input data-f="start" readonly title="Open bewerksheet" value="'+esc(r.start)+'"></td>'+
@@ -61,30 +62,31 @@ function bouwDag(){
       '<td class="x">'+
       (r.autoAanvul?'<span class="autobadge" title="Automatisch aangemaakt bij dagaanvulling">auto</span>':"")+
       '<button class="sm ghost" data-edit="'+esc(r.id)+'" title="Tijdregel bewust bewerken">bewerk</button>'+ 
-      ((!run&&r.eind&&viewDate===today()&&r.soort!=="pauze")?
+      ((!run&&r.eind&&HH.state.read().viewDate===today()&&r.soort!=="pauze")?
         '<button class="sm ghost" data-maaklopend="'+esc(r.id)+
         '" title="Maak dit de lopende timer">&#9654;</button>':"")+
       '<button class="sm ghost warn" data-del="'+esc(r.id)+'">&#10005;</button></td></tr>';});
   $("d-table").innerHTML=h+"</tbody>";verversDag();}
 function verversDag(){
+  const regels=HH.state.selectors.day(HH.state.read().viewDate);
   renderRecent();renderTot();renderDagStatus();
   $("d-tot").textContent=uu(totaal(regels));
-  $("d-void").textContent=uu(gapHours(gapsFor(regels,viewDate)));
+  $("d-void").textContent=uu(gapHours(gapsFor(regels,HH.state.read().viewDate)));
   $("d-pauze").textContent=uu(pauzeUren(regels));
-  const vulMag=werkdag(viewDate)&&dagSluitStatus(viewDate).gesloten&&!(running&&running.datum===viewDate);
-  $("d-fill").style.display=werkdag(viewDate)?"":"none";
+  const vulMag=werkdag(HH.state.read().viewDate)&&dagSluitStatus(HH.state.read().viewDate).gesloten&&!(HH.state.read().running&&HH.state.read().running.datum===HH.state.read().viewDate);
+  $("d-fill").style.display=werkdag(HH.state.read().viewDate)?"":"none";
   $("d-fill").disabled=!vulMag;
-  $("d-fill").title=!werkdag(viewDate)?"Weekenddagen hebben geen 8-uursaanvulling":
+  $("d-fill").title=!werkdag(HH.state.read().viewDate)?"Weekenddagen hebben geen 8-uursaanvulling":
     (vulMag?"Vul het administratieve dagtotaal aan tot 8,0 uur":
     "Beschikbaar nadat deze werkdag met E is afgesloten");
   bouwSum();boekStat();}
 
-function sumRows(){return sumVan(regels);}
+function sumRows(){return sumVan(HH.state.selectors.day(HH.state.read().viewDate));}
 
 /* Blokkerende fouten maken de dag onboekbaar: die kunnen niet met "toch boeken"
    worden gepasseerd. Waarschuwingen mogen wel bevestigd worden.                */
 function controleer(){
-  return valideerBoekDag(regels);}
+  return valideerBoekDag(HH.state.selectors.day(HH.state.read().viewDate));}
 const blokFouten=()=>controleer().filter(x=>x.blok);
 const waarschuwingen=()=>controleer().filter(x=>!x.blok);
 function toonBlokkade(probs,wat){
@@ -109,7 +111,7 @@ function bouwSum(){
   const tot=rs.reduce((s,x)=>s+x.u,0);
   $("d-sum").innerHTML='<thead><tr><th>Dag</th><th>Dossiernummer</th><th>Dossiernaam</th>'+
     '<th>Werkcode</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody>'+
-    rs.map(x=>'<tr><td class="mono">'+esc(kortDag(viewDate))+'</td><td class="mono">'+esc(x.nummer)+
+    rs.map(x=>'<tr><td class="mono">'+esc(kortDag(HH.state.read().viewDate))+'</td><td class="mono">'+esc(x.nummer)+
       "</td><td>"+esc(x.naam)+(x.dvnStatus?' <span class="tag dvn">'+esc(x.dvnStatus)+"</span>":"")+
       '</td><td'+(x.mist?' class="bad"':"")+">"+
       esc(x.code||(x.mist?"ontbreekt":""))+"</td><td>"+esc(x.oms)+

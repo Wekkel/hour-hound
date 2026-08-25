@@ -1,20 +1,19 @@
 "use strict";
 /* ---------- bewuste regelbewerking en oude lopende timer ---------- */
-const uiModals=HH.ui.modals;
-const isModalOpen=()=>uiModals.anyOpen();
+const isModalOpen=()=>HH.ui.modals.anyOpen();
 function voorstelOudeTimerEind(r){
-  const na=alle.filter(x=>x.datum===r.datum&&x.id!==r.id&&hm2m(x.start)!=null&&
+  const na=HH.state.read().rules.filter(x=>x.datum===r.datum&&x.id!==r.id&&hm2m(x.start)!=null&&
       hm2m(x.start)>hm2m(r.start)).sort((a,b)=>hm2m(a.start)-hm2m(b.start))[0];
   if(na)return na.start;
   const s=hm2m(r.start),e17=hm2m("17:00");
   if(s!=null&&s<e17)return "17:00";
   return r.start;}
 function regelBoekRow(r){
-  return sumVan(stateSelectors.day(r.datum)).find(x=>
+  return sumVan(HH.state.selectors.day(r.datum)).find(x=>
     x.bron&&x.bron.some(b=>b.id===r.id))||null;}
 function regelBoekFingerprint(r){const hit=regelBoekRow(r);return hit?hit.fp:null;}
 function regelIsGeboekt(r){const hit=regelBoekRow(r);return !!(hit&&
-  ((geboekt[r.datum]||[]).indexOf(hit.fp)>=0||overboekingAfgerondVoorRow(hit,r.datum)));}
+  ((HH.state.read().booked[r.datum]||[]).indexOf(hit.fp)>=0||overboekingAfgerondVoorRow(hit,r.datum)));}
 function opdrachtUitDossierTekst(v,huidigId){
   const txt=(v||"").trim(),h=dosOf(huidigId);
   if(!txt)return{dossierId:null,code:null};
@@ -41,9 +40,9 @@ function normaliseerCodeVoorOpslag(d,r,txt){
     (c.naam||"").toLowerCase()===v.toLowerCase());
   return hit?{code:hit.code}:{code:v,nieuweCode:v};}
 function openRegelEditor(id,bron){
-  const r=alle.find(x=>x.id===id);if(!r)return Promise.resolve(false);
+  const r=HH.state.read().rules.find(x=>x.id===id);if(!r)return Promise.resolve(false);
   const dlg=$("editregel");if(!dlg)return Promise.resolve(false);
-  const d=dosOf(r.dossierId),loopt=running&&running.id===r.id;
+  const d=dosOf(r.dossierId),loopt=HH.state.read().running&&HH.state.read().running.id===r.id;
   $("er-date").textContent=dagLabel(r.datum);
   $("er-start").value=r.start||"";
   $("er-eind").value=loopt?"":(r.eind||"");
@@ -74,8 +73,8 @@ function openRegelEditor(id,bron){
     document.addEventListener("keydown",key,true);
     $("er-x").onclick=()=>sluit(false);$("er-cancel").onclick=()=>sluit(false);
     $("er-save").onclick=async()=>{
-      const cur=alle.find(x=>x.id===id);if(!cur){toast("Regel bestaat niet meer");sluit(false);return;}
-      const voor=kopie1(cur),looptNu=running&&running.id===cur.id;
+      const cur=HH.state.read().rules.find(x=>x.id===id);if(!cur){toast("Regel bestaat niet meer");sluit(false);return;}
+      const voor=kopie1(cur),looptNu=HH.state.read().running&&HH.state.read().running.id===cur.id;
       const start=$("er-start").value.trim(),eind=$("er-eind").value.trim();
       const sm=hm2m(start),em=eind?hm2m(eind):null;
       if(sm==null){toast("Ongeldige starttijd");$("er-start").focus();return;}
@@ -103,41 +102,43 @@ function openRegelEditor(id,bron){
           tmpRule.uren=Math.max(0.1,Math.round(n*10)/10);tmpRule.urenHand=true;}
         else tmpRule.urenHand=false;}
       if(!dagRuimte(tmpRule.datum,urenOf(tmpRule),tmpRule.id))return;
-      const mutatieWarnings=dayRuleServices.ruleWarnings({rule:cur,dossiers,
-        overbookings:overboekingen,isBooked:regelIsGeboekt(cur)});
+      const mutatieWarnings=HH.services.dayRules.ruleWarnings({rule:cur,
+        dossiers:HH.state.read().dossiers,
+        overbookings:HH.state.read().overbookings,isBooked:regelIsGeboekt(cur)});
       if(mutatieWarnings.length&&
         !confirm("Je wijzigt een bestaande tijdregel met administratieve status.\n\nDoorgaan en bewust opslaan?"))return;
       if(c.nieuweCode&&tmpD&&!isIndirect(tmpD)&&!(tmpD.codes||[]).some(x=>x.code===c.nieuweCode)){
         tmpD=Object.assign({},tmpD,{codes:(tmpD.codes||[]).concat([{code:c.nieuweCode,naam:c.nieuweCode}])});stempel(tmpD);}
       const schrijf=async()=>{
-        const uit=await timerServices.editRule({currentTimer:running,readCurrentTimer:()=>running,
-          before:voor,rule:tmpRule,rules:alle,
-          dossiers,overbookings:overboekingen,dossierWrites:tmpD?[tmpD]:[],
+        const uit=await HH.services.timer.editRule({currentTimer:HH.state.read().running,readCurrentTimer:()=>HH.state.read().running,
+          before:voor,rule:tmpRule,rules:HH.state.read().rules,
+          dossiers:HH.state.read().dossiers,overbookings:HH.state.read().overbookings,
+          dossierWrites:tmpD?[tmpD]:[],
           runningId:looptNu?cur.id:null,isBooked:regelIsGeboekt(cur),confirmedWarnings:true,
           bookingContext:boekRekenContext(),waitForRules:rustig,nowTime:nowHM(),
           nowMs:Date.now(),nowIso:new Date().toISOString()});
         if(await meldTimerFout(uit,"Opslaan is niet uitgevoerd")||
           meldDagRegelFout(uit,"Opslaan is niet uitgevoerd"))return false;
-        const delta={dossiers:mergeById(dossiers,uit.dossiers),
-          rules:mergeById(alle,[uit.rule])};tmpRule=uit.rule;
+        const delta={dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
+          rules:mergeById(HH.state.read().rules,[uit.rule])};tmpRule=uit.rule;
         if(uit.closedRunning){delta.running=null;pending=null;
           vergeetTimerUndo("regel gestopt via bewerksheet");}
         else if(looptNu){delta.running=delta.rules.find(x=>x.id===uit.rule.id);liveId=null;}
-        appState.commit(delta);
+        HH.state.commit(delta);
         pasMutatieUndoToe(uit.undo);
         return true;};
       try{
         if(!await schrijf())return;
       }catch(e){L("FOUT-regel-editor",String(e));toast("Opslaan mislukt — niets gewijzigd: "+e);return;}
       L("regel-editor",tmpRule.start+"-"+(tmpRule.eind||"loopt")+" · "+dosIdLog(tmpRule.dossierId));
-      appState.commit({viewDate:tmpRule.datum});
-      renderAll(["day","live","recent","totals"]);announce();
+      HH.state.commit({viewDate:tmpRule.datum});
+      HH.app.render(["day","live","recent","totals"]);announce();
       toast("Tijdregel opgeslagen");sluit(true);};});}
 function controleerOudeLopendeTaak(){
-  if(!running||running.datum>=today()||timerServices.isBlocked()||
+  if(!HH.state.read().running||HH.state.read().running.datum>=today()||HH.services.timer.isBlocked()||
     Date.now()<oldRunSnooze||isModalOpen())return;
   const dlg=$("oldrun");if(!dlg)return;
-  const r=running,d=dosOf(r.dossierId),tekst=(r.omschrijving||"geen omschrijving");
+  const r=HH.state.read().running,d=dosOf(r.dossierId),tekst=(r.omschrijving||"geen omschrijving");
   $("xr-date").textContent=dagLabel(r.datum);
   $("xr-text").innerHTML="Deze taak loopt nog sinds "+esc(dagLabel(r.datum))+" om "+
     esc(r.start)+". Laat hem alleen doorlopen als dit echt dezelfde werksessie is.";

@@ -1,7 +1,7 @@
 "use strict";
 function renderRecent(){
   const recent=$("recent"),oudeScroll=recent.scrollTop;
-  const tk=takenVandaag().filter(t=>!running||t.k!==taakKey(running));
+  const tk=takenVandaag().filter(t=>!HH.state.read().running||t.k!==taakKey(HH.state.read().running));
   recent.innerHTML=tk.length?tk.map((t,i)=>{
     const d=dosOf(t.dossierId);
     return '<button class="taak" data-taak="'+esc(t.k)+'">'+

@@ -7,11 +7,11 @@ const saveRegel=r=>{
   const p=vorige.then(()=>tx(dvn?["regels","dossiers"]:"regels","readwrite",o=>{
     if(dvn){o.regels.put(kop);o.dossiers.put(dvn);}else o.put(kop);}));
   schrijfRij[kop.id]=p.then(()=>{},()=>{});
-  return p.then(()=>{const delta={rules:mergeById(alle,[kop])};
-    if(running&&running.id===kop.id)delta.running=delta.rules.find(x=>x.id===kop.id)||kop;
-    if(dvn)delta.dossiers=mergeById(dossiers,[dvn]);appState.commit(delta);return kop;});};
+  return p.then(()=>{const delta={rules:mergeById(HH.state.read().rules,[kop])};
+    if(HH.state.read().running&&HH.state.read().running.id===kop.id)delta.running=delta.rules.find(x=>x.id===kop.id)||kop;
+    if(dvn)delta.dossiers=mergeById(HH.state.read().dossiers,[dvn]);HH.state.commit(delta);return kop;});};
 /* Dagregels zijn vanaf Patch Q een selector en hebben geen eigen geheugenkopie. */
-function refreshDay(){return stateSelectors.day(viewDate);}
+function refreshDay(){return HH.state.selectors.day(HH.state.read().viewDate);}
 function prefixVoor(d,datum,tekst){
   const kaal=(tekst||"").replace(VOOR,"");
   if(!d||!d.voorlopig)return kaal;
@@ -33,8 +33,9 @@ function sluitObj(r,eindTijd){
   k.gewijzigd=Date.now();
   return k;}
 
-function timerBasis(nowMs){return{currentTimer:running,readCurrentTimer:()=>running,
-  rules:alle,dossiers,stack,dayEnds:dagEinde,dayAudit:dagAudit,codeUsage:codeGebruik,
+function timerBasis(nowMs){return{currentTimer:HH.state.read().running,readCurrentTimer:()=>HH.state.read().running,
+  rules:HH.state.read().rules,dossiers:HH.state.read().dossiers,stack:HH.state.read().stack,
+  dayEnds:HH.state.read().dayEnds,dayAudit:HH.state.read().dayAudit,codeUsage:HH.state.read().codeUsage,
   date:today(),time:nowHM(),nowMs,nowIso:new Date(nowMs).toISOString(),
   waitForRules:rustig};}
 function timerStartInput(o){
@@ -43,44 +44,44 @@ function timerStartInput(o){
     timerBasis(nowMs),{id:uid(),createdDossier:created,dossierId:dossier?dossier.id:null,
       code:codeVoor(dossier,spec.code),description:prefixVoor(dossier,today(),spec.omschrijving||""),
       kind:spec.soort||"werk",preserveStack:!!spec.bewaarStack,
-      pendingDescription:running?pakOmschr(running.id):null});
+      pendingDescription:HH.state.read().running?pakOmschr(HH.state.read().running.id):null});
   if(Object.prototype.hasOwnProperty.call(spec,"stackNa"))input.stackAfter=spec.stackNa;
   return{input,dossier,created};}
 function pasTimerStartToe(uit,context){
   pending=null;vergeetTimerUndo("nieuwe timerwissel");
-  let nextRules=alle;
+  let nextRules=HH.state.read().rules;
   if(uit.autoRemoved.length){const ids=new Set(uit.autoRemoved.map(r=>r.id));
     nextRules=zonderIds(nextRules,[...ids]);
     undoStack=undoStack.filter(a=>!(a.soort==="data"&&(a.weg||[]).some(id=>ids.has(id))));
     L("aanvullen-ingetrokken",uit.autoRemoved.length+" automatische regel(s) · dag heropend");}
   nextRules=mergeById(nextRules,[uit.closedRule,uit.rule]);
-  const delta={rules:nextRules,dossiers:mergeById(dossiers,uit.dossiers),
+  const delta={rules:nextRules,dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
     running:nextRules.find(r=>r.id===uit.rule.id)||uit.rule,viewDate:uit.rule.datum,
     codeUsage:uit.codeUsage};
   if(uit.stackChanged)delta.stack=uit.stack;
   if(uit.dayWasClosed){delta.dayEnds=uit.dayEnds;delta.dayAudit=uit.nextDayAudit;}
-  appState.commit(delta);
+  HH.state.commit(delta);
   if(context.created)L("dossier-nieuw","dos"+idKort(context.created.id)+
     (context.created.nummer?"":" · VOORLOPIG")+(logOms?" · "+kort(context.created.naam):""));
   L("start-regel",uit.rule.soort+" · "+dosIdLog(uit.rule.dossierId)+" · code "+
     (uit.rule.code||"-")+" · "+uit.rule.start+" · oms "+omsLog(uit.rule.omschrijving));
-  liveId=null;snoozeTot=0;hideWake();renderAll(["live","recent","totals","openDays",
-    tab==="dag"?"day":tab==="week"?"week":tab==="beheer"?"manage":null].filter(Boolean));announce();
-  if(isIndirect(context.dossier)&&!i7codes.length)geenCodes();return uit.rule;}
+  liveId=null;snoozeTot=0;hideWake();HH.app.render(["live","recent","totals","openDays",
+    HH.state.read().tab==="dag"?"day":HH.state.read().tab==="week"?"week":HH.state.read().tab==="beheer"?"manage":null].filter(Boolean));announce();
+  if(isIndirect(context.dossier)&&!HH.state.read().codes.length)geenCodes();return uit.rule;}
 async function startViaService(o,method){
-  const context=timerStartInput(o),uit=await timerServices[method](context.input);
+  const context=timerStartInput(o),uit=await HH.services.timer[method](context.input);
   if(await meldTimerFout(uit,"Starten is niet uitgevoerd"))return null;
   return pasTimerStartToe(uit,context);}
 async function stopRunning(eindTijd,label,method){
-  const before=running?kopie1(running):null,nowMs=Date.now(),input=Object.assign(timerBasis(nowMs),{
-    end:eindTijd,name:label||"stoppen",pendingDescription:running?pakOmschr(running.id):null});
-  const uit=await timerServices[method||"stop"](input);
+  const before=HH.state.read().running?kopie1(HH.state.read().running):null,nowMs=Date.now(),input=Object.assign(timerBasis(nowMs),{
+    end:eindTijd,name:label||"stoppen",pendingDescription:HH.state.read().running?pakOmschr(HH.state.read().running.id):null});
+  const uit=await HH.services.timer[method||"stop"](input);
   if(await meldTimerFout(uit,"Stoppen is niet uitgevoerd")||uit.noChange)return null;
-  appState.commit({dossiers:mergeById(dossiers,uit.dossiers),
-    rules:mergeById(alle,[uit.closedRule]),running:null});liveId=null;
+  HH.state.commit({dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
+    rules:mergeById(HH.state.read().rules,[uit.closedRule]),running:null});liveId=null;
   L("stop-regel",uit.closedRule.start+"-"+uit.closedRule.eind+" · "+
     uu(urenOf(uit.closedRule))+" u · "+dosIdLog(uit.closedRule.dossierId));
-  renderAll(["live","recent","totals","openDays",tab==="dag"?"day":null].filter(Boolean));
+  HH.app.render(["live","recent","totals","openDays",HH.state.read().tab==="dag"?"day":null].filter(Boolean));
   announce();uit.beforeRule=before;return uit.closedRule;}
 function startRegel(o){return startViaService(o||{},"start");}
 /* Elke directe route naar een andere taak (hervatten, i7-snelkeuze, enz.) maakt
@@ -100,7 +101,7 @@ async function eindeWerkdag(){
    het, dan blijft alles zoals het was en volgt een melding.                     */
 function bouwDossier(spec){
   return{id:uid(),nummer:spec.nummer||null,naam:spec.naam||"Zonder naam",
-    lang:spec.lang||"nl",voorlopig:!spec.nummer,codes:[],c:dossiers.length,used:0,
+    lang:spec.lang||"nl",voorlopig:!spec.nummer,codes:[],c:HH.state.read().dossiers.length,used:0,
     isI7:false,archief:false,gewijzigd:Date.now()};}
 /* Dossiers dragen een gewijzigd-stempel zodat samenvoegen bij import per record kan
    bepalen welke versie de nieuwste is.                                          */
@@ -157,7 +158,7 @@ async function koppelRegel(r,op){
      daarom hier óók meetellen voor de sortering op meest gebruikt; vroeger gebeurde
      dat alleen wanneer de code al bij _start() bekend was. */
   const telCode=!!(dosK&&isIndirect(dosK)&&nw.code&&nw.code!==r.code);
-  const nwCode=Object.assign({},codeGebruik);
+  const nwCode=Object.assign({},HH.state.read().codeUsage);
   if(telCode)nwCode[nw.code]=(nwCode[nw.code]||0)+1;
   const dvnNw=dvnPutIfPosted(dosK,"tijdregel gewijzigd");
   if(dvnNw)dosK=dvnNw;
@@ -172,128 +173,130 @@ async function koppelRegel(r,op){
   }catch(e){L("FOUT-koppelen",String(e));
     toast("Koppelen mislukt — er is niets gewijzigd: "+e);
     return null;}
-  const nextDossiers=mergeById(dossiers,[dosK,dvnOud]);
-  const nextRules=mergeById(alle,[nw]);
+  const nextDossiers=mergeById(HH.state.read().dossiers,[dosK,dvnOud]);
+  const nextRules=mergeById(HH.state.read().rules,[nw]);
   const delta={dossiers:nextDossiers,rules:nextRules};
   if(telCode)delta.codeUsage=nwCode;
-  if(running&&running.id===nw.id)delta.running=nextRules.find(x=>x.id===nw.id)||nw;
-  appState.commit(delta);
+  if(HH.state.read().running&&HH.state.read().running.id===nw.id)delta.running=nextRules.find(x=>x.id===nw.id)||nw;
+  HH.state.commit(delta);
   if(maak)L("dossier-nieuw","dos"+idKort(maak.id)+(maak.nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(maak.naam):""));
-  if(running&&running.id===nw.id)liveId=null;
+  if(HH.state.read().running&&HH.state.read().running.id===nw.id)liveId=null;
   return{regel:nw,dossier:dosK};}
 async function makeDossier(naam,nummer,lang){
   const d={id:uid(),nummer:nummer||null,naam:naam||"Zonder naam",lang:lang||"nl",
-    voorlopig:!nummer,codes:[],c:dossiers.length,used:1,isI7:false,archief:false,
+    voorlopig:!nummer,codes:[],c:HH.state.read().dossiers.length,used:1,isI7:false,archief:false,
     gewijzigd:Date.now()};
-  await put("dossiers",d);appState.upsert("dossiers",d);
+  await put("dossiers",d);HH.state.upsert("dossiers",d);
   L("dossier-nieuw","dos"+idKort(d.id)+(nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(naam):""));
   return d;}
 
 /* De stapel wordt niet meer apart weggeschreven: hij gaat als stackNa mee in dezelfde
    transactie als de nieuwe regel, zodat parkeren en starten niet los kunnen raken. */
-const parkeerLijst=()=>{const st=stack.slice();
-  if(running&&running.soort==="werk")
-    st.push({dossierId:running.dossierId,code:running.code,
-      omschrijving:running.omschrijving});
+const parkeerLijst=()=>{const st=HH.state.read().stack.slice();
+  if(HH.state.read().running&&HH.state.read().running.soort==="werk")
+    st.push({dossierId:HH.state.read().running.dossierId,code:HH.state.read().running.code,
+      omschrijving:HH.state.read().running.omschrijving});
   return st;};
 async function interrupt(soort,label){
   ntWizard=null;
-  if(running&&running.soort===soort){await terug();return;}
+  if(HH.state.read().running&&HH.state.read().running.soort===soort){await terug();return;}
   const ind=i7(),nieuw=await startViaService({dossierId:ind?ind.id:null,omschrijving:"",
     soort:soort,stackNa:parkeerLijst()},"interrupt");
   if(!nieuw)return;
   naStart();
-  L("onderbreking",soort+" · stapel "+stack.length);
+  L("onderbreking",soort+" · stapel "+HH.state.read().stack.length);
   toast(label+" loopt — druk R of dezelfde toets om terug te keren");}
 async function terug(){
   ntWizard=null;
-  const st=stack.slice(),back=st.pop();
+  const st=HH.state.read().stack.slice(),back=st.pop();
   if(!back){
     const nowMs=Date.now(),input=Object.assign(timerBasis(nowMs),{returnEmpty:true,
-      pendingDescription:running?pakOmschr(running.id):null});
-    const uit=await timerServices.returnToStack(input);
+      pendingDescription:HH.state.read().running?pakOmschr(HH.state.read().running.id):null});
+    const uit=await HH.services.timer.returnToStack(input);
     if(await meldTimerFout(uit,"Terugkeren is niet uitgevoerd"))return;
-    if(uit.closedRule)appState.commit({dossiers:mergeById(dossiers,uit.dossiers),
-      rules:mergeById(alle,[uit.closedRule]),running:null});
-    liveId=null;renderAll();announce();L("terug","stapel leeg");await nieuweTaak();return;}
+    if(uit.closedRule)HH.state.commit({dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
+      rules:mergeById(HH.state.read().rules,[uit.closedRule]),running:null});
+    liveId=null;HH.app.render();announce();L("terug","stapel leeg");
+    await HH.ui.newTask();return;}
   const context=timerStartInput({dossierId:back.dossierId,code:back.code,
     omschrijving:back.omschrijving,bewaarStack:true,stackNa:st});
   context.input.returnEmpty=false;
-  const uit=await timerServices.returnToStack(context.input);
+  const uit=await HH.services.timer.returnToStack(context.input);
   if(await meldTimerFout(uit,"Terugkeren is niet uitgevoerd"))return;
-  pasTimerStartToe(uit,context);L("terug","stapel "+stack.length);
+  pasTimerStartToe(uit,context);L("terug","stapel "+HH.state.read().stack.length);
   toast("Terug bij "+((dosOf(back.dossierId)||{}).naam||"vorige taak"));}
 async function pauze(){
   ntWizard=null;
   /* P is een toggle, net als T en O: nogmaals P keert terug naar de geparkeerde taak. */
-  if(running&&running.soort==="pauze"){await terug();return;}
+  if(HH.state.read().running&&HH.state.read().running.soort==="pauze"){await terug();return;}
   await startViaService({dossierId:null,code:null,omschrijving:"Pauze",soort:"pauze",
     stackNa:parkeerLijst()},"pause");}
 
 async function kiesCodeItem(it){
-  if(!running)return;
-  const d=dosOf(running.dossierId);
-  const uit=await koppelRegel(running,it.isNew&&d?{nieuweCode:it.newCode}:{code:it.value});
-  const nd=uit?uit.dossier:dosOf(running.dossierId);
-  $("l-code").value=codeNaam(nd,running.code);
-  $("l-code").classList.toggle("miss",isIndirect(nd)&&!running.code);
+  if(!HH.state.read().running)return;
+  const d=dosOf(HH.state.read().running.dossierId);
+  const uit=await koppelRegel(HH.state.read().running,it.isNew&&d?{nieuweCode:it.newCode}:{code:it.value});
+  const nd=uit?uit.dossier:dosOf(HH.state.read().running.dossierId);
+  $("l-code").value=codeNaam(nd,HH.state.read().running.code);
+  $("l-code").classList.toggle("miss",isIndirect(nd)&&!HH.state.read().running.code);
   liveId=null;verversDag();announce();
   setTimeout(()=>$("l-omschr").focus(),20);}
 async function markeerVolgt(){
-  if(!running){toast("Er loopt niets om te markeren");return;}
-  if(running.soort==="pauze"){toast("Een pauzeregel kan geen dossier krijgen");return;}
+  if(!HH.state.read().running){toast("Er loopt niets om te markeren");return;}
+  if(HH.state.read().running.soort==="pauze"){toast("Een pauzeregel kan geen dossier krijgen");return;}
   if(!i7CodeOp(VAST_VOORLOPIG,"-704")){
     toast("Werkcode Commercieel ontbreekt — herstel werkcodes.json onder Beheer");return;}
   ntWizard=null;
   const naam=prompt("Werknaam voor dit dossier (nummer volgt nog):",
-    ((dosOf(running.dossierId)||{}).naam)||"");
+    ((dosOf(HH.state.read().running.dossierId)||{}).naam)||"");
   if(!naam)return;
   const best=actief().find(x=>x.voorlopig&&
     x.naam.toLowerCase()===naam.trim().toLowerCase());
   const op=best?{dossierId:best.id,telUsed:true}:
     {nieuwDossier:{naam:naam.trim(),nummer:null,lang:"nl"},telUsed:true};
-  if(!await koppelRegel(running,op))return;
-  liveId=null;renderAll();announce();naStart();
+  if(!await koppelRegel(HH.state.read().running,op))return;
+  liveId=null;HH.app.render();announce();naStart();
   toast("Gemarkeerd als dossier volgt nog");}
 async function maakDvnDefinitiefI7(id){
   const d=dosOf(id);
   if(!d||!isDvn(d)||dvnDefinitiefI7(d))return;
   if(dvnResolvedNummer(d)){
     toast("Deze DVN heeft al een dossiernummer en kan niet naar definitief i7");return;}
-  if(running&&running.dossierId===d.id){
+  if(HH.state.read().running&&HH.state.read().running.dossierId===d.id){
     toast("Stop eerst de lopende DVN-regel");return;}
   const commercieel=i7CodeOp(VAST_VOORLOPIG,"-704");
   if(!commercieel){
     toast("Werkcode Commercieel ontbreekt — herstel werkcodes.json onder Beheer");return;}
-  const rs=alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze");
+  const rs=HH.state.read().rules.filter(r=>r.dossierId===d.id&&r.soort!=="pauze");
   const uren=Math.round(rs.reduce((s,r)=>s+urenOf(r),0)*10)/10;
   if(!confirm('Zet "'+d.naam+'" met '+rs.length+' regel(s) / '+uu(uren)+
     " uur definitief om naar i7 · Commercieel?\n\nEr wordt geen dossiernummer meer verwacht. "+
     "De regels verdwijnen uit de DVN-werkvoorraad en blijven als gewone i7-tijd bewaard."))return;
   const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
   try{
-    uit=await adminServices.finalizeDvnI7({dossier:d,dossiers,rules:alle,stack,
-      runningId:running?running.id:null,commercialCode:commercieel,hoursOf,
+    uit=await HH.services.admin.finalizeDvnI7({dossier:d,dossiers:HH.state.read().dossiers,
+      rules:HH.state.read().rules,stack:HH.state.read().stack,
+      runningId:HH.state.read().running?HH.state.read().running.id:null,commercialCode:commercieel,hoursOf,
       waitForRules:rustig,nowMs,nowIso});
   }catch(e){L("FOUT-dvn-definitief-i7",String(e));
     toast("Omzetten naar definitief i7 mislukt — niets gewijzigd");return;}
   if(meldAdminFout(uit,"Omzetten naar definitief i7 is niet uitgevoerd"))return;
-  const delta={dossiers:mergeById(dossiers,[uit.dossier]),rules:mergeById(alle,uit.rules)};
-  if(uit.stackChanged)delta.stack=uit.stack;appState.commit(delta);
-  undoStack=[];liveId=null;refreshDay();renderAll();renderWeek();announce();
+  const delta={dossiers:mergeById(HH.state.read().dossiers,[uit.dossier]),rules:mergeById(HH.state.read().rules,uit.rules)};
+  if(uit.stackChanged)delta.stack=uit.stack;HH.state.commit(delta);
+  undoStack=[];liveId=null;refreshDay();HH.app.render();HH.renderCoordinator.render("week");announce();
   L("dvn-definitief-i7","dos"+idKort(d.id)+" · "+uit.allRules.length+
     " regel(s) · "+uu(uit.total)+" u");
   toast("DVN is definitief i7 · Commercieel");}
 /* ---------- DVN dossiernummer toekennen ---------- */
 function dvnDossierVoorNummer(nr,id){
   const n=(nr||"").trim().toLowerCase();
-  return n?dossiers.find(x=>x.id!==id&&(x.nummer||"").toLowerCase()===n):null;}
+  return n?HH.state.read().dossiers.find(x=>x.id!==id&&(x.nummer||"").toLowerCase()===n):null;}
 function openDvnNummerSheet(id){
   const d=dosOf(id);if(!d||!isDvn(d))return Promise.resolve(false);
   const dlg=$("dvnnum");if(!dlg)return Promise.resolve(false);
-  const rs=alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze"),info=intappDossierInfo(d);
+  const rs=HH.state.read().rules.filter(r=>r.dossierId===d.id&&r.soort!=="pauze"),info=intappDossierInfo(d);
   dlg.dataset.id=id;
   $("dn-status").textContent=d.voorlopig?"nummer ontbreekt":(typeof dvnStatusTekst==="function"?dvnStatusTekst(d):"DVN");
   $("dn-num").value=d.nummer||d.dvnResolvedNr||info.nummer||"";
@@ -315,7 +318,7 @@ async function slaDvnNummerOp(){
   const nr=($("dn-num").value||"").trim(),naam=($("dn-name").value||"").trim()||d.naam;
   if(!nr){toast("Vul het dossiernummer in");$("dn-num").focus();return;}
   const bestaand=dvnDossierVoorNummer(nr,d.id);
-  const rs=alle.filter(r=>r.dossierId===d.id);
+  const rs=HH.state.read().rules.filter(r=>r.dossierId===d.id);
   if(bestaand&&bestaand.voorlopig){
     toast("Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.");return;}
   const warn=[];
@@ -324,17 +327,18 @@ async function slaDvnNummerOp(){
   if(!confirm(warn.join("\n\n")+"\n\nDoorgaan?"))return;
   const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
   try{
-    uit=await adminServices.assignDvnNumber({dossier:d,number:nr,name:naam,dossiers,
-      rules:alle,stack,waitForRules:rustig,nowMs,nowIso});
+    uit=await HH.services.admin.assignDvnNumber({dossier:d,number:nr,name:naam,
+      dossiers:HH.state.read().dossiers,rules:HH.state.read().rules,
+      stack:HH.state.read().stack,waitForRules:rustig,nowMs,nowIso});
   }catch(e){L("FOUT-dvn-nummer",String(e));toast("Dossiernummer opslaan mislukt — niets gewijzigd: "+e);return;}
   if(meldAdminFout(uit,"Dossiernummer is niet opgeslagen"))return;
-  const nextRules=mergeById(alle,uit.rules),delta={dossiers:mergeById(dossiers,[uit.dossier]),
+  const nextRules=mergeById(HH.state.read().rules,uit.rules),delta={dossiers:mergeById(HH.state.read().dossiers,[uit.dossier]),
     rules:nextRules};
   if(uit.stackChanged)delta.stack=uit.stack;
-  if(running&&running.dossierId===d.id)
-    delta.running=nextRules.find(r=>r.id===running.id)||running;
-  appState.commit(delta);
-  undoStack=[];liveId=null;refreshDay();renderAll();renderWeek();announce();
+  if(HH.state.read().running&&HH.state.read().running.dossierId===d.id)
+    delta.running=nextRules.find(r=>r.id===HH.state.read().running.id)||HH.state.read().running;
+  HH.state.commit(delta);
+  undoStack=[];liveId=null;refreshDay();HH.app.render();HH.renderCoordinator.render("week");announce();
   L("dvn-nummer","dos"+idKort(d.id)+" → "+nr+" · "+uit.rules.length+
     " regel(s)"+(uit.target?" · koppeling":""));
   toast("DVN gebruikt nu dossiernummer "+nr+" voor Intapp");sluitDvnNummerSheet(true);}
@@ -376,11 +380,12 @@ async function markeerDvnIngevoerd(){
   if(!confirm("Bevestig dat alle "+rs.length+" regel(s) / "+uu(u)+
     " uur voor dossier "+nr+" in Intapp zijn ingevoerd."))return;
   const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
-  try{uit=await adminServices.markDvnPosted({dossier:d,dossiers,rules:alle,
+  try{uit=await HH.services.admin.markDvnPosted({dossier:d,dossiers:HH.state.read().dossiers,
+    rules:HH.state.read().rules,
     hoursOf,nowMs,nowIso});}
   catch(e){L("FOUT-dvn-post",String(e));toast("Markeren mislukt — niets gewijzigd: "+e);return;}
   if(meldAdminFout(uit,"DVN is niet als afgehandeld gemarkeerd"))return;
-  memDossier(uit.dossier);renderAll();announce();
+  memDossier(uit.dossier);HH.app.render();announce();
   L("dvn-intapp",dosIdLog(id)+" · "+uit.rules.length+" regel(s) · "+uu(uit.total)+" u");
   toast("DVN afgehandeld — alles ingevoerd in Intapp");sluitDvnPostSheet(true);}
 
@@ -393,22 +398,22 @@ const LANG=180;
 function hideWake(){$("l-wake").classList.remove("on");}
 document.addEventListener("visibilitychange",()=>{if(document.hidden)flushOmschr();});
 function checkWake(){
-  if(!running||running.soort!=="werk"){hideWake();return;}
-  const mins=Math.max(0,(hm2m(nowHM())||0)-(hm2m(running.start)||0));
+  if(!HH.state.read().running||HH.state.read().running.soort!=="werk"){hideWake();return;}
+  const mins=Math.max(0,(hm2m(nowHM())||0)-(hm2m(HH.state.read().running.start)||0));
   if(mins<LANG||Date.now()<snoozeTot){hideWake();return;}
-  const naam=(dosOf(running.dossierId)||{}).naam||"deze taak";
+  const naam=(dosOf(HH.state.read().running.dossierId)||{}).naam||"deze taak";
   $("wake-txt").textContent="Deze regel loopt al "+Math.floor(mins/60)+" uur "+
     pad(mins%60)+" op "+naam+". Klopt dat nog?";
   $("l-wake").classList.add("on");}
 $("wake-ja").onclick=()=>{snoozeTot=Date.now()+60*60*1000;hideWake();};
 $("wake-nee").onclick=async()=>{hideWake();
-  await stopRunning(null,"stoppen na langloopmelding");await nieuweTaak();};
+  await stopRunning(null,"stoppen na langloopmelding");await HH.ui.newTask();};
 
 /* ---------- middernachtgrens ----------
    Een tijdregel kan niet over meerdere datums lopen. Er wordt daarom nooit
    stilzwijgend afgesloten of doorgeboekt: de gebruiker krijgt dezelfde expliciete
    keuzesheet als bij een herstart de volgende ochtend.                        */
 async function middernachtCheck(){
-  if(!timerServices.inspectOldTimer({currentTimer:running,date:today()}).old)return;
+  if(!HH.services.timer.inspectOldTimer({currentTimer:HH.state.read().running,date:today()}).old)return;
   if(typeof controleerOudeLopendeTaak==="function")controleerOudeLopendeTaak();
 }

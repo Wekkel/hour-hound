@@ -50,6 +50,7 @@ const src = {
   timerService: read('js/services/timer.js'),
   settings: read('js/services/settings.js'),
   state: read('js/state.js'),
+  appRuntime: read('js/app-runtime.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
@@ -73,6 +74,52 @@ function assertEq(actual, expected, msg){
 }
 function assertIncludes(text, needle, msg){ assert(text.includes(needle), msg || `Ontbreekt: ${needle}`); }
 function assertNotIncludes(text, needle, msg){ assert(!text.includes(needle), msg || `Mag niet voorkomen: ${needle}`); }
+
+function bareIdentifierReferences(code,names){
+  const wanted=new Set(names),hits=[];
+  const previous=index=>{for(let i=index-1;i>=0;i--)if(!/\s/.test(code[i]))return code[i];return'';};
+  const next=index=>{for(let i=index;i<code.length;i++)if(!/\s/.test(code[i]))return code[i];return'';};
+  const regexStart=index=>!previous(index)||/[=(:,!\[{;?+*%&|<>~\-]/.test(previous(index));
+  let i=0,line=1;
+  while(i<code.length){
+    const c=code[i],n=code[i+1];
+    if(c==='\n'){line++;i++;continue;}
+    if(c==='/'&&n==='/'){
+      const end=code.indexOf('\n',i);if(end<0)break;i=end;continue;
+    }
+    if(c==='/'&&n==='*'){
+      const end=code.indexOf('*/',i+2);if(end<0)break;
+      line+=(code.slice(i,end+2).match(/\n/g)||[]).length;i=end+2;continue;
+    }
+    if(c==='/'&&regexStart(i)){
+      let j=i+1,inClass=false,escaped=false;
+      for(;j<code.length;j++){
+        const x=code[j];if(x==='\n')line++;
+        if(escaped){escaped=false;continue;}if(x==='\\'){escaped=true;continue;}
+        if(x==='['){inClass=true;continue;}if(x===']'){inClass=false;continue;}
+        if(x==='/'&&!inClass){j++;while(/[a-z]/i.test(code[j]||''))j++;break;}
+      }
+      i=j;continue;
+    }
+    if(c==='"'||c==="'"||c==='`'){
+      const quote=c;let j=i+1,escaped=false;
+      for(;j<code.length;j++){
+        const x=code[j];if(x==='\n')line++;
+        if(escaped){escaped=false;continue;}if(x==='\\'){escaped=true;continue;}
+        if(x===quote){j++;break;}
+      }
+      i=j;continue;
+    }
+    if(/[A-Za-z_$]/.test(c)){
+      let j=i+1;while(/[A-Za-z0-9_$]/.test(code[j]||''))j++;
+      const word=code.slice(i,j),property=previous(i)==='.'||next(j)===':';
+      if(wanted.has(word)&&!property)hits.push({word,line});
+      i=j;continue;
+    }
+    i++;
+  }
+  return hits;
+}
 
 function scriptOrderFromHtml(){
   return [...src.html.matchAll(/<script\s+src="\.\/(js\/[^"?]+)"/g)].map(m => m[1]);
@@ -114,7 +161,7 @@ function evaluateCorePure(){
   vm.runInContext(src.settings, context, { filename: 'js/services/settings.js' });
   vm.runInContext(src.state, context, { filename: 'js/state.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
-    `appState.commit({dossiers:s.dossiers||[],templates:s.templates||[],codes:s.i7codes||[],rules:s.alle||[],overbookings:s.overboekingen||[],running:s.running||null,stack:s.stack||[],viewDate:s.viewDate||today(),dayEnds:s.dagEinde||{},dayAudit:s.dagAudit||{},roundingMode:s.rondMode||"groep",booked:s.geboekt||{},codeUsage:s.codeGebruik||{}});\n`+
+    `HH.state.commit({dossiers:s.dossiers||[],templates:s.templates||[],codes:s.i7codes||[],rules:s.alle||[],overbookings:s.overboekingen||[],running:s.running||null,stack:s.stack||[],viewDate:s.viewDate||today(),dayEnds:s.dagEinde||{},dayAudit:s.dagAudit||{},roundingMode:s.rondMode||"groep",booked:s.geboekt||{},codeUsage:s.codeGebruik||{}});\n`+
     `return true;\n};\n`+
     `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, normOms, simIntappTotaal, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp, codeFout, sumVan, overboekingOpenVoorRegel, overboekingVoorBronId, overboekingVoorRow, overboekingFingerprints, overboekingAfgerondVoorRow, overboekingState, overboekingStatusTekst, overboekingWijzigingen };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
@@ -224,15 +271,54 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/services/timer.js',
     'js/services/settings.js',
     'js/state.js',
+    'js/app-runtime.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
     ...uiFiles,
-    'js/controls.js',
     'js/io.js',
     'js/booking.js',
+    'js/controls.js',
     'js/app.js'
   ].join('\n'), 'Scriptvolgorde gewijzigd. Bij klassieke globals kan dat runtime breken.');
+});
+
+test('Patch S verwijdert tijdelijke globals en controleert runtime-dependencies', () => {
+  assertNotIncludes(src.state,'Object.defineProperty(root',
+    'Centrale state mag geen tijdelijke globale getters meer installeren');
+  assertNotIncludes(src.state,'const aliases=',
+    'De tijdelijke state-aliaslijst moet volledig verwijderd zijn');
+  assertIncludes(read('js/ui/day-view.js'),
+    'HH.state.selectors.day(HH.state.read().viewDate)',
+    'Dagregels moeten als pure selectie uit centrale state worden gelezen');
+
+  const consumerFiles=['js/core.js','js/timer.js','js/wizard.js','js/booking.js',
+    'js/io.js','js/app.js','js/controls.js',...uiFiles];
+  const forbidden=['db','dossiers','templates','i7codes','alle','running','stack',
+    'overboekingen','dagEinde','dagAudit','geboekt','rondMode','codeGebruik',
+    'viewDate','weekAnchor','tab','appState','stateSelectors','adminServices',
+    'dayRuleServices','timerServices','settingsServices','storageGateway',
+    'storageRepos','uiModals','renderAll','showTab'];
+  for(const file of consumerFiles){
+    const hits=bareIdentifierReferences(read(file),forbidden);
+    assertEq(hits.map(hit=>`${hit.word}@${hit.line}`).join(','),'',
+      `${file} gebruikt nog een tijdelijke globale alias`);
+  }
+
+  assertIncludes(src.appRuntime,'function assertReady()',
+    'De runtime moet ontbrekende namespaces en UI-registraties expliciet controleren');
+  assertIncludes(src.app,'HH.app.assertReady();',
+    'De dependencycheck moet vóór de boot worden uitgevoerd');
+  assertIncludes(src.wizard,'HH.ui.newTask=nieuweTaak',
+    'Nieuwe taak moet via een expliciete UI-runtime-ingang beschikbaar zijn');
+  assertIncludes(src.booking,'HH.ui.bookingKeys=boekKeys',
+    'Boekingssneltoetsen moeten vóór controls expliciet geregistreerd zijn');
+  const order=scriptOrderFromHtml();
+  assert(order.indexOf('js/wizard.js')<order.indexOf('js/controls.js'),
+    'Nieuwe taak moet vóór controls geregistreerd zijn');
+  assert(order.indexOf('js/booking.js')<order.indexOf('js/controls.js'),
+    'Boekingssneltoetsen moeten vóór controls geregistreerd zijn');
+  assertEq(order.at(-1),'js/app.js','Boot moet als laatste script draaien');
 });
 
 test('Patch R splitst UI per scherm en rol zonder nieuwe megabestanden', () => {
@@ -249,13 +335,13 @@ test('Patch R splitst UI per scherm en rol zonder nieuwe megabestanden', () => {
     const code=read(file);
     for(const forbidden of ['putK(','put(','del(','tx(','txAll(','getAll(',
       'addEventListener(','.onclick=','.onchange=','bookingDomain','dvnDomain',
-      'overbookingDomain','storageGateway','storageRepos'])
+      'overbookingDomain','HH.storage.indexedDB','HH.storage.repositories'])
       assertNotIncludes(code,forbidden,`${file} moet uitsluitend renderen/selecteren`);
   }
   for(const file of uiFiles.filter(file=>file.endsWith('-controller.js'))){
     const code=read(file);
     for(const forbidden of ['putK(','put(','del(','tx(','txAll(','getAll(',
-      'bookingDomain','dvnDomain','overbookingDomain','storageGateway','storageRepos'])
+      'bookingDomain','dvnDomain','overbookingDomain','HH.storage.indexedDB','HH.storage.repositories'])
       assertNotIncludes(code,forbidden,`${file} mag opslag en domeinen niet rechtstreeks importeren`);
   }
 });
@@ -273,25 +359,25 @@ test('Patch R gebruikt één modal- en keyboardguard', () => {
   const modal=read('js/ui/modal.js');
   for(const id of ['dayclose','oldrun','editregel','dvnnum','dvnpost','boek','parkboek',
     'overboekpost','herstel'])assertIncludes(modal,`"${id}"`,`Centrale modalguard mist ${id}`);
-  assertIncludes(src.controls,'const modal=uiModals.blocksGlobalKeyboard()',
+  assertIncludes(src.controls,'const modal=HH.ui.modals.blocksGlobalKeyboard()',
     'Globale sneltoetsen moeten de centrale modalguard gebruiken');
   assertNotIncludes(src.controls,'["dayclose","oldrun"',
     'Controls mag geen tweede lijst met modal-IDs onderhouden');
-  assertIncludes(read('js/ui/day-editor-controller.js'),'const isModalOpen=()=>uiModals.anyOpen()',
+  assertIncludes(read('js/ui/day-editor-controller.js'),'const isModalOpen=()=>HH.ui.modals.anyOpen()',
     'Oude-timercontrole moet dezelfde centrale modalstatus gebruiken');
 });
 
 test('Patch R UI-instellingen en Beheer-mutaties lopen via services', () => {
-  assertIncludes(src.controls,'settingsServices.save("thema"',
+  assertIncludes(src.controls,'HH.services.settings.save("thema"',
     'Themakeuze moet via de configuratieservice opslaan');
-  assertIncludes(read('js/ui/day-controller.js'),'settingsServices.save("rondMode"',
+  assertIncludes(read('js/ui/day-controller.js'),'HH.services.settings.save("rondMode"',
     'Afrondingsmodus moet via de configuratieservice opslaan');
-  assertIncludes(src.booking,'settingsServices.save("geboekt"',
+  assertIncludes(src.booking,'HH.services.settings.save("geboekt"',
     'Boekstatus moet via de configuratieservice opslaan');
   const manage=read('js/ui/manage-controller.js');
   for(const method of ['saveDossier','deleteDossier','clearTrackedData'])
-    assertIncludes(manage,`adminServices.${method}`,`Beheer moet ${method} via de service uitvoeren`);
-  assertIncludes(src.wizard,'adminServices.saveDvnRename',
+    assertIncludes(manage,`HH.services.admin.${method}`,`Beheer moet ${method} via de service uitvoeren`);
+  assertIncludes(src.wizard,'HH.services.admin.saveDvnRename',
     'De DVN-wizard mag zijn transactie niet zelf bezitten');
 });
 
@@ -325,9 +411,9 @@ test('rendercoördinator voert alleen gevraagde views uit', () => {
   assertEq(calls.join(','),'b','Gerichte render mag geen niet-betrokken view uitvoeren');
   HH.renderCoordinator.render(['a','a']);
   assertEq(calls.join(','),'b,a','Een view mag per rendercoördinatie maar één keer draaien');
-  assertIncludes(src.app,'renderCoordinator.register("live",renderLive)',
+  assertIncludes(src.app,'HH.renderCoordinator.register("live",renderLive)',
     'Productierenders moeten bij de coördinator geregistreerd zijn');
-  assertIncludes(src.app,'renderCoordinator.render(["live","totals"])',
+  assertIncludes(src.app,'HH.renderCoordinator.render(["live","totals"])',
     'De timer-tick mag uitsluitend live en totalen renderen');
 });
 
@@ -337,7 +423,7 @@ test('state-commit volgt opslag en tab-synchronisatie blijft veilig', () => {
   const save=src.timer.slice(src.timer.indexOf('const saveRegel='),
     src.timer.indexOf('function refreshDay'));
   assert(save.indexOf('const p=vorige.then')>=0&&
-    save.indexOf('appState.commit(delta)')>save.indexOf('const p=vorige.then'),
+    save.indexOf('HH.state.commit(delta)')>save.indexOf('const p=vorige.then'),
     'Een regelwrite moet pas na de geslaagde opslag naar runtime-state committen');
   const forbidden=/(?<!\.)\b(?:viewDate|weekAnchor|rondMode|dagEinde|dagAudit|geboekt|overboekingen|running|stack|alle|dossiers)\s*=(?!=)/;
   assert(!forbidden.test(src.views),
@@ -350,7 +436,7 @@ test('state-commit volgt opslag en tab-synchronisatie blijft veilig', () => {
     'Uitgesteld herladen na focus-save moet aanwezig blijven');
 });
 
-test('N, T, O en P bouwen timerinput met de centrale dagaudit', () => {
+test('N, T, O en P doorlopen hun echte adapter zonder ontbrekende globals', async() => {
   const {context,setState}=evaluateCorePure();
   const audit={'2026-08-25':{events:[{type:'gesloten',t:'test'}]}};
   setState({dagEinde:{'2026-08-25':'17:00'},dagAudit:audit});
@@ -361,8 +447,32 @@ test('N, T, O en P bouwen timerinput met de centrale dagaudit', () => {
   assertEq(inputs.length,4,'De vier basale timerpaden moeten invoer kunnen bouwen');
   inputs.forEach(input=>assertEq(JSON.stringify(input.dayAudit),JSON.stringify(audit),
     'Timerinput moet dagAudit uit de centrale state als dayAudit doorgeven'));
-  assertIncludes(src.timer,'dayAudit:dagAudit',
-    'De Nederlandse state-alias moet expliciet naar het serviceveld worden vertaald');
+  assertIncludes(src.timer,'dayAudit:HH.state.read().dayAudit',
+    'Timerinput moet dagaudit rechtstreeks uit de centrale state lezen');
+
+  const captured=[];
+  const transition=async input=>{
+    captured.push(input);
+    const closedRule=input.currentTimer?{...input.currentTimer,eind:input.time,uren:0.1}:null;
+    const rule={id:input.id,datum:input.date,start:input.time,eind:null,
+      dossierId:input.dossierId,code:input.code,omschrijving:input.description,
+      soort:input.kind,uren:0.1,urenHand:false,gewijzigd:input.nowMs};
+    return{autoRemoved:[],closedRule,rule,dossiers:[],codeUsage:input.codeUsage,
+      stackChanged:Object.prototype.hasOwnProperty.call(input,'stackAfter'),
+      stack:input.stackAfter||input.stack,dayWasClosed:false};
+  };
+  context.HH.services.timer={...context.HH.services.timer,
+    start:transition,interrupt:transition,pause:transition};
+  context.HH.app.render=()=>{};
+  vm.runInContext(src.wizard,context,{filename:'js/wizard.js'});
+  await context.HH.ui.newTask();
+  await vm.runInContext('interrupt("telefoon","Telefoon")',context);
+  await vm.runInContext('interrupt("onderbreking","Onderbreking")',context);
+  await vm.runInContext('pauze()',context);
+  assertEq(captured.map(input=>input.kind).join(','),
+    'werk,telefoon,onderbreking,pauze','N, T, O en P moeten elk hun echte timerroute bereiken');
+  captured.forEach(input=>assertEq(JSON.stringify(input.dayAudit),JSON.stringify(audit),
+    'Ook de echte timerroute moet de centrale dagaudit doorgeven'));
 });
 
 test('IndexedDB-gateway bewaart exact database 4 en het bestaande schema', async() => {
@@ -445,23 +555,23 @@ test('repositories laden één snapshot en laten geheugen intact bij databasefou
   const reload=reloadBegin>=0&&reloadEnd>reloadBegin
     ?src.app.slice(reloadBegin,reloadEnd):'';
   assert(reload,'herlaad() met snapshot ontbreekt');
-  const loaded=reload.indexOf('await storageRepos.loadSnapshot()');
-  assert(loaded>=0&&reload.indexOf('appState.commit(delta)')>loaded,
+  const loaded=reload.indexOf('await HH.storage.repositories.loadSnapshot()');
+  assert(loaded>=0&&reload.indexOf('HH.state.commit(delta)')>loaded,
     'Productiecode moet database eerst afwachten en state daarna één keer vervangen');
   assertNotIncludes(reload,'await getAll(','Herlaad mag geen gedeeltelijke losse storelezingen doen');
 });
 
 test('compatibiliteitshelpers delegeren en use-case-transacties blijven heel', () => {
   for(const line of [
-    'const tx=(s,mode,fn)=>storageGateway.tx(s,mode,fn)',
-    'const getAll=s=>storageGateway.getAll(s)',
-    'const get=(s,k)=>storageGateway.get(s,k)',
-    'const put=(s,v)=>storageGateway.put(s,v)',
-    'const putK=(s,v,k)=>storageGateway.putKey(s,v,k)',
-    'const del=(s,k)=>storageGateway.remove(s,k)',
-    'const replaceAll=(s,rows)=>storageGateway.replaceAll(s,rows)'])
+    'const tx=(s,mode,fn)=>HH.storage.indexedDB.tx(s,mode,fn)',
+    'const getAll=s=>HH.storage.indexedDB.getAll(s)',
+    'const get=(s,k)=>HH.storage.indexedDB.get(s,k)',
+    'const put=(s,v)=>HH.storage.indexedDB.put(s,v)',
+    'const putK=(s,v,k)=>HH.storage.indexedDB.putKey(s,v,k)',
+    'const del=(s,k)=>HH.storage.indexedDB.remove(s,k)',
+    'const replaceAll=(s,rows)=>HH.storage.indexedDB.replaceAll(s,rows)'])
     assertIncludes(src.core,line,'Bestaande opslaghelper moet rechtstreeks delegeren');
-  assertIncludes(src.core,'const TXALL=storageGateway.TIMER_STORES',
+  assertIncludes(src.core,'const TXALL=HH.storage.indexedDB.TIMER_STORES',
     'Timertransacties moeten dezelfde centrale storelijst gebruiken');
   assertIncludes(src.io,'tx(["dossiers","regels","templates","codes","overboekingen","meta"],"readwrite"',
     'Volledige import moet één transactie over alle betrokken stores blijven');
@@ -627,7 +737,7 @@ test('administratieve UI-adapters schrijven niet meer rechtstreeks naar opslag',
   ];
   for(const [source,start,end] of workflows){
     const body=slice(source,start,end);assert(body,`Workflow ontbreekt: ${start}`);
-    assertIncludes(body,'adminServices.',`${start} moet de administratieve service aanroepen`);
+    assertIncludes(body,'HH.services.admin.',`${start} moet de administratieve service aanroepen`);
     for(const forbidden of ['await put(','await tx(','await txAll(','getAll("overboekingen")'])
       assertNotIncludes(body,forbidden,`${start} mag niet rechtstreeks naar opslag schrijven`);
   }
@@ -722,12 +832,12 @@ test('Dag-UI is alleen adapter voor dag- en regelmutaties', () => {
   const slice=(start,end)=>{const a=src.views.indexOf(start),b=src.views.indexOf(end,a+1);
     assert(a>=0&&b>a,`Workflowgrens ontbreekt: ${start}`);return src.views.slice(a,b);};
   const workflows=[
-    [slice('async function sluitWerkdag','/* ---------- bewuste regelbewerking'),'timerServices.closeDay'],
-    [slice('function openRegelEditor','function controleerOudeLopendeTaak'),'timerServices.editRule'],
-    [slice('async function vulAanTot8','async function heropenWerkdag'),'dayRuleServices.autoFillDay'],
-    [slice('async function heropenWerkdag','$("d-fill").onclick'),'dayRuleServices.reopenDay'],
-    [slice('async function maakLopend','$("d-prev").onclick'),'timerServices.reopenRule'],
-    [slice('$("d-table").addEventListener','/* De enige manier'),'timerServices.deleteRule']
+    [slice('async function sluitWerkdag','/* ---------- bewuste regelbewerking'),'HH.services.timer.closeDay'],
+    [slice('function openRegelEditor','function controleerOudeLopendeTaak'),'HH.services.timer.editRule'],
+    [slice('async function vulAanTot8','async function heropenWerkdag'),'HH.services.dayRules.autoFillDay'],
+    [slice('async function heropenWerkdag','$("d-fill").onclick'),'HH.services.dayRules.reopenDay'],
+    [slice('async function maakLopend','$("d-prev").onclick'),'HH.services.timer.reopenRule'],
+    [slice('$("d-table").addEventListener','/* De enige manier'),'HH.services.timer.deleteRule']
   ];
   for(const [body,serviceCall] of workflows){
     assertIncludes(body,serviceCall,`${serviceCall} ontbreekt in de UI-adapter`);
@@ -735,7 +845,7 @@ test('Dag-UI is alleen adapter voor dag- en regelmutaties', () => {
       'o.meta.put','o.meta.delete'])assertNotIncludes(body,forbidden,
         `${serviceCall} mag niet rechtstreeks regels of dagmetadata schrijven`);
   }
-  assertIncludes(src.views,'dayRuleServices.addRule','Handmatig toevoegen moet ook via de service');
+  assertIncludes(src.views,'HH.services.dayRules.addRule','Handmatig toevoegen moet ook via de service');
   assertNotIncludes(src.dayRules,'document','De dagservice mag de DOM niet lezen');
   assertNotIncludes(src.dayRules,'confirm(','Bevestigingen blijven eigendom van de UI');
   assertNotIncludes(src.dayRules,'toast(','Meldingen blijven eigendom van de UI');
@@ -942,7 +1052,7 @@ test('core en io zijn niet langer afhankelijk van berekeningen uit views', () =>
   assertIncludes(src.core,'function sumVan(lijst)','Core moet via een dunne aggregatieadapter werken');
   assertIncludes(src.core,'return bookingDomain.validateDay(lijst,',
     'De core-adapter moet dagvalidatie via de pure boekingslaag uitvoeren');
-  assertIncludes(src.views,'valideerBoekDag(regels)',
+  assertIncludes(src.views,'valideerBoekDag(HH.state.selectors.day(HH.state.read().viewDate))',
     'De UI moet de core-adapter voor dagvalidatie gebruiken');
   assertIncludes(src.core,'const {NORM,DAGMAX}=bookingDomain',
     'Core en io moeten constanten uit de boekingslaag beschikbaar krijgen');
@@ -1032,7 +1142,7 @@ test('weekenddagen vallen centraal buiten afsluitplicht en 8-uursaanvulling', ()
     'Nu mag in het weekend geen 8-uursvoortgang tonen');
   assertIncludes(src.views, '"uur verantwoord · weekend"',
     'Nu moet weekenduren zonder 8-uursnorm labelen');
-  assertIncludes(src.views, '$("d-fill").style.display=werkdag(viewDate)?"":"none"',
+  assertIncludes(src.views, '$("d-fill").style.display=werkdag(HH.state.read().viewDate)?"":"none"',
     'De Dag-weergave mag de 8-uursaanvulactie in het weekend niet suggereren');
 });
 
@@ -1106,13 +1216,13 @@ test('i7-codeplicht heeft geen stille standaard en lokale codes blijven leidend'
   assertEq(api.codeVoor(ind,null),null,'Ook codeVoor() moet i7 zonder expliciete keuze leeg laten');
   assertEq(api.codeVoor(ind,'ADM'),'ADM','Een expliciete geldige i7-code moet behouden blijven');
   assertEq(api.defaultCode(dvn),'COM','DVN moet juist wel vast op Commercieel staan');
-  assertIncludes(src.app, 'if(lokaal.length){\n    appState.commit({codes:lokaal});',
+  assertIncludes(src.app, 'if(lokaal.length){\n    HH.state.commit({codes:lokaal});',
     'laadWerkcodes() moet een lokale werklijst vóór netwerkbootstrap gebruiken');
   assertIncludes(src.app, 'return false;}\n  let d=null;',
     'Een bestaande lokale werklijst moet de werkcodes.json-bootstrap overslaan');
-  assertIncludes(src.wizard, 'if(d&&d.isI7&&!running.code)',
+  assertIncludes(src.wizard, 'if(d&&d.isI7&&!HH.state.read().running.code)',
     'De N-wizard moet i7 zonder expliciete code blokkeren');
-  assertIncludes(src.wizard, 'if(!i7codes.some(c=>c.code===code))',
+  assertIncludes(src.wizard, 'if(!HH.state.read().codes.some(c=>c.code===code))',
     'De wizard moet een stale i7-keuze tegen de actuele lokale lijst controleren');
 });
 
@@ -1213,7 +1323,7 @@ test('recente taken worden pas gemeten wanneer Nu zichtbaar is', () => {
     'renderRecent moet weten of de Nu-tab zichtbaar en meetbaar is');
   assertIncludes(src.views, 'if(tk.length>4&&meetbaar)',
     'Een verborgen recente-takenlijst mag geen nulhoogte opslaan');
-  assertIncludes(src.app, 'if(v==="nu")renderCoordinator.render("recent")',
+  assertIncludes(src.appRuntime, 'if(value==="nu")HH.renderCoordinator.render("recent")',
     'Terugkeren naar Nu moet de recente-takenhoogte opnieuw berekenen');
 });
 
@@ -1221,7 +1331,7 @@ test('modal/sheet staat globale sneltoetsen niet toe', () => {
   for (const id of ['dayclose', 'oldrun', 'editregel', 'dvnnum', 'dvnpost', 'boek', 'herstel']) {
     assertIncludes(src.modal, `"${id}"`, `Centrale modalregistry mist ${id}`);
   }
-  assertIncludes(src.controls, 'uiModals.blocksGlobalKeyboard()',
+  assertIncludes(src.controls, 'HH.ui.modals.blocksGlobalKeyboard()',
     'Controls moet de centrale modalguard gebruiken');
 });
 
@@ -1230,7 +1340,7 @@ test('dagafsluiting gebruikt expliciete sheet en auditvelden', () => {
   assertIncludes(src.views, 'function dagAfsluitKeuze', 'Dagafsluitkeuze moet via sheet lopen');
   assertIncludes(src.dayRules, 'dayAuditAfter(input.dayAudit,input.date,"gesloten"',
     'Dagafsluitservice moet audit schrijven');
-  assertIncludes(src.views, 'timerServices.closeDay',
+  assertIncludes(src.views, 'HH.services.timer.closeDay',
     'De afsluitsheet moet de dagservice via TimerService aanroepen');
   assertIncludes(src.views, 'function heropenWerkdag', 'Heropenfunctie ontbreekt');
   assertIncludes(src.views, 'autoAanvulRegels', 'Heropenen moet automatische aanvulregels kennen');
@@ -1246,7 +1356,7 @@ test('auto-aanvultekort kent alleen tekort of geen aanvulling', () => {
 });
 
 test('Patch P.1 herstelt DVN-normalisatie en Intapp-dagtotaal', () => {
-  const { api, setState } = evaluateCorePure();
+  const { api, setState, context } = evaluateCorePure();
   assertEq(api.normOms('  Bouwfonds\n  Zuid  '),'bouwfonds zuid',
     'DVN-zoektekst moet via de gedeelde booking-normalisatie lopen');
   const dossier={id:'d-p1',nummer:'304000123',naam:'Dossier P1',codes:[]};
@@ -1255,6 +1365,18 @@ test('Patch P.1 herstelt DVN-normalisatie en Intapp-dagtotaal', () => {
   setState({dossiers:[dossier],alle:[regel],regels:[regel],viewDate:'2026-08-25',rondMode:'groep'});
   assertEq(api.simIntappTotaal([regel]),1,
     'Dagtotaal voor Samengevat voor Intapp moet afgeronde Intapp-uren teruggeven');
+  vm.runInContext(read('js/ui/day-view.js'),context,{filename:'js/ui/day-view.js'});
+  const rows=vm.runInContext('sumRows()',context);
+  assertEq(rows.length,1,'Samengevat voor Intapp moet de actuele dagselector gebruiken');
+  assertEq(rows[0].u,1,'De zichtbare Intapp-samenvatting moet het dagtotaal behouden');
+
+  const dvn={id:'d-p1-dvn',naam:'Bouwfonds Zuid',voorlopig:true,dvn:true,codes:[]};
+  setState({dossiers:[dossier,dvn],alle:[regel],viewDate:'2026-08-25'});
+  vm.runInContext(src.timer,context,{filename:'js/timer.js'});
+  vm.runInContext(src.wizard,context,{filename:'js/wizard.js'});
+  const matches=vm.runInContext('ntVoorlopigeDossiers("  BOUWFONDS ")',context);
+  assertEq(matches.map(item=>item.id).join(','),dvn.id,
+    'De concrete DVN-keuzeroute moet normaliseren zonder ReferenceError');
   assertIncludes(src.wizard,'normOms(',
     'De DVN-wizard moet de gedeelde normalisatieadapter blijven gebruiken');
   assertIncludes(src.core,'const normOms=bookingDomain.normalizeDescription',
@@ -1524,9 +1646,9 @@ test('oude timer en editor volgen het TimerService-contract', () => {
   assertIncludes(src.timer, 'function middernachtCheck', 'middernachtCheck ontbreekt');
   const midnight = (src.timer.match(/async function middernachtCheck\(\)\{[\s\S]*?\n\}/) || [''])[0];
   assertNotIncludes(midnight, 'await _stop', 'middernachtCheck mag niet rechtstreeks stoppen');
-  assertIncludes(src.timer, 'timerServices.inspectOldTimer',
+  assertIncludes(src.timer, 'HH.services.timer.inspectOldTimer',
     'Een oude timer moet eerst zonder mutatie door TimerService worden geïnspecteerd');
-  assertIncludes(src.views, 'timerServices.editRule',
+  assertIncludes(src.views, 'HH.services.timer.editRule',
     'Bewerken van de lopende regel moet door TimerService lopen');
   assertNotIncludes(src.views, 'meta.delete("running")',
     'De viewlaag mag meta.running niet rechtstreeks wijzigen');
@@ -1537,7 +1659,7 @@ test('timer-invariant herstelt alleen eenduidige state en blokkeert conflicten',
   const einde=src.app.indexOf('\nfunction openRegels()',begin);
   const herstel=begin>=0&&einde>begin?src.app.slice(begin,einde):'';
   assert(herstel,'herstelInvariant() ontbreekt');
-  assertIncludes(herstel,'timerServices.repairInvariant',
+  assertIncludes(herstel,'HH.services.timer.repairInvariant',
     'Opstartreparatie moet door TimerService lopen');
   assertIncludes(src.timerService,'if(open.length>1)',
     'Meerdere open regels moeten expliciet als conflict worden behandeld');

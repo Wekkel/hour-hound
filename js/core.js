@@ -80,8 +80,6 @@ const {pad,uu,ymd,today,nowHM,hm2m,m2hm,dmy,parseD,addD,dagLabel,kortDag,
   weekend,werkdag,schoon}=HH.domain.time;
 const bookingDomain=HH.domain.booking;
 const dvnDomain=HH.domain.dvn,overbookingDomain=HH.domain.overbooking;
-const adminServices=HH.services.admin,dayRuleServices=HH.services.dayRules,
-  timerServices=HH.services.timer,settingsServices=HH.services.settings;
 const adminFoutTekst={invalid_dvn:"Deze DVN is niet meer beschikbaar",
   number_required:"Vul eerst een dossiernummer in",
   target_is_dvn:"Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.",
@@ -141,20 +139,19 @@ function pasMutatieUndoToe(undo){
   else undoData(undo.label,undo.rules,{weg:undo.remove});
 }
 function vervangOverboekingenGeheugen(updated){
-  appState.commit({overbookings:mergeById(overboekingen,updated||[])});
+  HH.state.commit({overbookings:mergeById(HH.state.read().overbookings,updated||[])});
 }
 const {NORM,DAGMAX}=bookingDomain,VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 const autoAanvulTekort=bookingDomain.autoFillShortfall;
 
-const appState=HH.state,stateSelectors=appState.selectors;
 let liveId=null;
 let hiddenAt=null,snoozeTot=0,openDagenSnooze=0,oldRunSnooze=0;
 /* Centrale waarheid voor de actuele dagafsluitstatus. UI-code leest niet meer
    zelfstandig in dagEinde: zo kunnen banners, Dag-status en afsluitsheet niet
    onderling van mening verschillen na sluiten of heropenen. */
 function dagSluitStatus(datum){
-  const eind=(dagEinde&&Object.prototype.hasOwnProperty.call(dagEinde,datum))?dagEinde[datum]:null;
-  const a=dagAudit&&dagAudit[datum],events=a&&Array.isArray(a.events)?a.events:[];
+  const eind=(HH.state.read().dayEnds&&Object.prototype.hasOwnProperty.call(HH.state.read().dayEnds,datum))?HH.state.read().dayEnds[datum]:null;
+  const a=HH.state.read().dayAudit&&HH.state.read().dayAudit[datum],events=a&&Array.isArray(a.events)?a.events:[];
   const lastEvent=events.length?events[events.length-1]:null;
   return{datum,open:eind==null,gesloten:eind!=null,eind:eind||null,
     heropend:eind==null&&!!(lastEvent&&lastEvent.type==="heropend"),lastEvent};}
@@ -166,21 +163,20 @@ const bc=("BroadcastChannel" in window)?new BroadcastChannel("hourhound"):null;
 /* ---------- opslag ----------
    Tijdelijke globale adapters houden bestaande scripts compatibel. Schema,
    transacties en repositories hebben één implementatie in de storagegateway. */
-const storageGateway=HH.storage.indexedDB,storageRepos=HH.storage.repositories;
-function openDB(){return storageGateway.open({onVersionChange:()=>
+function openDB(){return HH.storage.indexedDB.open({onVersionChange:()=>
   toast("Database elders bijgewerkt — herlaad de pagina")});}
-const tx=(s,mode,fn)=>storageGateway.tx(s,mode,fn);
-const getAll=s=>storageGateway.getAll(s);
-const get=(s,k)=>storageGateway.get(s,k);
-const put=(s,v)=>storageGateway.put(s,v);
-const putK=(s,v,k)=>storageGateway.putKey(s,v,k);
-const del=(s,k)=>storageGateway.remove(s,k);
-const replaceAll=(s,rows)=>storageGateway.replaceAll(s,rows);
+const tx=(s,mode,fn)=>HH.storage.indexedDB.tx(s,mode,fn);
+const getAll=s=>HH.storage.indexedDB.getAll(s);
+const get=(s,k)=>HH.storage.indexedDB.get(s,k);
+const put=(s,v)=>HH.storage.indexedDB.put(s,v);
+const putK=(s,v,k)=>HH.storage.indexedDB.putKey(s,v,k);
+const del=(s,k)=>HH.storage.indexedDB.remove(s,k);
+const replaceAll=(s,rows)=>HH.storage.indexedDB.replaceAll(s,rows);
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 /* Eén transactie over regels, meta en dossiers. Elke toestandsovergang van de timer
    wordt hierin volledig geschreven of helemaal niet, en het geheugen wordt pas
    bijgewerkt nadat de transactie is geslaagd.                                    */
-const TXALL=storageGateway.TIMER_STORES;
+const TXALL=HH.storage.indexedDB.TIMER_STORES;
 function txAll(fn){return tx(TXALL,"readwrite",fn);}
 
 /* ---------- schrijfacties per regel geserialiseerd ----------
@@ -220,7 +216,7 @@ function planOmschr(id,tekst){
   omsWacht=p;
   try{localStorage.setItem("hh-oms",JSON.stringify({id,tekst}));}catch(e){}}
 function schrijfOms(p){
-  const r=alle.find(x=>x.id===p.id);
+  const r=HH.state.read().rules.find(x=>x.id===p.id);
   if(!r)return Promise.resolve();
   const gewijzigd=Object.assign({},r,{omschrijving:p.tekst});
   const kl=()=>{try{const n=JSON.parse(localStorage.getItem("hh-oms")||"null");
@@ -236,8 +232,8 @@ function pakOmschr(id){
     try{localStorage.removeItem("hh-oms");}catch(e){}
     return t;}
   return null;}
-function memRegel(r){appState.upsert("rules",r);}
-function memDossier(d){appState.upsert("dossiers",d);}
+function memRegel(r){HH.state.upsert("rules",r);}
+function memDossier(d){HH.state.upsert("dossiers",d);}
 let logboek=[],logOms=false,logT=null,appVer="?";
 const kort=(s,n)=>{s=String(s==null?"":s);
   return s.length>(n||34)?s.slice(0,n||34)+"…":s;};
@@ -290,7 +286,7 @@ async function undo(){
   const a=undoStack.pop();
   if(!a){toast("Niets om ongedaan te maken");return;}
   if(a.soort==="timer")return undoTimerStap(a);
-  const runId=running?running.id:null;
+  const runId=HH.state.read().running?HH.state.read().running.id:null;
   const weg=a.weg||[];
   /* Een gegevensstap mag geen open regel terugzetten die niet de lopende timer is,
      en mag de lopende regel niet afsluiten of weggooien.                        */
@@ -303,43 +299,43 @@ async function undo(){
     await tx("regels","readwrite",o=>{
       a.regels.forEach(r=>o.put(r));weg.forEach(id=>o.delete(id));});
   }catch(e){L("FOUT-ongedaan",String(e));toast("Ongedaan maken mislukt: "+e);return;}
-  const nextRules=mergeById(zonderIds(alle,weg),a.regels),delta={rules:nextRules};
-  if(runId)delta.running=nextRules.find(x=>x.id===runId)||running;
-  appState.commit(delta);
-  liveId=null;bouwDag();renderAll();announce();
+  const nextRules=mergeById(zonderIds(HH.state.read().rules,weg),a.regels),delta={rules:nextRules};
+  if(runId)delta.running=nextRules.find(x=>x.id===runId)||HH.state.read().running;
+  HH.state.commit(delta);
+  liveId=null;HH.renderCoordinator.render("day");HH.app.render();announce();
   L("ongedaan","gegevens · "+(a.label||"actie")+" · "+a.regels.length+" regel(s)");
   toast("Ongedaan: "+(a.label||"laatste wijziging")+" — "+
     undoStack.length+" stap(pen) over");}
 async function undoTimerStap(a){
-  const nu=running?running.id:null;
+  const nu=HH.state.read().running?HH.state.read().running.id:null;
   if(nu!==a.verwachtRunning){
     L("undo-geweigerd","timerstatus is inmiddels veranderd");
     toast("Er loopt inmiddels een andere timer — deze stap wordt niet teruggedraaid");
     return;}
   const scheef=(a.verwacht||[]).find(v=>{
-    const r=alle.find(x=>x.id===v.id);
+    const r=HH.state.read().rules.find(x=>x.id===v.id);
     return v.gewijzigd==null?!!r:(!r||(r.gewijzigd||0)!==v.gewijzigd);});
   if(scheef){
     L("undo-geweigerd","betrokken regel is inmiddels gewijzigd");
     toast("De betrokken regel is inmiddels gewijzigd — niet teruggedraaid");return;}
-  const weg=a.weg||[],uit=await timerServices.restoreUndo({currentTimer:running,
-    readCurrentTimer:()=>running,rules:a.regels,remove:weg,restoreRunningId:a.herstelRunning,
+  const weg=a.weg||[],uit=await HH.services.timer.restoreUndo({currentTimer:HH.state.read().running,
+    readCurrentTimer:()=>HH.state.read().running,rules:a.regels,remove:weg,restoreRunningId:a.herstelRunning,
     waitForRules:rustig});
   if(await meldTimerFout(uit,"Ongedaan maken is niet uitgevoerd"))return;
-  const nextRules=mergeById(zonderIds(alle,weg),uit.rules);
-  appState.commit({rules:nextRules,running:uit.currentTimerId?
+  const nextRules=mergeById(zonderIds(HH.state.read().rules,weg),uit.rules);
+  HH.state.commit({rules:nextRules,running:uit.currentTimerId?
     (nextRules.find(x=>x.id===uit.currentTimerId)||null):null});
-  liveId=null;bouwDag();renderAll();announce();
+  liveId=null;HH.renderCoordinator.render("day");HH.app.render();announce();
   L("ongedaan","timer · "+(a.label||"actie"));
   toast("Ongedaan: "+(a.label||"timerwijziging")+" — "+
     undoStack.length+" stap(pen) over");}
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");
   clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),2600);}
 let syncOpen=false;
-function announce(){if(bc)try{bc.postMessage({from:TABID,timer:!!running});}catch(e){}}
+function announce(){if(bc)try{bc.postMessage({from:TABID,timer:!!HH.state.read().running});}catch(e){}}
 if(bc)bc.onmessage=async e=>{
-  if(!e.data||e.data.from===TABID||!db)return;
-  if(e.data.timer&&running)
+  if(!e.data||e.data.from===TABID||!HH.state.read().db)return;
+  if(e.data.timer&&HH.state.read().running)
     toast("Let op: een ander venster van hourhound beheert ook een timer — sluit dat venster");
   const a=document.activeElement;
   if(a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)){syncOpen=true;return;}
@@ -351,25 +347,26 @@ document.addEventListener("focusout",()=>{
     herlaad();},200);});
 
 /* ---------- model ---------- */
-const dosOf=id=>dossiers.find(d=>d.id===id);
-const i7=()=>dossiers.find(d=>d.isI7);
-const actief=()=>dossiers.filter(d=>!d.archief);
+const dosOf=id=>HH.state.read().dossiers.find(d=>d.id===id);
+const i7=()=>HH.state.read().dossiers.find(d=>d.isI7);
+const actief=()=>HH.state.read().dossiers.filter(d=>!d.archief);
 const isDvn=dvnDomain.isDvn;
 const dvnDefinitiefI7=dvnDomain.isFinalI7;
 const isIndirect=dvnDomain.isIndirect;
 const dosVeld=d=>d?(d.nummer||d.naam):"";
 const overboekingOpen=overbookingDomain.isOpen;
 const bronIdsVan=overbookingDomain.sourceIds;
-const overboekingOpenVoorRegel=id=>overbookingDomain.openForRule(id,overboekingen);
-const overboekingVoorBronId=id=>overbookingDomain.forSourceId(id,overboekingen);
+const overboekingOpenVoorRegel=id=>overbookingDomain.openForRule(id,HH.state.read().overbookings);
+const overboekingVoorBronId=id=>overbookingDomain.forSourceId(id,HH.state.read().overbookings);
 const overboekingBronMatch=(row,o,datum)=>
-  overbookingDomain.sourceMatches(row,o,datum||viewDate);
+  overbookingDomain.sourceMatches(row,o,datum||HH.state.read().viewDate);
 const overboekingVoorRow=(row,datum)=>
-  overbookingDomain.waitingForRow(row,datum||viewDate,overboekingen);
+  overbookingDomain.waitingForRow(row,datum||HH.state.read().viewDate,HH.state.read().overbookings);
 const overboekingFingerprints=overbookingDomain.fingerprints;
 const overboekingAfgerondVoorRow=(row,datum)=>
-  overbookingDomain.terminalForRow(row,datum||viewDate,overboekingen);
-const overboekingRekenContext=()=>({rules:alle,dossiers,summarize:sumVan});
+  overbookingDomain.terminalForRow(row,datum||HH.state.read().viewDate,HH.state.read().overbookings);
+const overboekingRekenContext=()=>({rules:HH.state.read().rules,
+  dossiers:HH.state.read().dossiers,summarize:sumVan});
 const overboekingWijzigingTekst=code=>({
   source_rule_removed:"tijdregel verwijderd",source_rule_changed:"tijdregel gewijzigd",
   source_rule_target_changed:"doeldossier van tijdregel gewijzigd",
@@ -387,10 +384,10 @@ function overboekingStatusTekst(o){
   if(st==="done")return"Afgehandeld";
   if(st==="final_i7")return"Definitief i7";
   return"";}
-const dvnRegels=d=>stateSelectors.dvnRules(d);
-const dvnResolvedDoel=d=>dvnDomain.resolvedTarget(d,dossiers);
-const dvnResolvedNummer=d=>dvnDomain.resolvedNumber(d,dossiers);
-const dvnIntappState=d=>dvnDomain.intappState(d,dossiers);
+const dvnRegels=d=>HH.state.selectors.dvnRules(d);
+const dvnResolvedDoel=d=>dvnDomain.resolvedTarget(d,HH.state.read().dossiers);
+const dvnResolvedNummer=d=>dvnDomain.resolvedNumber(d,HH.state.read().dossiers);
+const dvnIntappState=d=>dvnDomain.intappState(d,HH.state.read().dossiers);
 function dvnStatusTekst(d){
   const nr=dvnResolvedNummer(d),st=dvnIntappState(d);
   if(st==="missing")return"dossiernummer ontbreekt";
@@ -411,20 +408,22 @@ const dvnAuditAdd=(d,type,extra)=>
   dvnDomain.auditAdd(d,type,extra,new Date().toISOString());
 function markDvnControleNodig(d,reden){
   if(!isDvn(d)||dvnIntappState(d)!=="posted")return d;
-  return dvnDomain.markNeedsCheck(d,reden||"tijdregel gewijzigd",{dossiers,
+  return dvnDomain.markNeedsCheck(d,reden||"tijdregel gewijzigd",{
+    dossiers:HH.state.read().dossiers,
     needsAt:new Date().toISOString(),auditAt:new Date().toISOString(),modifiedAt:Date.now()});}
 function dvnPutIfPosted(d,reden){
   if(!d||!isDvn(d)||dvnIntappState(d)!=="posted")return null;
   return markDvnControleNodig(d,reden||"tijdregel gewijzigd");}
 function intappDossierInfo(d){
-  const info=dvnDomain.intappInfo(d,{dossiers,i7Dossier:i7(),fallbackI7Name:"Indirecte uren"});
+  const info=dvnDomain.intappInfo(d,{dossiers:HH.state.read().dossiers,
+    i7Dossier:i7(),fallbackI7Name:"Indirecte uren"});
   return{nummer:info.nummer,naam:info.naam,dvn:info.dvn,
     status:info.dvn?dvnSummaryStatus(d):""};}
 const dosColor=d=>{const P=["#3f6b3a","#a8452a","#39607f","#7a5090","#8a6b2c","#2f6f6b",
   "#8f3f5c","#5a6b2c","#6b4a3f","#455a64"];return d?P[(d.c||0)%P.length]:"#888";};
 function codesFor(d){
   if(!d)return[];
-  if(isIndirect(d))return i7codes.map(c=>({code:c.code,naam:c.naam,fav:c.favoriet}));
+  if(isIndirect(d))return HH.state.read().codes.map(c=>({code:c.code,naam:c.naam,fav:c.favoriet}));
   return (d.codes||[]).map(c=>({code:c.code,naam:c.naam}));}
 const codeNaam=(d,c)=>{if(!c)return"";const x=codesFor(d).find(k=>k.code===c);return x?x.naam:c;};
 function codeFout(d,r){
@@ -437,7 +436,7 @@ function codeFout(d,r){
    verzameld; core.js is daardoor niet meer afhankelijk van views.js. */
 function sumVan(lijst){
   return bookingDomain.aggregateIntapp(lijst,{
-    roundingMode:rondMode,runningId:running?running.id:null,today:today(),nowHM:nowHM(),
+    roundingMode:HH.state.read().roundingMode,runningId:HH.state.read().running?HH.state.read().running.id:null,today:today(),nowHM:nowHM(),
     getDossier:dosOf,getIntappInfo:intappDossierInfo,getCodeName:codeNaam,
     hasCodeError:codeFout,
     getBoundaryId:r=>{const over=overboekingVoorBronId(r.id);return over?over.id:"";}
@@ -448,12 +447,12 @@ function sumVan(lijst){
 const normOms=bookingDomain.normalizeDescription;
 const simIntappTotaal=lijst=>sumVan(lijst).reduce((t,row)=>t+row.u,0);
 function valideerBoekDag(lijst){
-  return bookingDomain.validateDay(lijst,{runningId:running?running.id:null,
+  return bookingDomain.validateDay(lijst,{runningId:HH.state.read().running?HH.state.read().running.id:null,
     today:today(),nowHM:nowHM(),getDossier:dosOf,isIndirect,hasCodeError:codeFout,
     isFixedCode:d=>!!d&&(d.voorlopig||dvnDefinitiefI7(d)),getFixedCode:defaultCode,
     getCodeName:codeNaam});}
 const dagCapaciteit=(datum,extra,exclId)=>
-  bookingDomain.dayCapacity(alle,datum,extra,exclId,boekRekenContext());
+  bookingDomain.dayCapacity(HH.state.read().rules,datum,extra,exclId,boekRekenContext());
 /* Een regel op i7 of op een dossier waarvan het nummer nog volgt móét een werkcode
    hebben; dat is geen vrije keuze van de gebruiker. Voor "dossier volgt nog" ligt de
    code bovendien vast op Commercieel. codeVoor() is de enige plek waar dat wordt
@@ -471,14 +470,14 @@ function passendeCode(nieuw,huidig){
   return null;}
 function nummerBezet(nr,exclId){
   const n=(nr||"").trim().toLowerCase();
-  return !!n&&dossiers.some(d=>d.id!==exclId&&(d.nummer||"").toLowerCase()===n);}
+  return !!n&&HH.state.read().dossiers.some(d=>d.id!==exclId&&(d.nummer||"").toLowerCase()===n);}
 /* De vaste code voor een voorlopig dossier wordt op naam gezocht, want de nummering
    van de i7-werklijst kan wijzigen; het codesuffix is alleen een terugval.     */
 const VAST_VOORLOPIG=/commerc/i;
 function i7CodeOp(patroon,suffix){
-  const opNaam=i7codes.find(c=>patroon.test(c.naam||""));
+  const opNaam=HH.state.read().codes.find(c=>patroon.test(c.naam||""));
   if(opNaam)return opNaam.code;
-  const opCode=i7codes.find(c=>(c.code||"").endsWith(suffix));
+  const opCode=HH.state.read().codes.find(c=>(c.code||"").endsWith(suffix));
   if(opCode)return opCode.code;
   /* Voor een verplichte vaste code is een willekeurige eerste i7-code géén veilige
      terugval. Ontbreekt Commercieel, dan moet de gebruiker dat eerst herstellen. */
@@ -497,12 +496,12 @@ function i7Standaard(){
 /* Vraagt de ontbrekende werkcode meteen op, met de keuzelijst open en de cursor erin. */
 let codeGevraagd=null;
 function eisCode(){
-  if(!running||ntWizard)return false;
-  const d=dosOf(running.dossierId);
-  if(!isIndirect(d)||d.voorlopig||dvnDefinitiefI7(d)||running.code)return false;
-  if(!i7codes.length){geenCodes();return false;}
-  codeGevraagd=running.id;
-  setTimeout(()=>{if(!running||running.code)return;
+  if(!HH.state.read().running||ntWizard)return false;
+  const d=dosOf(HH.state.read().running.dossierId);
+  if(!isIndirect(d)||d.voorlopig||dvnDefinitiefI7(d)||HH.state.read().running.code)return false;
+  if(!HH.state.read().codes.length){geenCodes();return false;}
+  codeGevraagd=HH.state.read().running.id;
+  setTimeout(()=>{if(!HH.state.read().running||HH.state.read().running.code)return;
     const el=$("l-code");el.value="";el.focus();
     openAC(el,codeItems(d,""),kiesCodeItem);},40);
   return true;}
@@ -512,13 +511,13 @@ function naStart(){
   setTimeout(()=>$("l-omschr").focus(),30);}
 const geenCodes=()=>{
   toast("Er zijn nog geen i7-werkcodes — importeer werkcodes.json onder Beheer");};
-const boekRekenContext=()=>({runningId:running?running.id:null,today:today(),nowHM:nowHM()});
+const boekRekenContext=()=>({runningId:HH.state.read().running?HH.state.read().running.id:null,today:today(),nowHM:nowHM()});
 const eindOf=r=>bookingDomain.endOf(r,boekRekenContext());
 const ruweMin=r=>bookingDomain.rawMinutes(r,boekRekenContext());
 const urenOf=r=>bookingDomain.hoursOf(r,boekRekenContext());
 const pauzeUren=l=>bookingDomain.pauseHours(l,boekRekenContext());
 const totaal=l=>bookingDomain.totalHours(l,boekRekenContext());
-const vandaagRegels=()=>stateSelectors.today(today());
+const vandaagRegels=()=>HH.state.selectors.today(today());
 function nuBreakdown(lijst){
   const out={declarabel:0,i7:0,dvn:0};
   (lijst||[]).filter(r=>r&&r.soort!=="pauze").forEach(r=>{
@@ -531,18 +530,18 @@ function nuBreakdown(lijst){
 }
 
 function gapsFor(list,datum){return bookingDomain.gapsFor(list,Object.assign(
-  boekRekenContext(),{date:datum,dayEnd:dagEinde[datum]!=null?dagEinde[datum]:null}));}
+  boekRekenContext(),{date:datum,dayEnd:HH.state.read().dayEnds[datum]!=null?HH.state.read().dayEnds[datum]:null}));}
 const gapHours=bookingDomain.gapHours;
 
 function takenVandaag(){
-  return stateSelectors.recentTasks({date:today(),hoursOf:urenOf,dossierOf:dosOf,
+  return HH.state.selectors.recentTasks({date:today(),hoursOf:urenOf,dossierOf:dosOf,
     isFinalI7:dvnDefinitiefI7});}
 const taakLabel=t=>{const d=dosOf(t.dossierId);
   return (d?(d.nummer?d.nummer+" · ":"")+d.naam:"geen dossier");};
 function recente(){
-  return stateSelectors.recentDossiers({date:today(),addDays:addD,limit:9});}
-const codesGesorteerd=()=>i7codes.slice().sort((a,b)=>
-  (codeGebruik[b.code]||0)-(codeGebruik[a.code]||0)||
+  return HH.state.selectors.recentDossiers({date:today(),addDays:addD,limit:9});}
+const codesGesorteerd=()=>HH.state.read().codes.slice().sort((a,b)=>
+  (HH.state.read().codeUsage[b.code]||0)-(HH.state.read().codeUsage[a.code]||0)||
   (b.favoriet?1:0)-(a.favoriet?1:0)||a.naam.localeCompare(b.naam));
 const favCodes=()=>codesGesorteerd().slice(0,6);
 
@@ -632,7 +631,7 @@ function dossierItems(q){
   const t=(q||"").trim(),lo=t.toLowerCase();
   const m=x=>!lo||String(x).toLowerCase().includes(lo);
   const it=[];
-  takenVandaag().filter(x=>(!running||x.k!==taakKey(running))&&
+  takenVandaag().filter(x=>(!HH.state.read().running||x.k!==taakKey(HH.state.read().running))&&
       m(taakLabel(x)+" "+x.oms)).slice(0,6)
     .forEach(x=>it.push({t:"taak",k:x.k,d:dosOf(x.dossierId),
       label:taakLabel(x)+(x.oms?" — "+x.oms:""),sub:uu(x.u)+" u",
@@ -672,6 +671,6 @@ function codeItems(d,q){
   return items;}
 function omschrItems(d,q){
   const s=(q||"").toLowerCase(),lang=d&&d.lang==="en"?"en":"nl";
-  return templates.filter(t=>!s||((t.nl||"")+" "+(t.en||"")+" "+t.cat).toLowerCase().includes(s))
+  return HH.state.read().templates.filter(t=>!s||((t.nl||"")+" "+(t.en||"")+" "+t.cat).toLowerCase().includes(s))
     .slice(0,25).map(t=>({label:(lang==="en"&&t.en)?t.en:t.nl,sub:t.cat,
       value:(lang==="en"&&t.en)?t.en:t.nl,code:t.code,group:"Sjablonen"}));}

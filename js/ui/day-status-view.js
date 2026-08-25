@@ -1,9 +1,9 @@
 "use strict";
-function dagRegels(datum){return stateSelectors.day(datum);} 
+function dagRegels(datum){return HH.state.selectors.day(datum);} 
 function dagIntappTotaal(datum){return simIntappTotaal(dagRegels(datum));}
 function openWerkdagen(){
   const nu=today(),map={};
-  alle.forEach(r=>{if(r.datum<nu&&werkdag(r.datum)&&dagSluitStatus(r.datum).open&&r.soort!=="pauze")map[r.datum]=true;});
+  HH.state.read().rules.forEach(r=>{if(r.datum<nu&&werkdag(r.datum)&&dagSluitStatus(r.datum).open&&r.soort!=="pauze")map[r.datum]=true;});
   return Object.keys(map).sort((a,b)=>b.localeCompare(a));}
 function renderOpenDagen(){
   const box=$("open-days");if(!box)return;
@@ -26,12 +26,12 @@ function voorstelDagEinde(datum){
   return m2hm(m==null?17*60:m);}
 function dagTekort(datum){return werkdag(datum)?autoAanvulTekort(dagIntappTotaal(datum)):0;}
 function auditDag(datum,type,extra){
-  const bestaand=dagAudit&&dagAudit[datum]&&Array.isArray(dagAudit[datum].events)?
-    dagAudit[datum].events.slice():[];
+  const bestaand=HH.state.read().dayAudit&&HH.state.read().dayAudit[datum]&&Array.isArray(HH.state.read().dayAudit[datum].events)?
+    HH.state.read().dayAudit[datum].events.slice():[];
   bestaand.push(Object.assign({type:type,t:new Date().toISOString()},extra||{}));
   return{events:bestaand.slice(-20)};}
 function auditSamenvatting(datum){
-  const a=dagAudit&&dagAudit[datum];
+  const a=HH.state.read().dayAudit&&HH.state.read().dayAudit[datum];
   const ev=a&&Array.isArray(a.events)?a.events:[];
   if(!ev.length)return"";
   return ev.slice(-3).map(e=>{
