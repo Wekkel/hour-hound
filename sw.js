@@ -29,7 +29,8 @@ const ASSETS = [
   "./js/domain/time.js",
   "./js/domain/booking.js",
   "./js/domain/dvn.js",
-  "./js/domain/overbooking.js"
+  "./js/domain/overbooking.js",
+  "./js/storage/indexeddb.js"
 ];
 
 self.addEventListener("install", (e) => {
