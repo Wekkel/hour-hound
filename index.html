@@ -91,7 +91,7 @@
   </section>
 
   <section class="walk">
-    <div class="path">
+    <div class="path" id="t-progress">
       <svg class="hond" id="hond" viewBox="150 20 470 250" aria-hidden="true">
         <g id="h-tail"><path d="M208,136 Q182,148 166,174 Q154,194 152,216 L160,194 L163,224 L173,196 L177,226 L188,198 L192,220 L203,194 Q206,168 216,150 Z" fill="#8D939C"/></g>
         <g id="h-bl"><path d="M240,150 Q232,196 236,232 L244,248 L262,248 L266,230 Q262,194 264,150 Z" fill="#8D939C"/><ellipse cx="252" cy="250" rx="20" ry="9" fill="#C3C8CE"/></g>
@@ -120,7 +120,7 @@
       <div class="marks"><span>0</span><span>2</span><span>4</span><span>6</span><span>8&nbsp;uur</span></div>
     </div>
     <div class="tot">
-      <span><b id="t-uren">0,0</b> <small>van 8,0 verantwoord</small></span>
+      <span><b id="t-uren">0,0</b> <small id="t-norm-label">van 8,0 verantwoord</small></span>
       <span id="t-voidwrap"><b id="t-void">0,0</b> <small>niet verantwoord</small></span>
       <span><b id="t-regels">0</b> <small>regels</small></span>
     </div>
@@ -291,7 +291,7 @@
       <div class="closegrid">
         <div><span class="cap">Status</span><strong id="dc-status">—</strong></div>
         <div><span class="cap">Verantwoord</span><strong id="dc-done">0,0 u</strong></div>
-        <div><span class="cap">Ontbreekt tot 8,0</span><strong id="dc-miss">0,0 u</strong></div>
+        <div id="dc-missing-wrap"><span class="cap">Ontbreekt tot 8,0</span><strong id="dc-miss">0,0 u</strong></div>
       </div>
       <label class="timepick">Eindtijd voor deze werkdag
         <input id="dc-end" inputmode="numeric" autocomplete="off" placeholder="17:00">

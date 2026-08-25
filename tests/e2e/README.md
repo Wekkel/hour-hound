@@ -19,6 +19,10 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
 5. **Recente taken**
    Alle taken van vandaag blijven zichtbaar; alleen de eerste vier hebben sneltoetsen 1–4 en de lijst gaat scrollen vanaf taak 5.
 
+6. **Weekend zonder afsluitplicht**
+   Een open vrijdag blijft in de herinnering staan. Regels op zaterdag en zondag blijven zichtbaar
+   en bewerkbaar, maar veroorzaken geen open-dagmelding, 8-uursnorm of aanvulactie.
+
 Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 
 ## Uitvoeren

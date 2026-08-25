@@ -28,6 +28,12 @@ function addDays(s, n) {
   return ymd(dt);
 }
 function todayLocal() { return ymd(new Date()); }
+function previousMonday() {
+  const d = new Date();
+  const back = d.getDay() === 1 ? 7 : (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - back);
+  return ymd(d);
+}
 
 async function openAndSeed(page, seed) {
   page.on('dialog', dialog => dialog.accept());
@@ -231,6 +237,56 @@ test('afsluiten van een eerdere open dag ruimt de open-dagmelding direct op', as
   await expect(page.locator('#dayclose')).not.toHaveClass(/on/);
   await expect(page.locator('#open-days')).not.toHaveClass(/on/);
   await expect(page.locator('#d-status')).toContainText(/Afgesloten/i);
+});
+
+test('weekendregels blijven bruikbaar zonder afsluitplicht', async ({ page }) => {
+  const monday = previousMonday();
+  const friday = addDays(monday, -3);
+  const saturday = addDays(monday, -2);
+  const sunday = addDays(monday, -1);
+  const stamp = Date.now();
+  await openAndSeed(page, {
+    dossiers: [
+      i7Dossier,
+      { id: 'd-weekend', nummer: '304000008', naam: 'Weekenddossier', lang: 'nl', codes: [], c: 1 }
+    ],
+    regels: [
+      { id: 'r-friday', datum: friday, start: '09:00', eind: '10:00', dossierId: 'd-weekend',
+        code: null, omschrijving: 'vrijdagwerk', soort: 'werk', gemaakt: stamp, gewijzigd: stamp },
+      { id: 'r-saturday', datum: saturday, start: '10:00', eind: '11:00', dossierId: 'd-weekend',
+        code: null, omschrijving: 'zaterdagwerk', soort: 'werk', gemaakt: stamp, gewijzigd: stamp },
+      { id: 'r-sunday', datum: sunday, start: '11:00', eind: '12:00', dossierId: 'd-weekend',
+        code: null, omschrijving: 'zondagwerk', soort: 'werk', gemaakt: stamp, gewijzigd: stamp }
+    ],
+    codes: baseCodes,
+    meta: {}
+  });
+
+  await expect(page.locator('#open-days')).toHaveClass(/on/);
+  await expect(page.locator('#open-days')).toContainText(friday.split('-').reverse().join('.'));
+  await expect(page.locator('#open-days')).not.toContainText(/oudere dag\(en\) daarna/i);
+
+  await page.locator('#tabs [data-v="week"]').click();
+  await page.evaluate(anchor => { weekAnchor = anchor; renderWeek(); }, monday);
+  await expect(page.locator(`#w-grid [data-day="${saturday}"]`)).toContainText('weekend');
+  await expect(page.locator(`#w-grid [data-day="${saturday}"]`)).not.toContainText(/tot norm|norm gehaald/i);
+  await page.locator(`#w-grid [data-day="${saturday}"]`).click();
+  await expect(page.locator('#d-table')).toContainText('zaterdagwerk');
+  await expect(page.locator('#d-status')).toContainText('Weekenddag');
+  await expect(page.locator('#d-status')).toContainText('geen 8,0-uursnorm');
+  await expect(page.locator('#d-status')).not.toContainText(/open eerdere werkdag|nog nodig/i);
+  await expect(page.locator('#d-status [data-close-current]')).toHaveCount(0);
+  await expect(page.locator('#d-fill')).not.toBeVisible();
+  await page.locator('#d-table').getByRole('button', { name: 'bewerk' }).click();
+  await expect(page.locator('#editregel')).toContainText('zaterdagwerk');
+  await page.locator('#er-cancel').click();
+
+  await page.locator('#tabs [data-v="week"]').click();
+  await page.evaluate(anchor => { weekAnchor = anchor; renderWeek(); }, monday);
+  await page.locator(`#w-grid [data-day="${sunday}"]`).click();
+  await expect(page.locator('#d-table')).toContainText('zondagwerk');
+  await expect(page.locator('#d-status')).toContainText('Weekenddag');
+  await expect(page.locator('#d-status')).not.toContainText(/open eerdere werkdag|nog nodig/i);
 });
 test('auto-aanvullen vult exact het administratieve tekort tot 8,0 uur', async ({ page }) => {
   const today = todayLocal();

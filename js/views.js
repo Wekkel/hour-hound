@@ -51,7 +51,7 @@ function dagRegels(datum){return alle.filter(r=>r.datum===datum);}
 function dagIntappTotaal(datum){return simIntappTotaal(dagRegels(datum));}
 function openWerkdagen(){
   const nu=today(),map={};
-  alle.forEach(r=>{if(r.datum<nu&&dagSluitStatus(r.datum).open&&r.soort!=="pauze")map[r.datum]=true;});
+  alle.forEach(r=>{if(r.datum<nu&&werkdag(r.datum)&&dagSluitStatus(r.datum).open&&r.soort!=="pauze")map[r.datum]=true;});
   return Object.keys(map).sort((a,b)=>b.localeCompare(a));}
 function renderOpenDagen(){
   const box=$("open-days");if(!box)return;
@@ -72,7 +72,7 @@ function voorstelDagEinde(datum){
   if(datum<today())m=Math.max(m||0,17*60);
   if(datum===today())m=hm2m(nowHM())||m||17*60;
   return m2hm(m==null?17*60:m);}
-function dagTekort(datum){return autoAanvulTekort(dagIntappTotaal(datum));}
+function dagTekort(datum){return werkdag(datum)?autoAanvulTekort(dagIntappTotaal(datum)):0;}
 function auditDag(datum,type,extra){
   const bestaand=dagAudit&&dagAudit[datum]&&Array.isArray(dagAudit[datum].events)?
     dagAudit[datum].events.slice():[];
@@ -91,6 +91,7 @@ function auditSamenvatting(datum){
   }).join(" · " );}
 function autoAanvulRegels(datum){return dagRegels(datum).filter(r=>r.autoAanvul);}
 function dagAfsluitWaarschuwing(datum,tekort){
+  if(!werkdag(datum))return[];
   const oud=datum!==today(),openOud=datum===today()?openWerkdagen():[];
   const p=[];
   if(oud)p.push("Dit is een eerdere dag, niet vandaag. Controleer de eindtijd voordat je afsluit.");
@@ -106,22 +107,26 @@ function dagAfsluitKeuze(datum){
   if(!dlg){
     const eind=datum!==today()?prompt("Je sluit "+dagLabel(datum)+" af.\n\nEindtijd?",voorstelDagEinde(datum)):nowHM();
     if(eind===null)return Promise.resolve(null);
-    return Promise.resolve({actie:"fill",eind});}
-  const huidig=dagIntappTotaal(datum),tekort=dagTekort(datum),ds=dagSluitStatus(datum),gesloten=ds.gesloten;
+    return Promise.resolve({actie:werkdag(datum)?"fill":"nofill",eind});}
+  const isWerkdag=werkdag(datum),huidig=dagIntappTotaal(datum),tekort=dagTekort(datum),
+    ds=dagSluitStatus(datum),gesloten=ds.gesloten,kanAanvullen=isWerkdag&&tekort>0.05;
   const eindVoorstel=voorstelDagEinde(datum),warnings=dagAfsluitWaarschuwing(datum,tekort);
   $("dc-date").textContent=dagLabel(datum);
-  $("dc-status").textContent=gesloten?"al afgesloten":(datum===today()?"vandaag open":"eerdere dag open");
+  $("dc-status").textContent=!isWerkdag?"weekenddag":
+    (gesloten?"al afgesloten":(datum===today()?"vandaag open":"eerdere dag open"));
   $("dc-done").textContent=uu(huidig)+" u";
   $("dc-miss").textContent=uu(tekort)+" u";
+  $("dc-missing-wrap").style.display=isWerkdag?"":"none";
   $("dc-end").value=eindVoorstel;
-  $("dc-help").textContent=tekort>0.05?
+  $("dc-help").textContent=!isWerkdag?
+    "Weekenddagen hebben geen 8,0-uursnorm. Er wordt geen Diversen toegevoegd." : tekort>0.05?
     "Aanvullen voegt administratief precies het ontbrekende aantal uren toe als i7 · Praktijkorganisatie/administratie · Diversen. Bestaande tijdregels en kloktijden worden niet aangepast." :
     "Er is al 8,0 uur of meer verantwoord. Auto-aanvullen voegt daarom niets toe.";
   $("dc-warn").innerHTML=warnings.map(esc).join("<br>");
   $("dc-warn").classList.toggle("on",warnings.length>0);
-  $("dc-fill").textContent=tekort>0.05?"Afsluiten + aanvullen":"Afsluiten";
-  $("dc-fill").classList.toggle("strong",tekort>=7.95);
-  $("dc-nofill").style.display=tekort>0.05?"":"none";
+  $("dc-fill").textContent=kanAanvullen?"Afsluiten + aanvullen":"Afsluiten";
+  $("dc-fill").classList.toggle("strong",isWerkdag&&tekort>=7.95);
+  $("dc-nofill").style.display=kanAanvullen?"":"none";
   dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
   setTimeout(()=>$("dc-end").focus(),0);
   return new Promise(resolve=>{
@@ -132,9 +137,9 @@ function dagAfsluitKeuze(datum){
       done({actie,eind});};
     const key=e=>{if(!dlg.classList.contains("on"))return;
       if(e.key==="Escape"){e.preventDefault();done(null);}
-      if(e.key==="Enter"&&e.target===$("dc-end")){e.preventDefault();valid(tekort>0.05?"fill":"nofill");}};
+      if(e.key==="Enter"&&e.target===$("dc-end")){e.preventDefault();valid(kanAanvullen?"fill":"nofill");}};
     document.addEventListener("keydown",key,true);
-    $("dc-fill").onclick=()=>valid(tekort>0.05?"fill":"nofill");
+    $("dc-fill").onclick=()=>valid(kanAanvullen?"fill":"nofill");
     $("dc-nofill").onclick=()=>valid("nofill");
     $("dc-goday").onclick=()=>done({actie:"day",eind:null});
     $("dc-cancel").onclick=()=>done(null);
@@ -170,7 +175,9 @@ async function sluitWerkdag(datum){
   if(!klaar)return false;
   const totaalNaSluit=dagIntappTotaal(datum),naTekort=dagTekort(datum);
   L("einde-werkdag",datum+" om "+dagSluitStatus(datum).eind+" · "+uu(totaalNaSluit)+" u");
-  if(keuze.actie==="fill"&&naTekort>0.05)setTimeout(vulAanTot8,120);
+  if(!werkdag(datum))toast("Weekendregistratie afgesloten. "+uu(totaalNaSluit)+
+    " uur verantwoord; geen 8-uursaanvulling toegepast.");
+  else if(keuze.actie==="fill"&&naTekort>0.05)setTimeout(vulAanTot8,120);
   else if(keuze.actie==="fill")toast("Werkdag afgesloten. Er was al "+uu(totaalNaSluit)+
     " uur verantwoord. Er is daarom geen Diversen toegevoegd.");
   else if(naTekort>0.05)toast("Werkdag afgesloten zonder aanvullen. Er is "+uu(totaalNaSluit)+
@@ -374,28 +381,35 @@ function renderTot(){
   $("t-uren").textContent=uu(t);$("t-void").textContent=uu(g);
   $("t-regels").textContent=v.filter(r=>r.soort!=="pauze").length;
   $("t-voidwrap").className=g>0?"isbad":"";
-  const pct=Math.max(0,Math.min(1,t/NORM));
+  const isWerkdag=werkdag(today());
+  $("t-progress").style.display=isWerkdag?"":"none";
+  $("t-norm-label").textContent=isWerkdag?"van 8,0 verantwoord":"uur verantwoord · weekend";
+  const pct=isWerkdag?Math.max(0,Math.min(1,t/NORM)):0;
   $("hond").style.left="calc("+(pct*100).toFixed(1)+"% - "+(pct*86).toFixed(0)+"px)";}
 
 function renderDagStatus(){
   const el=$("d-status");if(!el)return;
+  const isWerkdag=werkdag(viewDate);
   const huidig=dagIntappTotaal(viewDate),tekort=dagTekort(viewDate),ds=dagSluitStatus(viewDate),gesloten=ds.gesloten;
-  const oudOpen=viewDate<today()&&!gesloten&&dagRegels(viewDate).some(r=>r.soort!=="pauze");
+  const oudOpen=isWerkdag&&viewDate<today()&&!gesloten&&dagRegels(viewDate).some(r=>r.soort!=="pauze");
   const loopt=running&&running.datum===viewDate;
   const cls=gesloten?"closed":"open";
   el.className="daystatus "+cls;
-  const status=gesloten?("Afgesloten om "+ds.eind):(ds.heropend?"Heropende werkdag":(oudOpen?"Open eerdere werkdag":"Open werkdag"));
+  const status=!isWerkdag?(gesloten?("Weekenddag · afgesloten om "+ds.eind):"Weekenddag"):
+    (gesloten?("Afgesloten om "+ds.eind):(ds.heropend?"Heropende werkdag":(oudOpen?"Open eerdere werkdag":"Open werkdag")));
   let h='<span class="main">Status: '+esc(status)+'</span>'+ 
-    '<span>Verantwoord <b class="metric">'+uu(huidig)+'</b> / '+uu(NORM)+' u</span>'+ 
-    '<span>Nog nodig <b class="metric">'+uu(tekort)+'</b> u</span>';
+    (isWerkdag?'<span>Verantwoord <b class="metric">'+uu(huidig)+'</b> / '+uu(NORM)+' u</span>'+ 
+      '<span>Nog nodig <b class="metric">'+uu(tekort)+'</b> u</span>':
+      '<span>Verantwoord <b class="metric">'+uu(huidig)+'</b> u · geen 8,0-uursnorm</span>');
   const autos=autoAanvulRegels(viewDate),audit=auditSamenvatting(viewDate);
   if(autos.length)h+='<span class="warnline">Automatische Diversen-regels: '+autos.length+'</span>';
   if(audit)h+='<span class="auditline">'+esc(audit)+'</span>';
   if(loopt)h+='<span class="warnline">Er loopt nog een regel op deze dag.</span>';
   if(oudOpen)h+='<span class="warnline">Deze dag staat nog open.</span>';
   h+='<div class="spacer"></div>';
-  if(!gesloten)h+='<button class="sm go" data-close-current="1">Sluit deze dag af</button>';
-  else{
+  if(!gesloten){
+    if(isWerkdag)h+='<button class="sm go" data-close-current="1">Sluit deze dag af</button>';
+  }else{
     h+='<button class="sm ghost" data-reopen-current="1">Heropen dag</button>';
     if(tekort>0.05&&!(running&&running.datum===viewDate))h+='<button class="sm" data-fill-current="1">Aanvullen tot 8,0</button>';
   }
@@ -445,10 +459,12 @@ function verversDag(){
   $("d-tot").textContent=uu(totaal(regels));
   $("d-void").textContent=uu(gapHours(gapsFor(regels,viewDate)));
   $("d-pauze").textContent=uu(pauzeUren(regels));
-  const vulMag=dagSluitStatus(viewDate).gesloten&&!(running&&running.datum===viewDate);
+  const vulMag=werkdag(viewDate)&&dagSluitStatus(viewDate).gesloten&&!(running&&running.datum===viewDate);
+  $("d-fill").style.display=werkdag(viewDate)?"":"none";
   $("d-fill").disabled=!vulMag;
-  $("d-fill").title=vulMag?"Vul het administratieve dagtotaal aan tot 8,0 uur":
-    "Beschikbaar nadat deze werkdag met E is afgesloten";
+  $("d-fill").title=!werkdag(viewDate)?"Weekenddagen hebben geen 8-uursaanvulling":
+    (vulMag?"Vul het administratieve dagtotaal aan tot 8,0 uur":
+    "Beschikbaar nadat deze werkdag met E is afgesloten");
   bouwSum();boekStat();}
 
 const normOms=s=>String(s==null?"":s).replace(/\s+/g," ").trim().toLowerCase();
@@ -612,6 +628,7 @@ function aanvulRegel(uren,ind,code){
     omschrijving:"Diversen",uren:Math.round(uren*10)/10,urenHand:true,
     autoAanvul:true,autoAanvulOp:Date.now(),autoAanvulReden:"dag-aanvulling"});}
 function maakAanvulPlan(){
+  if(!werkdag(viewDate))return{fout:"Weekenddagen hebben geen 8-uursaanvulling"};
   if(dagSluitStatus(viewDate).open)return{fout:"Sluit deze werkdag eerst af met E"};
   const ind=i7();
   if(!ind)return{fout:"Geen i7-dossier — maak er eerst een aan onder Beheer"};
@@ -628,6 +645,7 @@ function maakAanvulPlan(){
   return{ind,code,plan:[r],eind,nu,tekort};}
 async function vulAanTot8(){
   if(opBlok){toast("Rond eerst het herstelvenster af");return false;}
+  if(!werkdag(viewDate)){toast("Weekenddagen hebben geen 8-uursaanvulling");return false;}
   if(dagSluitStatus(viewDate).open){toast("Sluit deze werkdag eerst af met E");return false;}
   if(running&&running.datum===viewDate){
     toast("Sluit eerst de lopende regel af met E");return false;}
@@ -714,13 +732,14 @@ function renderWeek(){
   for(let i=0;i<7;i++){
     const ds=addD(mon,i),list=alle.filter(r=>r.datum===ds);
     const t=totaal(list),g=gapHours(gapsFor(list,ds));
-    const tekort=weekend(ds)?0:Math.max(0,Math.round((NORM-t)*10)/10);
+    const isWerkdag=werkdag(ds),tekort=isWerkdag?Math.max(0,Math.round((NORM-t)*10)/10):0;
     h+='<button data-day="'+ds+'"><div class="dd">'+
       parseD(ds).toLocaleDateString("nl-NL",{weekday:"short",day:"numeric",month:"short"})+
       '</div><div class="hh">'+uu(t)+"</div>"+
       (g>0?'<div class="gg">'+uu(g)+" open</div>":"")+
-      (tekort>0?'<div class="dd">'+uu(tekort)+" tot norm</div>":
-        (t>0?'<div class="dd">norm gehaald</div>':'<div class="dd">&mdash;</div>'))+
+      (isWerkdag&&tekort>0?'<div class="dd">'+uu(tekort)+" tot norm</div>":
+        (isWerkdag&&t>0?'<div class="dd">norm gehaald</div>':
+          (!isWerkdag&&t>0?'<div class="dd">weekend</div>':'<div class="dd">&mdash;</div>')))+
       "</button>";}
   $("w-grid").innerHTML=h;
   const prov=actief().filter(d=>isDvn(d));
@@ -1133,4 +1152,3 @@ $("d-add").onclick=async()=>{
   undoData("regel toevoegen",[],{weg:[r.id]});
   await saveRegel(r);bouwDag();announce();
   await openRegelEditor(r.id,"dag");};
-

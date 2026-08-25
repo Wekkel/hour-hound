@@ -50,3 +50,9 @@ De suite bewaakt daarnaast dat dagafsluitstatus via `dagSluitStatus()` wordt gel
 auto-aanvullen een administratieve totaalaanvulling is. Een wijziging die opnieuw naar lege
 kloktijdvakken zoekt om tot 8,0 uur te komen, is een productregressie en mag niet worden opgelost
 door deze test losser te maken.
+
+### Patch D.1-contract
+
+`werkdag(datum)` is de centrale kalenderdefinitie. Vrijdag blijft afsluitplichtig; zaterdag en
+zondag mogen regels bevatten, maar tellen niet als eerdere open werkdagen en krijgen geen
+8,0-uursaanvulling. UI-code mag hiervoor geen eigen, afwijkende weekendtest introduceren.

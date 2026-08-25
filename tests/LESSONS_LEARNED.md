@@ -63,3 +63,15 @@ Banners, de Dag-status en de afsluitsheet moeten dezelfde actuele status lezen. 
 `dagSluitStatus(datum)` in plaats van op verschillende UI-plekken zelfstandig `dagEinde[datum]`
 te interpreteren. Mutaties blijven via de bestaande transactiepaden lopen; de helper is de centrale
 leeswaarheid. Dit voorkomt dat één UI-onderdeel na afsluiten nog een oude dag als open presenteert.
+
+## 10. Weekendregels zijn geen open werkdagen
+
+Zaterdag en zondag mogen tijdregels bevatten, maar hebben geen afsluitplicht en geen
+8,0-uursnorm. Gebruik overal `werkdag(datum)` voor dit onderscheid: in de open-dagenbanner,
+de Dag-status, de afsluitsheet, de Week-weergave en het aanvulplan. Alleen een losse
+weekendcontrole in de Week-tegels is onvoldoende; dan kan dezelfde zaterdag elders alsnog als
+open werkdag verschijnen of een Diversen-aanvulling aanbieden.
+
+De Playwright-test bewaakt zowel de vrijdagwaarschuwing als de zichtbaarheid en bewerkbaarheid
+van zaterdag- en zondagregels. Pas dit contract alleen aan als weekenddagen bewust verplichte
+werkdagen worden.

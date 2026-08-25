@@ -45,13 +45,15 @@
 
    BOEKEN EN UREN
    B1. Iedere losse tijdregel wordt naar boven afgerond op 0,1 uur. Dat is bewust.
-   B2. De norm is hard 8,0 uur per dag en maximaal 24,0 uur per datum.
+   B2. De norm is hard 8,0 uur per werkdag en maximaal 24,0 uur per datum.
+       Zaterdag en zondag zijn geen verplichte werkdagen: tijdregels blijven geldig,
+       maar er geldt geen afsluitplicht en geen automatische 8-uursaanvulling.
    B3. Blokkerende fouten (open regel, lopende timer, ontbrekend dossier, ontbrekende
        verplichte i7-code, lege omschrijving, ongeldige tijd) kunnen niet met
        "toch boeken" worden gepasseerd. Waarschuwingen wel.
    B4. De boekstatus hangt aan een vingerafdruk van de inhoud; wijzigt er iets aan
        uren, bronregels of afrondingsmodus, dan vervalt de status vanzelf.
-   B5. Automatisch aanvullen tot 8,0 uur kan alleen op een expliciet afgesloten dag.
+   B5. Automatisch aanvullen tot 8,0 uur kan alleen op een expliciet afgesloten werkdag.
        Het is een administratieve totaalaanvulling: bij minder dan 8,0 uur wordt exact
        het ontbrekende aantal uren als i7/Diversen toegevoegd, onafhankelijk van gaten
        in de kloktijdlijn. Bij 8,0 uur of meer wordt niets toegevoegd. De automatische
@@ -81,6 +83,8 @@ const dagLabel=s=>parseD(s).toLocaleDateString("nl-NL",
 const kortDag=s=>parseD(s).toLocaleDateString("nl-NL",{weekday:"short"})+" "+
   dmy(s).replace(/\./g,"-");
 const weekend=s=>{const d=parseD(s).getDay();return d===0||d===6;};
+/* Centrale kalenderdefinitie voor dagafsluiting en de 8-uursnorm. */
+const werkdag=s=>!weekend(s);
 const schoon=s=>String(s==null?"":s).replace(/[\t\r\n\u0000-\u001f]/g," ").trim();
 const NORM=8.0, VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 const autoAanvulTekort=totaalUren=>Math.max(0,Math.round((NORM-(+totaalUren||0))*10)/10);
@@ -642,4 +646,3 @@ function omschrItems(d,q){
   return templates.filter(t=>!s||((t.nl||"")+" "+(t.en||"")+" "+t.cat).toLowerCase().includes(s))
     .slice(0,25).map(t=>({label:(lang==="en"&&t.en)?t.en:t.nl,sub:t.cat,
       value:(lang==="en"&&t.en)?t.en:t.nl,code:t.code,group:"Sjablonen"}));}
-

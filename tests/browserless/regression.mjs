@@ -78,7 +78,7 @@ function evaluateCorePure(){
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{};\n`+
     `return true;\n};\n`+
-    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, schoon, urenOf, ruweMin, eindOf, totaal, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
+    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
   return { api: context.__hhPure, setState: context.__hhSetState };
 }
@@ -122,6 +122,30 @@ test('datumhelpers houden Nederlandse werkdaglogica stabiel', () => {
   assertEq(api.addD('2026-08-14', 3), '2026-08-17', 'addD moet kalenderdagen optellen');
   assertEq(api.weekend('2026-08-15'), true, 'Zaterdag moet weekend zijn');
   assertEq(api.weekend('2026-08-17'), false, 'Maandag mag geen weekend zijn');
+  assertEq(api.werkdag('2026-08-14'), true, 'Vrijdag moet een verplichte werkdag zijn');
+  assertEq(api.werkdag('2026-08-15'), false, 'Zaterdag mag geen verplichte werkdag zijn');
+  assertEq(api.werkdag('2026-08-16'), false, 'Zondag mag geen verplichte werkdag zijn');
+});
+
+test('weekenddagen vallen centraal buiten afsluitplicht en 8-uursaanvulling', () => {
+  assertIncludes(src.views, 'werkdag(r.datum)&&dagSluitStatus(r.datum).open',
+    'Open-dagdetectie moet de centrale werkdagdefinitie gebruiken');
+  assertIncludes(src.views, 'function dagTekort(datum){return werkdag(datum)?',
+    'Dagtekort moet voor weekenddagen centraal nul zijn');
+  assertIncludes(src.views, 'if(!werkdag(viewDate))return{fout:"Weekenddagen hebben geen 8-uursaanvulling"}',
+    'Het aanvulplan moet weekendaanvulling blokkeren');
+  assertIncludes(src.views, 'if(!gesloten){\n    if(isWerkdag)',
+    'De Dag-weergave mag voor een open weekenddag geen afsluitactie tonen');
+  assertIncludes(src.views, 'const isWerkdag=werkdag(ds),tekort=isWerkdag?',
+    'De Week-weergave moet dezelfde werkdagdefinitie gebruiken');
+  assertIncludes(src.views, "(!isWerkdag&&t>0?'<div class=\"dd\">weekend</div>'",
+    'Een weekendtegel met uren mag niet melden dat de norm is gehaald');
+  assertIncludes(src.views, '$("t-progress").style.display=isWerkdag?"":"none"',
+    'Nu mag in het weekend geen 8-uursvoortgang tonen');
+  assertIncludes(src.views, '"uur verantwoord · weekend"',
+    'Nu moet weekenduren zonder 8-uursnorm labelen');
+  assertIncludes(src.views, '$("d-fill").style.display=werkdag(viewDate)?"":"none"',
+    'De Dag-weergave mag de 8-uursaanvulactie in het weekend niet suggereren');
 });
 
 test('urenOf rondt losse tijdregels altijd naar boven af op 0,1 uur', () => {
