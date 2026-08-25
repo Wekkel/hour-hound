@@ -91,6 +91,81 @@ const i7Dossier = {
   codes: [], c: 0, used: 999, isI7: true, voorlopig: false, archief: false
 };
 
+test('behoudt bestaande voorlopige DVN-data bij upgrade naar databaseversie 4', async ({ page }) => {
+  page.on('dialog', dialog => dialog.accept());
+  await page.goto('/');
+  const today=todayLocal();
+  await page.evaluate(async ({ dbName, datum, codes, i7 }) => {
+    await new Promise(resolve => {
+      const del=indexedDB.deleteDatabase(dbName);
+      del.onsuccess=del.onerror=del.onblocked=()=>resolve();
+    });
+    const db=await new Promise((resolve,reject) => {
+      const req=indexedDB.open(dbName,3);
+      req.onupgradeneeded=()=>{
+        const d=req.result;
+        d.createObjectStore('days',{keyPath:'date'});
+        d.createObjectStore('matters',{keyPath:'id'});
+        d.createObjectStore('meta');
+        d.createObjectStore('templates',{keyPath:'id'});
+        d.createObjectStore('codes',{keyPath:'code'});
+        d.createObjectStore('dossiers',{keyPath:'id'});
+        const regels=d.createObjectStore('regels',{keyPath:'id'});
+        regels.createIndex('datum','datum');
+      };
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+    });
+    await new Promise((resolve,reject) => {
+      const tx=db.transaction(['dossiers','regels','codes','meta'],'readwrite');
+      tx.objectStore('dossiers').put(i7);
+      tx.objectStore('dossiers').put({id:'dvn-017',nummer:null,naam:'Open DVN uit 0.1.7',
+        lang:'nl',codes:[],c:1,used:1,isI7:false,voorlopig:true,archief:false});
+      tx.objectStore('regels').put({id:'regel-017',datum,start:'09:00',eind:'10:00',
+        dossierId:'dvn-017',code:'COM',omschrijving:'bestaande DVN-uren',soort:'werk',
+        gemaakt:1,gewijzigd:1});
+      codes.forEach(code=>tx.objectStore('codes').put(code));
+      tx.objectStore('meta').put(true,'v3done');
+      tx.objectStore('meta').put(true,'v3dossiers');
+      tx.oncomplete=()=>{db.close();resolve();};
+      tx.onerror=()=>reject(tx.error);
+      tx.onabort=()=>reject(tx.error||new Error('legacy seed aborted'));
+    });
+  }, {dbName:DB_NAME,datum:today,codes:baseCodes,i7:i7Dossier});
+
+  await page.reload();
+  await expect(page.locator('#v-nu')).toBeVisible();
+  await expect(page.locator('#t-breakdown')).toHaveText('Declarabel 0,0 · i7 1,0 (DVN 1,0)');
+  await page.locator('#tabs [data-v="beheer"]').click();
+  await expect(page.locator('#dvn-intapp')).toContainText('Open DVN uit 0.1.7');
+  await expect(page.locator('#dvn-intapp')).toContainText('1 regel(s) · 1,0 u');
+
+  const bewaard=await page.evaluate(async dbName => {
+    const db=await new Promise((resolve,reject) => {
+      const req=indexedDB.open(dbName);
+      req.onsuccess=()=>resolve(req.result);
+      req.onerror=()=>reject(req.error);
+    });
+    const dossier=await new Promise((resolve,reject) => {
+      const req=db.transaction('dossiers','readonly').objectStore('dossiers').get('dvn-017');
+      req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+    });
+    const regel=await new Promise((resolve,reject) => {
+      const req=db.transaction('regels','readonly').objectStore('regels').get('regel-017');
+      req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+    });
+    const result={version:db.version,hasOverboekingen:db.objectStoreNames.contains('overboekingen'),
+      dossier,regel};
+    db.close();return result;
+  },DB_NAME);
+  expect(bewaard.version).toBe(4);
+  expect(bewaard.hasOverboekingen).toBe(true);
+  expect(bewaard.dossier.voorlopig).toBe(true);
+  expect(bewaard.dossier.dvn).toBeUndefined();
+  expect(bewaard.regel.dossierId).toBe('dvn-017');
+  expect(bewaard.regel.omschrijving).toBe('bestaande DVN-uren');
+});
+
 test('meldt een lopende taak van een eerdere dag en laat bewust doorlopen', async ({ page }) => {
   const today = todayLocal();
   const old = addDays(today, -1);

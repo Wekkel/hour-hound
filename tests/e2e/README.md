@@ -54,6 +54,11 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
     `Gewijzigd — controleren` en blokkeert `Boeken op dossier`. Pas
     `Bijgewerkte gegevens gebruiken` maakt de actuele omschrijving en uren weer boekbaar.
 
+12. **Upgrade met bestaande DVN-data**
+    Een oudere database zonder `overboekingen` wordt naar databaseversie 4 bijgewerkt zonder
+    bestaande dossiers of regels te vervangen. Een DVN met alleen de oude marker
+    `voorlopig: true` blijft in de DVN-werkvoorraad staan en behoudt zijn gekoppelde uren.
+
 Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 
 ## Uitvoeren

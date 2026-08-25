@@ -31,6 +31,8 @@ const read = rel => readFileSync(join(root, rel), 'utf8');
 const src = {
   html: read('index.html'),
   css: read('css/app.css'),
+  hh: read('js/hh.js'),
+  time: read('js/domain/time.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
@@ -80,6 +82,8 @@ function evaluateCorePure(){
     stempel(d){ d.gewijzigd = d.gewijzigd || 1; return d; }
   };
   vm.createContext(context);
+  vm.runInContext(src.hh, context, { filename: 'js/hh.js' });
+  vm.runInContext(src.time, context, { filename: 'js/domain/time.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
     `return true;\n};\n`+
@@ -121,6 +125,8 @@ test('alle klassieke JavaScriptbestanden blijven syntaxgeldig', () => {
 
 test('index.html laadt scripts in de afgesproken globale volgorde', () => {
   assertEq(scriptOrderFromHtml().join('\n'), [
+    'js/hh.js',
+    'js/domain/time.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
@@ -130,6 +136,33 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/booking.js',
     'js/app.js'
   ].join('\n'), 'Scriptvolgorde gewijzigd. Bij klassieke globals kan dat runtime breken.');
+});
+
+test('HH-bootstrap en tijdmodule vormen een expliciete pure grens', () => {
+  const context={};
+  vm.createContext(context);
+  vm.runInContext(src.hh,context,{filename:'js/hh.js'});
+  vm.runInContext(src.time,context,{filename:'js/domain/time.js'});
+  const api=context.HH.domain.time;
+  assert(api&&Object.isFrozen(api),'HH.domain.time moet bestaan en bevroren zijn');
+  assertEq(api.hm2m('09:30'),570,'De directe tijdmodule moet tijden parsen');
+  assertEq(api.m2hm(570),'09:30','De directe tijdmodule moet minuten formatteren');
+  assertEq(api.addD('2026-08-14',3),'2026-08-17','De directe tijdmodule moet datums optellen');
+  assertEq(api.werkdag('2026-08-15'),false,'De directe tijdmodule bewaakt weekendlogica');
+  assertEq(api.uu(1.25),'1,3','De bestaande decimale formattering moet gelijk blijven');
+  assertEq(api.schoon('  a\tb\n'),'a b','Tekstopschoning moet gelijk blijven');
+  assertNotIncludes(src.time,'document','De pure tijdmodule mag de DOM niet lezen');
+  assertNotIncludes(src.time,'indexedDB','De pure tijdmodule mag geen opslag lezen');
+});
+
+test('oude globale helpernamen delegeren zonder dubbele implementatie', () => {
+  assertIncludes(src.core,'}=HH.domain.time;',
+    'core.js moet zijn compatibiliteitsnamen uit HH.domain.time halen');
+  for(const naam of ['pad','uu','ymd','today','nowHM','hm2m','m2hm','dmy','parseD',
+    'addD','dagLabel','kortDag','weekend','werkdag','schoon']){
+    assert(!new RegExp(`(?:function|const)\\s+${naam}\\s*(?:=|\\()`).test(src.core),
+      `${naam} mag niet ook nog in core.js geïmplementeerd zijn`);
+  }
 });
 
 test('statische DOM-id’s en JavaScriptverwijzingen blijven onderling compleet', () => {
@@ -266,6 +299,29 @@ test('i7-codeplicht heeft geen stille standaard en lokale codes blijven leidend'
     'De N-wizard moet i7 zonder expliciete code blokkeren');
   assertIncludes(src.wizard, 'if(!i7codes.some(c=>c.code===code))',
     'De wizard moet een stale i7-keuze tegen de actuele lokale lijst controleren');
+});
+
+test('bestaande 0.1.7-data en voorlopige DVN-records blijven migreerbaar', () => {
+  const { api, setState } = evaluateCorePure();
+  const oudDvn={id:'oud-dvn',naam:'Dossier volgt nog',voorlopig:true,
+    nummer:null,codes:[],archief:false};
+  const oudRegel={id:'oud-regel',datum:'2026-08-20',start:'09:00',eind:'10:00',
+    dossierId:oudDvn.id,code:'COM',omschrijving:'oude DVN-tijd',soort:'werk'};
+  setState({dossiers:[oudDvn],alle:[oudRegel]});
+  assertEq(api.isDvn(oudDvn),true,
+    'Een oude voorlopige dossierregistratie moet zonder recordconversie DVN blijven');
+  assertEq(api.dvnIntappState(oudDvn),'missing',
+    'Een oude open DVN zonder nummer moet in de actuele DVN-werkvoorraad blijven');
+  assertEq(api.dvnRegels(oudDvn).map(r=>r.id).join(','),'oud-regel',
+    'Bestaande DVN-uren moeten aan hun oude dossier-id gekoppeld blijven');
+  assertIncludes(src.core,'indexedDB.open("hourhound",4)',
+    'De update moet dezelfde IndexedDB-database blijven openen');
+  const upgrade=(src.core.match(/r\.onupgradeneeded=\(\)=>\{[\s\S]*?\n  r\.onsuccess=/)||[''])[0];
+  assert(upgrade,'IndexedDB-upgradepad ontbreekt');
+  assertIncludes(upgrade,'if(!d.objectStoreNames.contains("overboekingen"))',
+    'De nieuwe wachtrijstore moet alleen worden toegevoegd wanneer hij ontbreekt');
+  assertNotIncludes(upgrade,'.deleteObjectStore(',
+    'Een gewone app-update mag geen bestaande IndexedDB-store verwijderen');
 });
 
 test('DVN pure statushelpers onderscheiden ontbrekend, klaar, ingevoerd en controle nodig', () => {

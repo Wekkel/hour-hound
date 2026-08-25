@@ -150,3 +150,17 @@ Ten slotte vormt iedere open of terminale overboekingslifecycle een aggregatiegr
 dezelfde dossiergegevens en omschrijving mag niet met al geparkeerde of afgehandelde uren
 samensmelten. De grens hoort alleen in de groepeeridentiteit: parkeren zelf mag de inhoudsvingerafdruk
 van de bestaande groep niet veranderen. De browserloze test bewaakt beide kanten van dit contract.
+
+## 17. Modulariseer achter één compatibiliteitsnaad
+
+Hour Hound blijft klassieke scripts gebruiken. Nieuwe pure domeinbestanden worden daarom eerst
+onder `window.HH` geregistreerd en vóór hun bestaande consumenten geladen. Tijdelijke globale
+compatibiliteitsnamen moeten rechtstreeks naar die ene implementatie verwijzen; kopieer helpers
+niet naar twee bestanden. Directe moduletests bewaken de nieuwe grens, terwijl de bestaande
+regressies dezelfde productie-uitkomsten blijven controleren.
+
+Een modulariseringspatch mag geen lokale-data-upgrade verstoppen. De overgang vanaf oudere
+installaties blijft dezelfde IndexedDB-database openen en voegt stores alleen conditioneel toe.
+Oude DVN-dossiers met `voorlopig: true` blijven zonder recordconversie DVN en hun tijdregels
+blijven via hetzelfde `dossierId` gekoppeld. Nieuwe runtimebestanden vereisen wel exacte extra
+cachepaden in `sw.js`; de eigenaar voegt die toe en verhoogt zelf de cacheversie.
