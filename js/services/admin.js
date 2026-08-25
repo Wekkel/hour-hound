@@ -234,6 +234,41 @@
     return ok({overbooking:updated,rules:updatedRules,booked});
   }
 
+  async function saveDossier(input){
+    const dossier=input&&input.dossier;
+    if(!dossier||!dossier.id)return fail("invalid_dossier");
+    await gateway.tx("dossiers","readwrite",store=>store.put(dossier));
+    return ok({dossier});
+  }
+
+  async function deleteDossier(input){
+    const id=input&&input.id;
+    if(!id)return fail("invalid_dossier");
+    await gateway.tx("dossiers","readwrite",store=>store.delete(id));
+    return ok({id});
+  }
+
+  async function saveDvnRename(input){
+    const dossier=input&&input.dossier,rules=input&&input.rules||[];
+    if(!dossier||!dossier.id||!dvn.isDvn(dossier))return fail("invalid_dvn");
+    await waitFor(input,rules.map(rule=>rule.id));
+    await gateway.tx(gateway.TIMER_STORES,"readwrite",stores=>{
+      stores.dossiers.put(dossier);rules.forEach(rule=>stores.regels.put(rule));
+      if(input.stackChanged)stores.meta.put(input.stack||[],"stack");
+    });
+    return ok({dossier,rules,stack:input.stack||[],stackChanged:!!input.stackChanged});
+  }
+
+  async function clearTrackedData(){
+    await gateway.tx(gateway.TIMER_STORES,"readwrite",stores=>{
+      stores.dossiers.clear();stores.regels.clear();stores.overboekingen.clear();
+      ["running","pending","stack","dagEinde","dagAudit","geboekt"]
+        .forEach(key=>stores.meta.delete(key));
+    });
+    return ok();
+  }
+
   HH.services.admin=Object.freeze({assignDvnNumber,markDvnPosted,finalizeDvnI7,
-    parkOverbooking,refreshOverbooking,completeOverbookings,finalizeOverbookingI7});
+    parkOverbooking,refreshOverbooking,completeOverbookings,finalizeOverbookingI7,
+    saveDossier,deleteDossier,saveDvnRename,clearTrackedData});
 })(globalThis.HH);

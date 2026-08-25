@@ -10,7 +10,7 @@ function zetThema(t){
 $("b-thema").onclick=async()=>{
   const nu=document.documentElement.dataset.thema||"auto";
   const v=nu==="auto"?"licht":(nu==="licht"?"donker":"auto");
-  zetThema(v);await putK("meta",v,"thema");toast("Thema: "+v);};
+  await settingsServices.save("thema",v);zetThema(v);toast("Thema: "+v);};
 $("b-switch").onclick=nieuweTaak;
 $("b-back").onclick=terug;
 $("b-phone").onclick=()=>interrupt("telefoon","Telefoon");
@@ -38,9 +38,8 @@ $("open-days").addEventListener("click",async e=>{
   if(close)await sluitWerkdag(close.dataset.openClose);});
 
 document.addEventListener("keydown",async e=>{
-  if(["dayclose","oldrun","editregel","dvnnum","dvnpost","parkboek","overboekpost","herstel"]
-    .some(id=>$(id)&&$(id).classList.contains("on")))return;
-  if(boek.aan){boekKeys(e);return;}
+  const modal=uiModals.blocksGlobalKeyboard();
+  if(modal){if(modal==="boek")boekKeys(e);return;}
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"&&!e.shiftKey){
     const t=e.target;
     if(!(/^(INPUT|TEXTAREA)$/.test(t.tagName)&&t.value!==t.defaultValue)){

@@ -193,3 +193,15 @@ De rendercoördinator voert alleen de gevraagde views uit. De 10-secondentick re
 de live-timer en Nu-totalen. BroadcastChannel-herladen en het uitgestelde herladen na focusverlies
 blijven een volledige consistente opslagsnapshot gebruiken. `sw.js` moet bij toepassing handmatig
 ook `./js/state.js` cachen; tests verifiëren dat met een complete tijdelijke SW-lijst.
+
+### Patch R-contract
+
+De vroegere monolithische `views.js` is verdeeld over kleine schermviews en controllers in
+`js/ui/`. `index.html` laadt uitsluitend die componenten; het resterende `views.js` is alleen een
+lege compatibiliteitsstub zodat een ZIP-update een oude lokale kopie veilig overschrijft.
+
+Bestanden met `-view.js` renderen en selecteren alleen. Eventbinding en sheetworkflows zitten in
+controllers. Geen van beide UI-typen schrijft rechtstreeks naar IndexedDB of importeert een
+domeinmodule; mutaties lopen via services en adapters in `core.js`. Alle modals en sheets delen
+één registry voor globale sneltoetsblokkade. De bestaande Playwrightflows voor recente taken,
+regelbewerking, DVN en overboekingen blijven de zichtbare contracten bewaken.

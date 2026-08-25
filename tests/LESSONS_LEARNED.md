@@ -341,3 +341,21 @@ waarna één volledige snapshot in één commit wordt vervangen.
 Tijdelijke globale accessors kunnen tijdens een gefaseerde migratie bruikbaar zijn, mits zij geen
 data bezitten en rechtstreeks naar hetzelfde centrale object verwijzen. Documenteer ze als
 compatibiliteitslaag en verwijder ze in de afrondende modulepatch; maak er nooit mirror-arrays van.
+
+## 26. Splits klassieke UI op verantwoordelijkheid, niet alleen op lengte
+
+Een groot viewbestand in willekeurige stukken knippen maakt de bron korter, maar de architectuur
+niet veiliger. Houd renderfuncties daarom vrij van eventbinding en persistence. Laat controllers
+DOM-events en sheetworkflows bezitten, maar laat ook controllers alleen services en stabiele
+core-adapters aanroepen. Zo blijft zichtbaar welke laag een mutatie valideert en atomair opslaat.
+
+Modals vormen een gedeeld gedragscontract. Een lokale lijst met open sheet-ID’s in iedere handler
+raakt onvermijdelijk uit sync zodra een nieuwe workflow wordt toegevoegd. Gebruik één registry
+voor zowel zichtbare modalstatus als globale keyboardblokkade, en test alle administratief
+belangrijke sheets tegen diezelfde bron.
+
+Bij een ZIP-gebaseerde update kan een verwijderd oud bestand op de doelinstallatie blijven staan.
+Als dat bestand eerder runtimecode bevatte, lever dan een kleine niet-geladen compatibiliteitsstub
+mee die de oude kopie overschrijft. Verwijder tegelijk iedere runtimeverwijzing ernaar en controleer
+de echte scriptvolgorde plus de volledige tijdelijke service-workerassetlijst. Zo is de migratie
+veilig zonder het persistente IndexedDB-schema of bestaande DVN-data aan te raken.

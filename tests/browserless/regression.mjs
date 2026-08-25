@@ -28,6 +28,14 @@ import vm from 'node:vm';
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..', '..');
 const read = rel => readFileSync(join(root, rel), 'utf8');
+const uiFiles=[
+  'js/ui/modal.js','js/ui/now-live-view.js','js/ui/day-status-view.js',
+  'js/ui/day-close-controller.js','js/ui/day-editor-controller.js',
+  'js/ui/now-recent-view.js','js/ui/day-view.js','js/ui/day-controller.js',
+  'js/ui/week-view.js','js/ui/week-controller.js','js/ui/dvn-view.js',
+  'js/ui/overbooking-view.js','js/ui/overbooking-controller.js','js/ui/manage-view.js',
+  'js/ui/manage-controller.js','js/ui/live-controller.js','js/ui/day-table-controller.js'
+];
 const src = {
   html: read('index.html'),
   css: read('css/app.css'),
@@ -40,15 +48,19 @@ const src = {
   admin: read('js/services/admin.js'),
   dayRules: read('js/services/day-rules.js'),
   timerService: read('js/services/timer.js'),
+  settings: read('js/services/settings.js'),
   state: read('js/state.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
-  views: read('js/views.js'),
+  views: uiFiles.map(read).join('\n'),
+  modal: read('js/ui/modal.js'),
+  liveController: read('js/ui/live-controller.js'),
   controls: read('js/controls.js'),
   io: read('js/io.js'),
   booking: read('js/booking.js'),
   app: read('js/app.js'),
+  e2e: read('tests/e2e/hour-hound.smoke.spec.mjs'),
   sw: read('sw.js')
 };
 
@@ -99,6 +111,7 @@ function evaluateCorePure(){
   vm.runInContext(src.admin, context, { filename: 'js/services/admin.js' });
   vm.runInContext(src.dayRules, context, { filename: 'js/services/day-rules.js' });
   vm.runInContext(src.timerService, context, { filename: 'js/services/timer.js' });
+  vm.runInContext(src.settings, context, { filename: 'js/services/settings.js' });
   vm.runInContext(src.state, context, { filename: 'js/state.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `appState.commit({dossiers:s.dossiers||[],templates:s.templates||[],codes:s.i7codes||[],rules:s.alle||[],overbookings:s.overboekingen||[],running:s.running||null,stack:s.stack||[],viewDate:s.viewDate||today(),dayEnds:s.dagEinde||{},dayAudit:s.dagAudit||{},roundingMode:s.rondMode||"groep",booked:s.geboekt||{},codeUsage:s.codeGebruik||{}});\n`+
@@ -209,16 +222,77 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/services/admin.js',
     'js/services/day-rules.js',
     'js/services/timer.js',
+    'js/services/settings.js',
     'js/state.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
-    'js/views.js',
+    ...uiFiles,
     'js/controls.js',
     'js/io.js',
     'js/booking.js',
     'js/app.js'
   ].join('\n'), 'Scriptvolgorde gewijzigd. Bij klassieke globals kan dat runtime breken.');
+});
+
+test('Patch R splitst UI per scherm en rol zonder nieuwe megabestanden', () => {
+  const legacyViews=read('js/views.js');
+  assertNotIncludes(src.html,'js/views.js',
+    'De runtime mag de oude monolithische views.js niet meer laden');
+  assert(legacyViews.split(/\r?\n/).length<=10,
+    'views.js mag alleen een kleine ZIP-updatecompatibiliteitsstub zijn');
+  for(const file of uiFiles){
+    const code=read(file),lines=code.split(/\r?\n/).length;
+    assert(lines<=500,`${file} is ${lines} regels; motiveer of splits verder boven circa 500`);
+  }
+  for(const file of uiFiles.filter(file=>file.endsWith('-view.js'))){
+    const code=read(file);
+    for(const forbidden of ['putK(','put(','del(','tx(','txAll(','getAll(',
+      'addEventListener(','.onclick=','.onchange=','bookingDomain','dvnDomain',
+      'overbookingDomain','storageGateway','storageRepos'])
+      assertNotIncludes(code,forbidden,`${file} moet uitsluitend renderen/selecteren`);
+  }
+  for(const file of uiFiles.filter(file=>file.endsWith('-controller.js'))){
+    const code=read(file);
+    for(const forbidden of ['putK(','put(','del(','tx(','txAll(','getAll(',
+      'bookingDomain','dvnDomain','overbookingDomain','storageGateway','storageRepos'])
+      assertNotIncludes(code,forbidden,`${file} mag opslag en domeinen niet rechtstreeks importeren`);
+  }
+});
+
+test('Patch R behoudt gerichte browserdekking voor de gesplitste UI', () => {
+  for(const title of [
+    'recente takenlijst toont alle taken maar alleen sneltoetsen 1-4',
+    'wijzigt een bestaande tijdregel via de bewuste bewerkingssheet',
+    'doorloopt DVN naar dossiernummer, Intapp en Afgehandeld',
+    'parkeert geblokkeerd dossier en handelt later af zonder i7-correctie'
+  ])assertIncludes(src.e2e,`test('${title}'`,`Playwright-dekking ontbreekt: ${title}`);
+});
+
+test('Patch R gebruikt één modal- en keyboardguard', () => {
+  const modal=read('js/ui/modal.js');
+  for(const id of ['dayclose','oldrun','editregel','dvnnum','dvnpost','boek','parkboek',
+    'overboekpost','herstel'])assertIncludes(modal,`"${id}"`,`Centrale modalguard mist ${id}`);
+  assertIncludes(src.controls,'const modal=uiModals.blocksGlobalKeyboard()',
+    'Globale sneltoetsen moeten de centrale modalguard gebruiken');
+  assertNotIncludes(src.controls,'["dayclose","oldrun"',
+    'Controls mag geen tweede lijst met modal-IDs onderhouden');
+  assertIncludes(read('js/ui/day-editor-controller.js'),'const isModalOpen=()=>uiModals.anyOpen()',
+    'Oude-timercontrole moet dezelfde centrale modalstatus gebruiken');
+});
+
+test('Patch R UI-instellingen en Beheer-mutaties lopen via services', () => {
+  assertIncludes(src.controls,'settingsServices.save("thema"',
+    'Themakeuze moet via de configuratieservice opslaan');
+  assertIncludes(read('js/ui/day-controller.js'),'settingsServices.save("rondMode"',
+    'Afrondingsmodus moet via de configuratieservice opslaan');
+  assertIncludes(src.booking,'settingsServices.save("geboekt"',
+    'Boekstatus moet via de configuratieservice opslaan');
+  const manage=read('js/ui/manage-controller.js');
+  for(const method of ['saveDossier','deleteDossier','clearTrackedData'])
+    assertIncludes(manage,`adminServices.${method}`,`Beheer moet ${method} via de service uitvoeren`);
+  assertIncludes(src.wizard,'adminServices.saveDvnRename',
+    'De DVN-wizard mag zijn transactie niet zelf bezitten');
 });
 
 test('runtime-state heeft één bron en pure afgeleide selecties', () => {
@@ -851,8 +925,10 @@ test('core en io zijn niet langer afhankelijk van berekeningen uit views', () =>
   assertNotIncludes(src.views,'function sumVan(','Intapp-aggregatie mag niet meer in views.js staan');
   assertNotIncludes(src.views,'const DAGMAX','Dagmaximum mag niet meer in views.js staan');
   assertIncludes(src.core,'function sumVan(lijst)','Core moet via een dunne aggregatieadapter werken');
-  assertIncludes(src.views,'return bookingDomain.validateDay(regels,',
-    'Dagvalidatie moet via de pure boekingslaag lopen');
+  assertIncludes(src.core,'return bookingDomain.validateDay(lijst,',
+    'De core-adapter moet dagvalidatie via de pure boekingslaag uitvoeren');
+  assertIncludes(src.views,'valideerBoekDag(regels)',
+    'De UI moet de core-adapter voor dagvalidatie gebruiken');
   assertIncludes(src.core,'const {NORM,DAGMAX}=bookingDomain',
     'Core en io moeten constanten uit de boekingslaag beschikbaar krijgen');
   assertNotIncludes(src.core,'typeof sumVan===',
@@ -1128,11 +1204,10 @@ test('recente taken worden pas gemeten wanneer Nu zichtbaar is', () => {
 
 test('modal/sheet staat globale sneltoetsen niet toe', () => {
   for (const id of ['dayclose', 'oldrun', 'editregel', 'dvnnum', 'dvnpost', 'boek', 'herstel']) {
-    assertIncludes(src.views, `"${id}"`, `isModalOpen mist ${id}`);
+    assertIncludes(src.modal, `"${id}"`, `Centrale modalregistry mist ${id}`);
   }
-  for (const id of ['dayclose', 'oldrun', 'editregel', 'dvnnum', 'dvnpost', 'herstel']) {
-    assertIncludes(src.controls, `"${id}"`, `controls sneltoetsblokkade mist ${id}`);
-  }
+  assertIncludes(src.controls, 'uiModals.blocksGlobalKeyboard()',
+    'Controls moet de centrale modalguard gebruiken');
 });
 
 test('dagafsluiting gebruikt expliciete sheet en auditvelden', () => {
@@ -1402,8 +1477,7 @@ test('afgeronde overboeking blijft geboekt totdat de broninhoud wijzigt', () => 
 
 test('brede H-regressie bewaakt modal, verwijdering, groepering en atomaire afhandeling', () => {
   for(const id of ['parkboek','overboekpost']){
-    assertIncludes(src.views, `"${id}"`, `Centrale modalcheck mist ${id}`);
-    assertIncludes(src.controls, `"${id}"`, `Globale sneltoetsblokkade mist ${id}`);
+    assertIncludes(src.modal, `"${id}"`, `Centrale modalcheck mist ${id}`);
   }
   assertIncludes(src.views, 'if(overboekingOpenVoorRegel(id))',
     'Een bronregel in de open overboekingswachtrij mag niet verwijderbaar zijn');
@@ -1422,7 +1496,7 @@ test('brede H-regressie bewaakt modal, verwijdering, groepering en atomaire afha
 });
 
 test('hervatten van een recente taak start exact één nieuwe timerwissel', () => {
-  const m = src.views.match(/async function hervat\(k\)\{[\s\S]*?\n\}/);
+  const m = src.liveController.match(/async function hervat\(k\)\{[\s\S]*?\n\}/);
   assert(m, 'hervat() ontbreekt');
   const body = m[0];
   assertEq((body.match(/await kiesTaak\(/g) || []).length, 1,

@@ -81,7 +81,7 @@ const {pad,uu,ymd,today,nowHM,hm2m,m2hm,dmy,parseD,addD,dagLabel,kortDag,
 const bookingDomain=HH.domain.booking;
 const dvnDomain=HH.domain.dvn,overbookingDomain=HH.domain.overbooking;
 const adminServices=HH.services.admin,dayRuleServices=HH.services.dayRules,
-  timerServices=HH.services.timer;
+  timerServices=HH.services.timer,settingsServices=HH.services.settings;
 const adminFoutTekst={invalid_dvn:"Deze DVN is niet meer beschikbaar",
   number_required:"Vul eerst een dossiernummer in",
   target_is_dvn:"Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.",
@@ -447,6 +447,13 @@ function sumVan(lijst){
    introduceren. */
 const normOms=bookingDomain.normalizeDescription;
 const simIntappTotaal=lijst=>sumVan(lijst).reduce((t,row)=>t+row.u,0);
+function valideerBoekDag(lijst){
+  return bookingDomain.validateDay(lijst,{runningId:running?running.id:null,
+    today:today(),nowHM:nowHM(),getDossier:dosOf,isIndirect,hasCodeError:codeFout,
+    isFixedCode:d=>!!d&&(d.voorlopig||dvnDefinitiefI7(d)),getFixedCode:defaultCode,
+    getCodeName:codeNaam});}
+const dagCapaciteit=(datum,extra,exclId)=>
+  bookingDomain.dayCapacity(alle,datum,extra,exclId,boekRekenContext());
 /* Een regel op i7 of op een dossier waarvan het nummer nog volgt móét een werkcode
    hebben; dat is geen vrije keuze van de gebruiker. Voor "dossier volgt nog" ligt de
    code bovendien vast op Commercieel. codeVoor() is de enige plek waar dat wordt

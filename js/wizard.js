@@ -284,9 +284,9 @@ async function hernoemVoorlopig(id,naam,opt){
   const nwStack=stack.map(x=>x.dossierId!==id?x:
     Object.assign({},x,{omschrijving:vervangDvnPrefix(x.omschrijving,nieuw)}));
   try{
-    await rustig(oudRs.map(r=>r.id));
-    await txAll(s=>{s.dossiers.put(nwD);nwRs.forEach(r=>s.regels.put(r));
-      if(stackRaakt)s.meta.put(nwStack,"stack");});
+    const uit=await adminServices.saveDvnRename({dossier:nwD,rules:nwRs,stack:nwStack,
+      stackChanged:stackRaakt,waitForRules:rustig});
+    if(meldAdminFout(uit,"DVN-naam wijzigen is niet uitgevoerd"))return null;
   }catch(e){L("FOUT-voorlopig-hernoemen",String(e));toast("DVN-naam wijzigen mislukt");return null;}
   const nextRules=mergeById(alle,nwRs),delta={dossiers:mergeById(dossiers,[nwD]),
     rules:nextRules};

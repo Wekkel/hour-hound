@@ -77,6 +77,11 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
     Dag-, Week- of Beheerschermen niet opnieuw op te bouwen. Een actief invoerveld stelt een
     BroadcastChannel-herlaad uit tot focusverlies, zodat de invoer eerst veilig kan worden bewaard.
 
+16. **Opgesplitste UI zonder zichtbare workflowwijziging**
+    De flows voor recente taken, de regelbewerkingssheet, DVN en tijdelijk niet-boekbare dossiers
+    bewaken de belangrijkste view/controllergrenzen. IDs, focusgedrag, knoppen en modals blijven
+    hetzelfde, ook al staat de implementatie nu in kleine UI-componenten.
+
 Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 
 ## Uitvoeren

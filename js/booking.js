@@ -30,7 +30,7 @@ async function zetGeboekt(fp,aan){
   if(lijst.length)next[boek.datum]=lijst;else delete next[boek.datum];
   const dagen=Object.keys(next).sort();
   while(dagen.length>60)delete next[dagen.shift()];
-  try{await putK("meta",next,"geboekt");appState.commit({booked:next});return true;}
+  try{await settingsServices.save("geboekt",next);appState.commit({booked:next});return true;}
   catch(e){
     L("FOUT-geboekt",String(e));
     toast("Boekstatus kon niet worden opgeslagen — de markering is teruggedraaid");
