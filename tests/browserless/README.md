@@ -43,3 +43,10 @@ De suite gebruikt alleen Node.js core modules. Er zijn dus geen npm dependencies
 ## Relatie met Playwright
 
 Deze suite is bedoeld als snel harnas dat ook in een kale omgeving werkt. Hij vervangt Playwright niet: echte UI-flows, focusgedrag, IndexedDB-herlaadgedrag en service-worker-effecten horen in `tests/e2e/` thuis. Lees ook `tests/LESSONS_LEARNED.md` voordat je tests versoepelt of verwijdert.
+
+### Patch D-contracten
+
+De suite bewaakt daarnaast dat dagafsluitstatus via `dagSluitStatus()` wordt gelezen en dat
+auto-aanvullen een administratieve totaalaanvulling is. Een wijziging die opnieuw naar lege
+kloktijdvakken zoekt om tot 8,0 uur te komen, is een productregressie en mag niet worden opgelost
+door deze test losser te maken.

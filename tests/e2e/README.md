@@ -46,3 +46,12 @@ Breid deze suite uit zodra een workflow voor de gebruiker administratief belangr
 - import/export/restore van echte backups.
 
 Pas bestaande tests alleen aan als de gebruikersflow bewust wijzigt. Verandert alleen de code intern, dan horen deze tests juist gelijk te blijven.
+
+### Auto-aanvullen tot 8,0 uur
+
+Er zijn twee kernscenario's die in Playwright moeten blijven bestaan:
+1. minder dan 8,0 uur verantwoord: HH voegt exact het tekort als administratieve Diversen-regel toe;
+2. 8,0 uur of meer verantwoord: HH voegt geen Diversen toe en meldt dat expliciet.
+
+De test mag niet afhankelijk worden gemaakt van de aanwezigheid van lege kloktijdvakken. Dat is
+juist het oude gedrag dat Patch D verwijdert.

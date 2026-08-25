@@ -76,9 +76,9 @@ function evaluateCorePure(){
   };
   vm.createContext(context);
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
-    `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today();\n`+
+    `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{};\n`+
     `return true;\n};\n`+
-    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, schoon, urenOf, ruweMin, eindOf, totaal, gapsFor, gapHours, takenVandaag, taakLabel, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
+    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, schoon, urenOf, ruweMin, eindOf, totaal, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
   return { api: context.__hhPure, setState: context.__hhSetState };
 }
@@ -207,6 +207,53 @@ test('dagafsluiting gebruikt expliciete sheet en auditvelden', () => {
   assertIncludes(src.views, 'autoAanvulRegels', 'Heropenen moet automatische aanvulregels kennen');
 });
 
+
+test('auto-aanvultekort kent alleen tekort of geen aanvulling', () => {
+  const { api } = evaluateCorePure();
+  assertEq(api.autoAanvulTekort(5.9), 2.1, '5,9 uur moet exact 2,1 uur aanvullen');
+  assertEq(api.autoAanvulTekort(7.9), 0.1, '7,9 uur moet exact 0,1 uur aanvullen');
+  assertEq(api.autoAanvulTekort(8.0), 0, '8,0 uur heeft geen aanvulling nodig');
+  assertEq(api.autoAanvulTekort(8.6), 0, 'Boven 8,0 uur mag niets worden toegevoegd');
+});
+
+test('dagafsluitstatus heeft één centrale bron voor open en gesloten dagen', () => {
+  const { api, setState } = evaluateCorePure();
+  setState({ dagEinde: {}, dagAudit: {} });
+  assert(api.dagSluitStatus('2026-08-21').open, 'Dag zonder dagEinde moet open zijn');
+  setState({ dagEinde: { '2026-08-21': '17:00' }, dagAudit: {
+    '2026-08-21': { events: [{ type: 'gesloten', t: '2026-08-21T17:00:00Z', eind: '17:00' }] }
+  }});
+  const dicht = api.dagSluitStatus('2026-08-21');
+  assert(dicht.gesloten, 'Dag met dagEinde moet gesloten zijn');
+  assertEq(dicht.eind, '17:00', 'Centrale status moet de opgeslagen eindtijd teruggeven');
+  setState({ dagEinde: {}, dagAudit: {
+    '2026-08-21': { events: [{ type: 'heropend', t: '2026-08-22T08:00:00Z' }] }
+  }});
+  const her = api.dagSluitStatus('2026-08-21');
+  assert(her.open && her.heropend, 'Heropende dag moet centraal als open/heropend zichtbaar zijn');
+  assertNotIncludes(src.views, 'dagEinde[',
+    'UI-code in views.js moet dagstatus via dagSluitStatus() lezen, niet rechtstreeks uit dagEinde');
+});
+
+test('auto-aanvullen is administratief en niet afhankelijk van tijdvakken', () => {
+  assertIncludes(src.core, 'administratieve totaalaanvulling',
+    'Productcontract voor administratieve aanvulling ontbreekt');
+  assertIncludes(src.views, 'urenHand:true',
+    'Automatische Diversen-regel moet exact handmatig aantal uren dragen');
+  assertIncludes(src.views, 'const tekort=autoAanvulTekort(nu)',
+    'Aanvulling moet rechtstreeks uit het tekort tot 8,0 worden berekend');
+  for (const forbidden of ['aanvulGaten', 'grootsteBlokTotNorm', 'Welke gaten wil je vullen?', 'vrije tijd om tot']) {
+    assertNotIncludes(src.views, forbidden, `Auto-aanvullen mag niet meer afhankelijk zijn van tijdvakken: ${forbidden}`);
+  }
+  assertIncludes(src.views, 'Er was al "+uu(plan.nu)+" uur verantwoord. Er is daarom geen Diversen toegevoegd.',
+    'Scenario 8,0 uur of meer moet expliciet melden dat niets is toegevoegd');
+  assertIncludes(src.views, 'Hour Hound heeft "+uu(extra)+',
+    'Scenario onder 8,0 uur moet expliciet melden hoeveel Diversen is toegevoegd');
+  assertIncludes(src.views, '!r.autoAanvul&&r.urenHand',
+    'Administratieve aanvulregel mag geen misleidende handmatige-urenwaarschuwing krijgen');
+  assertIncludes(src.views, 'regels.filter(r=>!r.autoAanvul&&hm2m(r.start)!=null)',
+    'Administratieve aanvulregel mag geen overlapwaarschuwing veroorzaken');
+});
 test('oude lopende taak over datumgrens krijgt expliciete keuzes', () => {
   assertIncludes(src.html, 'id="oldrun"', 'Oude-lopende-taaksheet ontbreekt');
   assertIncludes(src.views, 'function controleerOudeLopendeTaak', 'Detectie oude lopende taak ontbreekt');

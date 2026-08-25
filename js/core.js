@@ -52,8 +52,10 @@
    B4. De boekstatus hangt aan een vingerafdruk van de inhoud; wijzigt er iets aan
        uren, bronregels of afrondingsmodus, dan vervalt de status vanzelf.
    B5. Automatisch aanvullen tot 8,0 uur kan alleen op een expliciet afgesloten dag.
-       Het gebruikt uitsluitend echte gaten vóór de vastgelegde eindtijd, mag het
-       Intapp-totaal nooit boven 8,0 brengen en wordt ingetrokken als de dag heropent.
+       Het is een administratieve totaalaanvulling: bij minder dan 8,0 uur wordt exact
+       het ontbrekende aantal uren als i7/Diversen toegevoegd, onafhankelijk van gaten
+       in de kloktijdlijn. Bij 8,0 uur of meer wordt niets toegevoegd. De automatische
+       regel wordt ingetrokken als de dag heropent.
 
    LOGBOEK
    L1. Standaard komen er uitsluitend technische gegevens in het logboek. Vrije tekst,
@@ -81,10 +83,20 @@ const kortDag=s=>parseD(s).toLocaleDateString("nl-NL",{weekday:"short"})+" "+
 const weekend=s=>{const d=parseD(s).getDay();return d===0||d===6;};
 const schoon=s=>String(s==null?"":s).replace(/[\t\r\n\u0000-\u001f]/g," ").trim();
 const NORM=8.0, VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
+const autoAanvulTekort=totaalUren=>Math.max(0,Math.round((NORM-(+totaalUren||0))*10)/10);
 
 let db=null,dossiers=[],templates=[],i7codes=[],alle=[],regels=[],running=null,stack=[];
 let viewDate=today(),weekAnchor=today(),tab="nu",liveId=null;
 let hiddenAt=null,rondMode="groep",dagEinde={},dagAudit={},snoozeTot=0,openDagenSnooze=0,oldRunSnooze=0;
+/* Centrale waarheid voor de actuele dagafsluitstatus. UI-code leest niet meer
+   zelfstandig in dagEinde: zo kunnen banners, Dag-status en afsluitsheet niet
+   onderling van mening verschillen na sluiten of heropenen. */
+function dagSluitStatus(datum){
+  const eind=(dagEinde&&Object.prototype.hasOwnProperty.call(dagEinde,datum))?dagEinde[datum]:null;
+  const a=dagAudit&&dagAudit[datum],events=a&&Array.isArray(a.events)?a.events:[];
+  const lastEvent=events.length?events[events.length-1]:null;
+  return{datum,open:eind==null,gesloten:eind!=null,eind:eind||null,
+    heropend:eind==null&&!!(lastEvent&&lastEvent.type==="heropend"),lastEvent};}
 let ntWizard=null;   // UI-state; N heeft de nieuwe timer dan al werkelijk gestart
 let pending=null;    // alleen voor het opruimen van oude versies; nieuwe code gebruikt dit niet
 const TABID=Math.random().toString(36).slice(2);

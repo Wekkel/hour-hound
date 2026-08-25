@@ -51,7 +51,7 @@ function dagRegels(datum){return alle.filter(r=>r.datum===datum);}
 function dagIntappTotaal(datum){return simIntappTotaal(dagRegels(datum));}
 function openWerkdagen(){
   const nu=today(),map={};
-  alle.forEach(r=>{if(r.datum<nu&&dagEinde[r.datum]==null&&r.soort!=="pauze")map[r.datum]=true;});
+  alle.forEach(r=>{if(r.datum<nu&&dagSluitStatus(r.datum).open&&r.soort!=="pauze")map[r.datum]=true;});
   return Object.keys(map).sort((a,b)=>b.localeCompare(a));}
 function renderOpenDagen(){
   const box=$("open-days");if(!box)return;
@@ -72,7 +72,7 @@ function voorstelDagEinde(datum){
   if(datum<today())m=Math.max(m||0,17*60);
   if(datum===today())m=hm2m(nowHM())||m||17*60;
   return m2hm(m==null?17*60:m);}
-function dagTekort(datum){return Math.max(0,Math.round((NORM-dagIntappTotaal(datum))*10)/10);}
+function dagTekort(datum){return autoAanvulTekort(dagIntappTotaal(datum));}
 function auditDag(datum,type,extra){
   const bestaand=dagAudit&&dagAudit[datum]&&Array.isArray(dagAudit[datum].events)?
     dagAudit[datum].events.slice():[];
@@ -107,7 +107,7 @@ function dagAfsluitKeuze(datum){
     const eind=datum!==today()?prompt("Je sluit "+dagLabel(datum)+" af.\n\nEindtijd?",voorstelDagEinde(datum)):nowHM();
     if(eind===null)return Promise.resolve(null);
     return Promise.resolve({actie:"fill",eind});}
-  const huidig=dagIntappTotaal(datum),tekort=dagTekort(datum),gesloten=dagEinde[datum]!=null;
+  const huidig=dagIntappTotaal(datum),tekort=dagTekort(datum),ds=dagSluitStatus(datum),gesloten=ds.gesloten;
   const eindVoorstel=voorstelDagEinde(datum),warnings=dagAfsluitWaarschuwing(datum,tekort);
   $("dc-date").textContent=dagLabel(datum);
   $("dc-status").textContent=gesloten?"al afgesloten":(datum===today()?"vandaag open":"eerdere dag open");
@@ -115,8 +115,8 @@ function dagAfsluitKeuze(datum){
   $("dc-miss").textContent=uu(tekort)+" u";
   $("dc-end").value=eindVoorstel;
   $("dc-help").textContent=tekort>0.05?
-    "Kies bewust of Hour Hound echte vrije gaten vóór de eindtijd mag aanvullen met i7 · Praktijkorganisatie/administratie · Diversen. Annuleren of ‘zonder aanvullen’ boekt niets extra." :
-    "Er is geen Diversen-aanvulling nodig; afsluiten legt alleen de eindtijd vast.";
+    "Aanvullen voegt administratief precies het ontbrekende aantal uren toe als i7 · Praktijkorganisatie/administratie · Diversen. Bestaande tijdregels en kloktijden worden niet aangepast." :
+    "Er is al 8,0 uur of meer verantwoord. Auto-aanvullen voegt daarom niets toe.";
   $("dc-warn").innerHTML=warnings.map(esc).join("<br>");
   $("dc-warn").classList.toggle("on",warnings.length>0);
   $("dc-fill").textContent=tekort>0.05?"Afsluiten + aanvullen":"Afsluiten";
@@ -141,7 +141,8 @@ function dagAfsluitKeuze(datum){
     $("dc-x").onclick=()=>done(null);});}
 async function sluitWerkdag(datum){
   if(opBlok){toast("Rond eerst het herstelvenster af");return false;}
-  if(dagEinde[datum]!=null){toast("Deze werkdag is al afgesloten om "+dagEinde[datum]);return false;}
+  const ds=dagSluitStatus(datum);
+  if(ds.gesloten){toast("Deze werkdag is al afgesloten om "+ds.eind);return false;}
   const list=dagRegels(datum);
   if(!list.length){toast("Geen regels op "+dmy(datum));return false;}
   const keuze=await dagAfsluitKeuze(datum);
@@ -167,10 +168,15 @@ async function sluitWerkdag(datum){
     dagEinde=nwDagEinde;dagAudit=nwDagAudit;viewDate=datum;refreshDay();showTab("dag");renderAll();announce();
     return true;});
   if(!klaar)return false;
-  L("einde-werkdag",datum+" om "+dagEinde[datum]+" · "+uu(dagIntappTotaal(datum))+" u");
-  const naTekort=dagTekort(datum);
+  const totaalNaSluit=dagIntappTotaal(datum),naTekort=dagTekort(datum);
+  L("einde-werkdag",datum+" om "+dagSluitStatus(datum).eind+" · "+uu(totaalNaSluit)+" u");
   if(keuze.actie==="fill"&&naTekort>0.05)setTimeout(vulAanTot8,120);
-  else toast("Werkdag afgesloten om "+dagEinde[datum]+(naTekort>0.05?" — zonder Diversen-aanvulling":" — je zit op "+uu(dagIntappTotaal(datum))+" uur"));
+  else if(keuze.actie==="fill")toast("Werkdag afgesloten. Er was al "+uu(totaalNaSluit)+
+    " uur verantwoord. Er is daarom geen Diversen toegevoegd.");
+  else if(naTekort>0.05)toast("Werkdag afgesloten zonder aanvullen. Er is "+uu(totaalNaSluit)+
+    " uur verantwoord; "+uu(naTekort)+" uur ontbreekt nog tot "+uu(NORM)+" uur.");
+  else toast("Werkdag afgesloten. Er is "+uu(totaalNaSluit)+
+    " uur verantwoord; er was geen Diversen-aanvulling nodig.");
   return true;}
 
 
@@ -373,12 +379,12 @@ function renderTot(){
 
 function renderDagStatus(){
   const el=$("d-status");if(!el)return;
-  const huidig=dagIntappTotaal(viewDate),tekort=dagTekort(viewDate),gesloten=dagEinde[viewDate]!=null;
+  const huidig=dagIntappTotaal(viewDate),tekort=dagTekort(viewDate),ds=dagSluitStatus(viewDate),gesloten=ds.gesloten;
   const oudOpen=viewDate<today()&&!gesloten&&dagRegels(viewDate).some(r=>r.soort!=="pauze");
   const loopt=running&&running.datum===viewDate;
   const cls=gesloten?"closed":"open";
   el.className="daystatus "+cls;
-  const status=gesloten?("Afgesloten om "+dagEinde[viewDate]):(oudOpen?"Open eerdere werkdag":"Open werkdag");
+  const status=gesloten?("Afgesloten om "+ds.eind):(ds.heropend?"Heropende werkdag":(oudOpen?"Open eerdere werkdag":"Open werkdag"));
   let h='<span class="main">Status: '+esc(status)+'</span>'+ 
     '<span>Verantwoord <b class="metric">'+uu(huidig)+'</b> / '+uu(NORM)+' u</span>'+ 
     '<span>Nog nodig <b class="metric">'+uu(tekort)+'</b> u</span>';
@@ -398,7 +404,7 @@ function renderDagStatus(){
 /* ---------- weergave: DAG ---------- */
 function bouwDag(){
   $("d-label").textContent=dagLabel(viewDate)+
-    (dagEinde[viewDate]!=null?" · afgesloten om "+dagEinde[viewDate]:"");
+    (dagSluitStatus(viewDate).gesloten?" · afgesloten om "+dagSluitStatus(viewDate).eind:"");
   const gaps=gapsFor(regels,viewDate),rows=[];
   regels.forEach(r=>rows.push({t:"r",r,k:hm2m(r.start)||0}));
   gaps.forEach(g=>rows.push({t:"g",g,k:g[0]}));
@@ -414,9 +420,10 @@ function bouwDag(){
         '" title="Deze tijd invullen">&#9998;</button></td></tr>';return;}
     const r=row.r,d=dosOf(r.dossierId),run=running&&running.id===r.id,booked=regelIsGeboekt(r);
     h+='<tr class="'+(run?"isrun ":"")+(r.soort==="pauze"?"ispauze ":"")+(r.autoAanvul?"isauto ":"")+(booked?"needsreview":"")+'" data-id="'+esc(r.id)+'">'+
-      '<td class="t"><input data-f="start" readonly title="Open bewerksheet" value="'+esc(r.start)+'"></td>'+
-      '<td class="t"><input data-f="eind" readonly title="Open bewerksheet" value="'+esc(run?"":(r.eind||""))+
-        '" placeholder="'+(run?"loopt":"")+'"></td>'+
+      (r.autoAanvul?'<td class="t"><span class="muted">admin.</span></td><td class="t"><span class="muted">—</span></td>':
+        '<td class="t"><input data-f="start" readonly title="Open bewerksheet" value="'+esc(r.start)+'"></td>'+
+        '<td class="t"><input data-f="eind" readonly title="Open bewerksheet" value="'+esc(run?"":(r.eind||""))+
+          '" placeholder="'+(run?"loopt":"")+'"></td>')+
       '<td><input data-f="dossier" readonly title="Open bewerksheet" value="'+esc(dosVeld(d))+'" placeholder="&mdash;" autocomplete="off"></td>'+
       '<td><input data-f="code" readonly title="Open bewerksheet" class="'+(codeFout(d,r)?"miss":"")+'" value="'+
         esc(codeNaam(d,r.code))+'" placeholder="'+
@@ -438,9 +445,9 @@ function verversDag(){
   $("d-tot").textContent=uu(totaal(regels));
   $("d-void").textContent=uu(gapHours(gapsFor(regels,viewDate)));
   $("d-pauze").textContent=uu(pauzeUren(regels));
-  const vulMag=dagEinde[viewDate]!=null&&!(running&&running.datum===viewDate);
+  const vulMag=dagSluitStatus(viewDate).gesloten&&!(running&&running.datum===viewDate);
   $("d-fill").disabled=!vulMag;
-  $("d-fill").title=vulMag?"Vul echte gaten aan tot maximaal 8,0 uur":
+  $("d-fill").title=vulMag?"Vul het administratieve dagtotaal aan tot 8,0 uur":
     "Beschikbaar nadat deze werkdag met E is afgesloten";
   bouwSum();boekStat();}
 
@@ -507,11 +514,11 @@ function controleer(){
       add(r,"starttijd ligt in de toekomst",true);
     if(r.datum===today()&&r.eind&&hm2m(r.eind)!=null&&hm2m(r.eind)>hm2m(nowHM()))
       add(r,"eindtijd ligt in de toekomst",true);
-    if(r.urenHand&&r.eind&&Math.abs(urenOf(r)-Math.ceil(ruweMin(r)/6)/10)>0.05)
+    if(!r.autoAanvul&&r.urenHand&&r.eind&&Math.abs(urenOf(r)-Math.ceil(ruweMin(r)/6)/10)>0.05)
       add(r,"handmatige uren wijken af van de ingevulde tijden",false);});
   /* Pauze telt niet als declarabele tijd, maar hoort wél in de tijdlijncontrole:
      een werkregel die over een pauze heen loopt moet zichtbaar worden.          */
-  const iv=regels.filter(r=>hm2m(r.start)!=null)
+  const iv=regels.filter(r=>!r.autoAanvul&&hm2m(r.start)!=null)
     .map(r=>({a:hm2m(r.start),b:Math.max(hm2m(r.start),hm2m(eindOf(r))||hm2m(r.start)),r}))
     .sort((x,y)=>x.a-y.a);
   let tot=null;
@@ -595,128 +602,69 @@ function nieuweRegel(o){
     code:null,omschrijving:"",uren:0.1,urenHand:false,soort:"werk",
     gemaakt:Date.now(),gewijzigd:Date.now()},o);}
 
-/* Eén vooraf berekend plan. Alles wordt eerst doorgerekend op een gesimuleerde
-   dag — inclusief de groepering, want alle aanvulregels vallen in dezelfde
-   Intapp-regel — en pas daarna in één transactie weggeschreven. Undo wordt
-   geregistreerd nadat die transactie is geslaagd.                              */
-function gapUren(g){return Math.ceil((g[1]-g[0])/6)/10;}
-function aanvulGaten(lijst,datum){
-  const de=dagEinde[datum]!=null?hm2m(dagEinde[datum]):null;
-  if(de==null)return[];
-  const iv=lijst.filter(r=>hm2m(r.start)!=null&&hm2m(r.start)<de)
-    .map(r=>[hm2m(r.start),Math.min(de,Math.max(hm2m(r.start),hm2m(eindOf(r))||hm2m(r.start)))])
-    .sort((a,b)=>a[0]-b[0]);
-  if(!iv.length)return[];
-  const mg=[iv[0].slice()];
-  for(let i=1;i<iv.length;i++){const l=mg[mg.length-1];
-    if(iv[i][0]<=l[1])l[1]=Math.max(l[1],iv[i][1]);else mg.push(iv[i].slice());}
-  const out=[];
-  for(let i=0;i<mg.length-1;i++)if(mg[i+1][0]>mg[i][1])out.push([mg[i][1],mg[i+1][0]]);
-  const last=mg[mg.length-1][1];if(de>last)out.push([last,de]);
-  return out.filter(g=>g[1]-g[0]>=6);}
-function simIntappTotaal(lijst){
-  return Math.round(sumVan(lijst).reduce((s,x)=>s+x.u,0)*10)/10;}
-function aanvulRegel(gp,minuten,ind,code){
-  return nieuweRegel({datum:viewDate,start:m2hm(gp[0]),eind:m2hm(gp[0]+minuten),
-    dossierId:ind.id,code,omschrijving:"Diversen",uren:Math.ceil(minuten/6)/10,
+/* Auto-aanvullen is bewust een administratieve totaalaanvulling, geen poging om
+   achteraf te reconstrueren op welke kloktijden niet is gewerkt/geregistreerd. De
+   gebruiker vult inhoudelijke ontbrekende regels eerst zelf aan; daarna vult deze
+   functie uitsluitend het resterende verschil tot 8,0 uur met i7/Diversen. */
+function aanvulRegel(uren,ind,code){
+  const ds=dagSluitStatus(viewDate),anker=ds.eind||voorstelDagEinde(viewDate);
+  return nieuweRegel({datum:viewDate,start:anker,eind:anker,dossierId:ind.id,code,
+    omschrijving:"Diversen",uren:Math.round(uren*10)/10,urenHand:true,
     autoAanvul:true,autoAanvulOp:Date.now(),autoAanvulReden:"dag-aanvulling"});}
-function grootsteBlokTotNorm(basis,gp,ind,code){
-  let lo=1,hi=Math.max(0,gp[1]-gp[0]),best=0,bestTot=simIntappTotaal(basis);
-  const voor=bestTot;
-  while(lo<=hi){const mid=Math.floor((lo+hi)/2),r=aanvulRegel(gp,mid,ind,code);
-    const tot=simIntappTotaal(basis.concat([r]));
-    if(tot<=NORM+0.001){best=mid;bestTot=tot;lo=mid+1;}else hi=mid-1;}
-  return best&&bestTot>voor+0.001?{minuten:best,totaal:bestTot}:null;}
-function maakAanvulPlan(kiesGaten){
-  if(dagEinde[viewDate]==null)return{fout:"Sluit deze werkdag eerst af met E"};
+function maakAanvulPlan(){
+  if(dagSluitStatus(viewDate).open)return{fout:"Sluit deze werkdag eerst af met E"};
   const ind=i7();
   if(!ind)return{fout:"Geen i7-dossier — maak er eerst een aan onder Beheer"};
   const code=i7Standaard();
   if(!code)return{fout:"Werkcode Praktijkorganisatie/administratie ontbreekt — herstel werkcodes.json eerst"};
   const nu=simIntappTotaal(regels);
-  const tekort=Math.round((NORM-nu)*10)/10;
-  if(tekort<=0.05)return{fout:"Niets aan te vullen — je zit op "+uu(nu)+" uur"};
-  const alleGaten=aanvulGaten(regels,viewDate);
-  const gekozen=(kiesGaten||alleGaten.map((g,i)=>i))
-    .filter((i,p,a)=>a.indexOf(i)===p&&i>=0&&i<alleGaten.length)
-    .map(i=>alleGaten[i]);
-  const rijen=[];
-  for(const gp of gekozen){
-    if(simIntappTotaal(regels.concat(rijen))>=NORM-0.001)break;
-    const past=grootsteBlokTotNorm(regels.concat(rijen),gp,ind,code);
-    if(!past)continue;
-    rijen.push(aanvulRegel(gp,past.minuten,ind,code));}
-  const eind=simIntappTotaal(regels.concat(rijen));
-  if(eind>NORM+0.001)return{fout:"Aanvullen is afgebroken omdat het totaal boven "+uu(NORM)+" uur zou komen",
-    gaten:alleGaten,nu,tekort};
-  if(eind<NORM-0.05)return{fout:"Binnen de afgesloten werkdag is niet genoeg vrije tijd om tot "+
-    uu(NORM)+" uur aan te vullen. Er blijft "+uu(NORM-eind)+" uur over; corrigeer of voeg de ontbrekende tijd handmatig toe.",
-    gaten:alleGaten,nu,tekort};
-  const extra=rijen.reduce((s,r)=>s+urenOf(r),0);
-  if(Math.round((dagUren(viewDate,null)+extra)*10)/10>DAGMAX)
+  const tekort=autoAanvulTekort(nu);
+  if(tekort<=0.05)return{ind,code,plan:[],eind:nu,nu,tekort:0,geenAanvulling:true};
+  const r=aanvulRegel(tekort,ind,code),eind=simIntappTotaal(regels.concat([r]));
+  if(Math.round((totaal(regels)+tekort)*10)/10>DAGMAX)
     return{fout:"Dat zou meer dan "+uu(DAGMAX)+" uur op één dag maken"};
-  return{ind,code,gaten:alleGaten,rijen,sluit:null,plan:rijen,eind,nu,tekort};}
+  if(Math.abs(eind-NORM)>0.05)return{fout:"Aanvullen kon het dagtotaal niet betrouwbaar op "+
+    uu(NORM)+" uur zetten. Er is niets gewijzigd."};
+  return{ind,code,plan:[r],eind,nu,tekort};}
 async function vulAanTot8(){
-  if(opBlok){toast("Rond eerst het herstelvenster af");return;}
-  if(dagEinde[viewDate]==null){toast("Sluit deze werkdag eerst af met E");return;}
+  if(opBlok){toast("Rond eerst het herstelvenster af");return false;}
+  if(dagSluitStatus(viewDate).open){toast("Sluit deze werkdag eerst af met E");return false;}
   if(running&&running.datum===viewDate){
-    toast("Sluit eerst de lopende regel af met E");return;}
-  let plan=maakAanvulPlan(null);
-  /* Zijn de gaten samen groter dan het tekort, dan wordt er niet blind gevuld: de
-     gebruiker kiest zelf welke gaten meegaan.                                  */
-  if(!plan.fout||plan.gaten){
-    const gaten=plan.gaten||[],gTot=gapHours(gaten);
-    const tekort=plan.tekort||0;
-    if(gaten.length&&gTot>tekort+0.05){
-      const lijst=gaten.map((g,i)=>"  "+(i+1)+") "+m2hm(g[0])+"–"+m2hm(g[1])+
-        "  "+uu(gapUren(g))+" u").join("\n");
-      const auto=[];let som=0;
-      gaten.forEach((g,i)=>{if(som>=tekort-0.001)return;
-        const u=gapUren(g);auto.push(i+1);som=Math.round((som+u)*10)/10;});
-      const inv=prompt("De gaten zijn samen "+uu(gTot)+" uur, maar er is nog maar "+
-        uu(tekort)+" uur nodig tot "+uu(NORM)+" uur.\n\n"+lijst+
-        "\n\nWelke gaten wil je vullen? Geef de nummers, gescheiden door komma's "+
-        "(leeg = geen enkel gat).",auto.join(","));
-      if(inv===null)return;
-      const keuze=inv.split(",").map(x=>parseInt(x,10)-1).filter(i=>i>=0);
-      plan=maakAanvulPlan(keuze);}}
-  if(plan.fout){toast(plan.fout);L("aanvullen-geblokkeerd",plan.fout.slice(0,60));return;}
-  const wat=[];
-  if(plan.rijen.length)wat.push("• "+plan.rijen.length+" vrij blok"+
-    (plan.rijen.length>1?"ken":"")+": "+
-    plan.rijen.map(r=>r.start+"–"+r.eind).join(", "));
-  if(!plan.plan.length){toast("Niets aan te vullen");return;}
-  const extra=plan.plan.reduce((s,r)=>s+urenOf(r),0);
+    toast("Sluit eerst de lopende regel af met E");return false;}
+  const plan=maakAanvulPlan();
+  if(plan.fout){toast(plan.fout);L("aanvullen-geblokkeerd",plan.fout.slice(0,60));return false;}
+  if(plan.geenAanvulling){
+    toast("Er was al "+uu(plan.nu)+" uur verantwoord. Er is daarom geen Diversen toegevoegd.");
+    L("aanvullen-niet-nodig",uu(plan.nu)+" u");return true;}
+  const extra=plan.tekort;
   const waarschuwing=extra>=7.95?
-    "\n\nLET OP: je boekt vrijwel de hele werkdag als Diversen." :
-    (extra>1.0?"\n\nLet op: dit boekt "+uu(extra)+" uur als Diversen." : "");
-  if(!confirm("Aanvullen met i7 · "+codeNaam(plan.ind,plan.code)+" · Diversen:\n\n"+
-    wat.join("\n")+"\n\nToe te voegen: "+uu(extra)+" uur.\nDagtotaal wordt "+uu(plan.eind)+" uur"+
-    (Math.abs(plan.eind-NORM)>0.05?" (de norm van "+uu(NORM)+
-      " uur wordt niet exact bereikt)":"")+"."+waarschuwing+
-    "\n\nKies Annuleren om de dag afgesloten te laten zonder Diversen-aanvulling.\n\nDoorgaan?"))return;
-  const batch=uid();
-  plan.plan.forEach(r=>{r.autoAanvulBatch=batch;r.autoAanvulOp=Date.now();});
+    "\n\nLET OP: hiermee wordt vrijwel de hele werkdag als Diversen verantwoord." :
+    (extra>1.0?"\n\nLet op: hiermee wordt "+uu(extra)+" uur als Diversen verantwoord.":"");
+  if(!confirm("Automatisch aanvullen tot "+uu(NORM)+" uur:\n\n"+
+    "Er is "+uu(plan.nu)+" uur verantwoord.\n"+
+    "Hour Hound voegt "+uu(extra)+" uur toe als i7 · "+codeNaam(plan.ind,plan.code)+" · Diversen.\n"+
+    "Dagtotaal daarna: "+uu(plan.eind)+" uur."+waarschuwing+
+    "\n\nBestaande tijdregels en kloktijden worden niet aangepast.\n\nDoorgaan?"))return false;
+  const batch=uid(),r=plan.plan[0];
+  r.autoAanvulBatch=batch;r.autoAanvulOp=Date.now();
   const nwDagAudit=Object.assign({},dagAudit);
   nwDagAudit[viewDate]=auditDag(viewDate,"aangevuld",{
-    uren:extra,regels:plan.plan.length,ids:plan.plan.map(r=>r.id),batch:batch,
-    totaalNa:plan.eind});
+    uren:extra,regels:1,ids:[r.id],batch:batch,totaalVoor:plan.nu,totaalNa:plan.eind});
   try{
-    await txAll(s=>{plan.plan.forEach(r=>s.regels.put(r));s.meta.put(nwDagAudit,"dagAudit");});
+    await txAll(s=>{s.regels.put(r);s.meta.put(nwDagAudit,"dagAudit");});
   }catch(e){L("FOUT-aanvullen",String(e));
-    toast("Aanvullen mislukt — er is niets gewijzigd: "+e);return;}
-  dagAudit=nwDagAudit;
-  plan.plan.forEach(memRegel);
-  undoData("dag aanvullen",[],{weg:plan.plan.map(r=>r.id)});
+    toast("Aanvullen mislukt — er is niets gewijzigd: "+e);return false;}
+  dagAudit=nwDagAudit;memRegel(r);
+  undoData("dag aanvullen",[],{weg:[r.id]});
   bouwDag();renderTot();announce();
   const werkelijk=Math.round(intappTotaal()*10)/10;
-  L("aanvullen",plan.plan.length+" regels · nu "+uu(werkelijk)+" u");
-  toast(Math.abs(werkelijk-NORM)<0.05?
-    "Aangevuld tot "+uu(NORM)+" uur in de Intapp-samenvatting":
-    "Aangevuld — de Intapp-samenvatting staat nu op "+uu(werkelijk)+" uur");}
+  L("aanvullen","1 administratieve regel · +"+uu(extra)+" u · nu "+uu(werkelijk)+" u");
+  toast("Er was "+uu(plan.nu)+" uur verantwoord. Hour Hound heeft "+uu(extra)+
+    " uur Diversen toegevoegd. Totaal: "+uu(werkelijk)+" uur.");
+  return true;}
 async function heropenWerkdag(datum){
   if(opBlok){toast("Rond eerst het herstelvenster af");return;}
-  if(dagEinde[datum]==null){toast("Deze dag is al open");return;}
+  if(dagSluitStatus(datum).open){toast("Deze dag is al open");return;}
   if(running&&running.datum===datum){toast("Er loopt nog een regel op deze dag");return;}
   const autos=autoAanvulRegels(datum);
   let verwijder=false;

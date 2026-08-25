@@ -37,3 +37,29 @@ Losse tekstlocators waren fragiel: `Dag` kan ook in andere knoppen of tekst voor
 ## 7. Service workers horen niet in e2e-rooktests te domineren
 
 Voor Playwright-smoketests worden service workers geblokkeerd. Dat voorkomt dat `claim()`/reload of oude caches de test instabiel maken. De SW zelf wordt browserloos gecontroleerd op de belangrijkste invariant: testbestanden mogen niet in de cachelijst staan.
+
+## 8. Auto-aanvullen is een totaalcorrectie, geen tijdlijnreconstructie
+
+De eerdere implementatie zocht naar lege kloktijdvakken vóór de opgeslagen eindtijd. Dat was
+conceptueel onjuist: de gebruiker kiest auto-aanvullen juist wanneer het inhoudelijke werk al
+is ingevoerd en het resterende verschil tot 8,0 uur administratief als i7 ·
+Praktijkorganisatie/administratie · Diversen moet worden verantwoord.
+
+Contract vanaf Patch D:
+- onder 8,0 uur: voeg exact `8,0 - verantwoord` toe;
+- 8,0 uur of meer: voeg niets toe;
+- bestaande regels en kloktijden worden nooit verschoven;
+- de automatische regel draagt exacte handmatige uren en is herkenbaar als `autoAanvul`;
+- de automatische regel mag geen overlap- of handmatige-urenwaarschuwing veroorzaken;
+- UI-tekst noemt het totaal vóór de actie, de toegevoegde Diversen-tijd en het totaal erna.
+
+Als later een echte tijdlijn voor administratieve aanvulregels wordt ontworpen, wijzig dit contract
+alleen bewust en voeg eerst e2e-tests toe. Maak nooit opnieuw de mogelijkheid tot aanvullen
+afhankelijk van gevonden tijdgaten.
+
+## 9. Dagafsluitstatus heeft één leespad
+
+Banners, de Dag-status en de afsluitsheet moeten dezelfde actuele status lezen. Gebruik
+`dagSluitStatus(datum)` in plaats van op verschillende UI-plekken zelfstandig `dagEinde[datum]`
+te interpreteren. Mutaties blijven via de bestaande transactiepaden lopen; de helper is de centrale
+leeswaarheid. Dit voorkomt dat één UI-onderdeel na afsluiten nog een oude dag als open presenteert.

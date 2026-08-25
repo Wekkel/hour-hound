@@ -204,6 +204,86 @@ test('sluit een werkdag af via de sheet zonder stilzwijgend Diversen aan te vull
   await expect(page.locator('#d-status')).toContainText(/Afgesloten/i);
 });
 
+
+
+
+
+test('afsluiten van een eerdere open dag ruimt de open-dagmelding direct op', async ({ page }) => {
+  const old = addDays(todayLocal(), -1);
+  await openAndSeed(page, {
+    dossiers: [
+      i7Dossier,
+      { id: 'd-normal', nummer: '304000007', naam: 'Oude open dag', lang: 'nl', codes: [], c: 1 }
+    ],
+    regels: [{
+      id: 'r-old-day', datum: old, start: '09:00', eind: '12:00', dossierId: 'd-normal',
+      code: null, omschrijving: 'oude dag', soort: 'werk', gemaakt: Date.now(), gewijzigd: Date.now()
+    }],
+    codes: baseCodes,
+    meta: {}
+  });
+
+  await expect(page.locator('#open-days')).toHaveClass(/on/);
+  await expect(page.locator('#open-days')).toContainText(/Nog niet afgesloten/i);
+  await page.locator('#open-days [data-open-close]').click();
+  await expect(page.locator('#dayclose')).toContainText('Dag afsluiten');
+  await page.locator('#dc-nofill').click();
+  await expect(page.locator('#dayclose')).not.toHaveClass(/on/);
+  await expect(page.locator('#open-days')).not.toHaveClass(/on/);
+  await expect(page.locator('#d-status')).toContainText(/Afgesloten/i);
+});
+test('auto-aanvullen vult exact het administratieve tekort tot 8,0 uur', async ({ page }) => {
+  const today = todayLocal();
+  await openAndSeed(page, {
+    dossiers: [
+      i7Dossier,
+      { id: 'd-normal', nummer: '304000005', naam: 'Aanvul dossier', lang: 'nl', codes: [], c: 1 }
+    ],
+    regels: [{
+      id: 'r-fill', datum: today, start: '09:00', eind: '14:54', dossierId: 'd-normal',
+      code: null, omschrijving: 'inhoudelijk werk', soort: 'werk', gemaakt: Date.now(), gewijzigd: Date.now()
+    }],
+    codes: baseCodes,
+    meta: {}
+  });
+
+  await page.locator('#b-end').click();
+  await expect(page.locator('#dayclose')).toContainText('Dag afsluiten');
+  await expect(page.locator('#dc-done')).toHaveText('5,9 u');
+  await expect(page.locator('#dc-miss')).toHaveText('2,1 u');
+  await expect(page.locator('#dc-help')).toContainText(/precies het ontbrekende aantal uren/i);
+  await page.locator('#dc-fill').click();
+  await expect(page.locator('#dayclose')).not.toHaveClass(/on/);
+  await expect(page.locator('#d-table .autobadge')).toHaveCount(1);
+  await expect(page.locator('#d-tot')).toHaveText('8,0');
+  await expect(page.locator('#toast')).toContainText(/2,1 uur Diversen toegevoegd/i);
+  await expect(page.locator('#d-table')).toContainText('admin.');
+});
+
+test('auto-aanvullen doet niets als al 8,0 uur is verantwoord', async ({ page }) => {
+  const today = todayLocal();
+  await openAndSeed(page, {
+    dossiers: [
+      i7Dossier,
+      { id: 'd-normal', nummer: '304000006', naam: 'Volle dag', lang: 'nl', codes: [], c: 1 }
+    ],
+    regels: [{
+      id: 'r-full', datum: today, start: '09:00', eind: '17:00', dossierId: 'd-normal',
+      code: null, omschrijving: 'volle werkdag', soort: 'werk', gemaakt: Date.now(), gewijzigd: Date.now()
+    }],
+    codes: baseCodes,
+    meta: {}
+  });
+
+  await page.locator('#b-end').click();
+  await expect(page.locator('#dc-done')).toHaveText('8,0 u');
+  await expect(page.locator('#dc-miss')).toHaveText('0,0 u');
+  await expect(page.locator('#dc-help')).toContainText(/voegt daarom niets toe/i);
+  await page.locator('#dc-fill').click();
+  await expect(page.locator('#dayclose')).not.toHaveClass(/on/);
+  await expect(page.locator('#d-table .autobadge')).toHaveCount(0);
+  await expect(page.locator('#toast')).toContainText(/geen Diversen toegevoegd/i);
+});
 test('recente takenlijst toont alle taken maar alleen sneltoetsen 1-4', async ({ page }) => {
   const today = todayLocal();
   const regels = Array.from({ length: 6 }, (_, i) => ({
