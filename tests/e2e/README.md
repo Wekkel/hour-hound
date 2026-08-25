@@ -10,8 +10,11 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
 2. **Veilige bewerking van bestaande tijdregels**
    Een opgeslagen regel op de Dag-tab wordt niet rauw inline gewijzigd, maar via de sheet `Tijdregel bewerken` en expliciet `Wijzigingen opslaan`.
 
-3. **DVN → dossiernummer → Intapp-status**
-   Een DVN blijft intern DVN, krijgt een echt dossiernummer voor Intapp, kan als `ingevoerd in Intapp` worden gemarkeerd, en valt terug naar `controle nodig` na een latere tijdregelwijziging.
+3. **DVN → dossiernummer → Boeken in Intapp → Afgehandeld**
+   Een DVN blijft intern DVN, krijgt onder Beheer een echt dossiernummer en toont vervolgens alle
+   betrokken regels met het juiste totaal in de boekingssheet. Na `Alles ingevoerd in Intapp`
+   verhuist hij naar de inklapbare groep Afgehandeld. Week is alleen-lezen. Een latere
+   tijdregelwijziging zet de DVN terug naar `controle nodig` in de open werkvoorraad.
 
 4. **Dagafsluiting**
    Einde werkdag opent de afsluitsheet. Afsluiten zonder Diversen-aanvulling mag niets extra boeken.

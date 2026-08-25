@@ -80,7 +80,15 @@ function evaluateCorePure(){
     `return true;\n};\n`+
     `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
-  return { api: context.__hhPure, setState: context.__hhSetState };
+  return { api: context.__hhPure, setState: context.__hhSetState, context };
+}
+
+function evaluateIoPure(){
+  const { context } = evaluateCorePure();
+  vm.runInContext(src.io+
+    '\n;globalThis.__hhIoPure = { keurDossiers, backupVersie: BACKUPVERSIE };',
+    context,{filename:'js/io.js'});
+  return context.__hhIoPure;
 }
 
 // 1. Algemene bronkwaliteit --------------------------------------------------
@@ -172,6 +180,8 @@ test('DVN pure statushelpers onderscheiden ontbrekend, klaar, ingevoerd en contr
   assertEq(api.dvnIntappState(open), 'missing', 'open DVN mist dossiernummer');
   assertEq(api.dvnIntappState(ready), 'ready', 'resolved DVN moet klaar voor Intapp zijn');
   assertEq(api.dvnIntappState(posted), 'posted', 'posted status moet blijven staan');
+  assertEq(api.dvnStatusTekst(posted), 'dossiernummer 304999997 · afgehandeld',
+    'De gebruikersstatus van een posted DVN moet afgehandeld zijn');
   const checked = api.markDvnControleNodig(posted, 'testwijziging');
   assertEq(api.dvnIntappState(checked), 'needs_check', 'posted DVN moet naar controle nodig kunnen vallen');
 });
@@ -325,10 +335,15 @@ test('DVN blijft intern herkenbaar na dossiernummer-toekenning', () => {
   assertIncludes(src.views, 'tag dvn', 'Dag/Intapp-output moet DVN-badge kunnen tonen');
 });
 
-test('DVN Intapp-status is markeerbaar en valt terug naar controle nodig bij latere wijzigingen', () => {
+test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', () => {
   assertIncludes(src.html, 'id="dvnpost"', 'DVN-post-sheet ontbreekt');
+  assertIncludes(src.html, 'Boeken in Intapp', 'De begeleide DVN-boekingsactie ontbreekt');
+  assertIncludes(src.html, 'id="dp-lines"', 'De boekingssheet moet alle DVN-regels kunnen tonen');
+  assertIncludes(src.html, 'Alles ingevoerd in Intapp', 'Expliciete eindbevestiging ontbreekt');
   assertIncludes(src.timer, 'function openDvnPostSheet', 'DVN-post-sheet opener ontbreekt');
   assertIncludes(src.timer, 'async function markeerDvnIngevoerd', 'Markeer-als-ingevoerd functie ontbreekt');
+  assertIncludes(src.timer, 'data-dvn-rule', 'Boekingssheet moet herkenbare bronregels tonen');
+  assertIncludes(src.timer, 'dvnIntappPostedRuleIds:rs.map', 'Afhandeling moet de betrokken regel-id’s vastleggen');
   assertIncludes(src.core, 'function dvnIntappState', 'DVN-statushelper ontbreekt');
   assertIncludes(src.core, 'function dvnPutIfPosted', 'Gedeelde posted-DVN-terugval ontbreekt');
   assertIncludes(src.core, '"posted"', 'DVN posted-status ontbreekt');
@@ -338,6 +353,14 @@ test('DVN Intapp-status is markeerbaar en valt terug naar controle nodig bij lat
   assertIncludes(src.views, 'tijdregel opnieuw lopend gemaakt', 'Opnieuw lopend maken moet controle nodig maken');
   assertIncludes(src.timer, 'dossiernummer aangepast', 'Dossiernummerwijziging na posted moet controle nodig maken');
   assertIncludes(src.timer, 'dvnPutIfPosted', 'Timerpaden moeten posted DVN via de gedeelde helper terugzetten');
+  assertIncludes(src.views, 'id="dvn-open"', 'Open DVN-acties moeten een eigen werkvoorraad hebben');
+  assertIncludes(src.views, 'id="dvn-done"', 'Afgehandelde DVN’s moeten traceerbaar en inklapbaar blijven');
+  assertIncludes(src.views, '>Boeken in Intapp</button>', 'Beheer moet de begeleide boekingsactie aanbieden');
+  const week = (src.views.match(/function renderWeek\(\)\{[\s\S]*?\nfunction dvnAuditTekst/) || [''])[0];
+  assert(week, 'renderWeek/DVN-statusblok ontbreekt');
+  assertIncludes(week, 'Alleen-lezen · wijzigen onder Beheer', 'Week moet naar Beheer verwijzen');
+  assertNotIncludes(week, 'data-nr=', 'Week mag geen DVN-dossiernummer wijzigen');
+  assertNotIncludes(week, 'kenNummerToe', 'Week mag de nummerworkflow niet aanroepen');
 });
 
 test('hervatten van een recente taak start exact één nieuwe timerwissel', () => {
@@ -362,10 +385,22 @@ test('oude timer en editor volgen timerOp-contract', () => {
 
 
 test('backup/import bewaart nieuwe dag- en DVN-metadata', () => {
-  assertIncludes(src.io, 'const BACKUPVERSIE=7', 'Backupversie moet Patch C-metadata dekken');
+  const io = evaluateIoPure();
+  assertEq(io.backupVersie, 7, 'Backupversie moet Patch C/F-metadata dekken');
   for (const key of ['dagAudit', 'dvnResolvedNr', 'dvnTo', 'dvnIntappStatus', 'dvnIntappAudit', 'dvnIntappPostedRuleIds', 'hersteld', 'herstelOrigineel']) {
     assertIncludes(src.io, key, `Backup/import mist ${key}`);
   }
+  const restored=io.keurDossiers([{
+    id:'dvn-backup',nummer:'304999995',naam:'Back-up DVN',dvn:true,
+    dvnResolvedNr:'304999995',dvnIntappStatus:'posted',
+    dvnIntappPostedAt:'2026-08-25T09:30:00.000Z',dvnIntappPostedCount:2,
+    dvnIntappPostedHours:1.5,dvnIntappPostedRuleIds:['r-a','r-b'],
+    dvnIntappAudit:[{type:'ingevoerd',t:'2026-08-25T09:30:00.000Z',regels:2,uren:1.5}]
+  }]).goed[0];
+  assertEq(restored.dvnIntappStatus,'posted','Restore moet afgehandelde DVN-status bewaren');
+  assertEq(restored.dvnIntappPostedRuleIds.join(','),'r-a,r-b',
+    'Restore moet de gekoppelde afgehandelde regel-id’s bewaren');
+  assertEq(restored.dvnIntappPostedHours,1.5,'Restore moet het bevestigde urentotaal bewaren');
 });
 
 test('service worker cacheert geen testbestanden', () => {

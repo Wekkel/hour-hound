@@ -62,3 +62,11 @@ zondag mogen regels bevatten, maar tellen niet als eerdere open werkdagen en kri
 De recente-takenlijst meet maximaal vier zichtbare regels. Een render tijdens de verborgen
 Beheer-tab mag geen nulhoogte opslaan. Bij terugkeer naar Nu moet `showTab("nu")` daarom
 `renderRecent()` aanroepen nadat de view zichtbaar is gemaakt.
+
+### Patch F-contract
+
+DVN-dossiernummers worden alleen onder Beheer gewijzigd. Week blijft alleen-lezen. Een resolved
+DVN biedt `Boeken in Intapp`, toont alle gekoppelde regels en het totaal, en wordt pas na de
+expliciete bevestiging `Alles ingevoerd in Intapp` afgehandeld. Afgehandelde DVN’s blijven onder
+een inklapbare groep traceerbaar en vallen bij latere wijzigingen terug naar `controle nodig`.
+De importkeuring bewaart de interne `posted`-status en de daarbij vastgelegde regel-id’s en uren.

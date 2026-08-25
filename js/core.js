@@ -355,15 +355,15 @@ function dvnIntappState(d){
 function dvnStatusTekst(d){
   const nr=dvnResolvedNummer(d),st=dvnIntappState(d);
   if(st==="missing")return"dossiernummer ontbreekt";
-  if(st==="posted")return"dossiernummer "+nr+" · ingevoerd in Intapp";
+  if(st==="posted")return"dossiernummer "+nr+" · afgehandeld";
   if(st==="needs_check")return"dossiernummer "+nr+" · controle nodig";
-  if(st==="ready")return"dossiernummer "+nr+" · nog invoeren";
+  if(st==="ready")return"dossiernummer "+nr+" · nog boeken in Intapp";
   return"DVN";}
 function dvnSummaryStatus(d){
   const st=dvnIntappState(d);
-  if(st==="posted")return"DVN · ingevoerd in Intapp";
+  if(st==="posted")return"DVN · afgehandeld";
   if(st==="needs_check")return"DVN · controle nodig";
-  if(st==="ready")return"DVN · nog invoeren";
+  if(st==="ready")return"DVN · nog boeken in Intapp";
   if(st==="missing")return"DVN · nummer ontbreekt";
   return"";}
 function dvnAuditAdd(d,type,extra){

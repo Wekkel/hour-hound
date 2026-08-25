@@ -22,7 +22,7 @@ Bij elke wijziging aan de Dag-tabel moet gecontroleerd worden dat er geen mutere
 
 ## 4. DVN-status moet centraal terugvallen
 
-Een DVN die als ingevoerd in Intapp is gemarkeerd, moet naar `controle nodig` zodra een betrokken tijdregel of relevante DVN-metadata later wijzigt. Dat mag niet per knop handmatig worden onthouden. Gebruik een gedeelde helper zoals `dvnPutIfPosted()` op alle schrijfpaden.
+Een DVN die na `Alles ingevoerd in Intapp` als afgehandeld geldt, moet naar `controle nodig` zodra een betrokken tijdregel of relevante DVN-metadata later wijzigt. Dat mag niet per knop handmatig worden onthouden. Gebruik een gedeelde helper zoals `dvnPutIfPosted()` op alle schrijfpaden.
 
 Controleer specifiek: starten, stoppen, koppelen, live omschrijving, editor, verwijderen, opnieuw lopend maken, DVN-naam en DVN-dossiernummer.
 
@@ -86,3 +86,15 @@ IndexedDB-data en knoppen nog bestaan.
 `renderRecent()` mag de hoogte alleen vastleggen als Nu zichtbaar is. `showTab("nu")` rendert de
 lijst daarom opnieuw nadat de view actief is gemaakt. Dit is bewust zowel een meetguard als een
 render-invalidation: verwijder niet één van beide zonder de Beheer→Nu-Playwright-test aan te passen.
+
+## 12. DVN-afhandeling is een begeleide Beheer-workflow
+
+Het echte DVN-dossiernummer wordt uitsluitend onder Beheer toegekend of aangepast. Week toont
+alleen de status en mag geen alternatieve nummermutatie aanbieden. Zodra het nummer bekend is,
+opent `Boeken in Intapp` een sheet met het echte dossiernummer, de dossiernaam, iedere gekoppelde
+voormalige DVN-regel en het totale aantal uren.
+
+De interne status `posted` blijft voor back-upcompatibiliteit bestaan, maar heet voor de gebruiker
+`afgehandeld`. Afgehandelde DVN’s verdwijnen uit de open werkvoorraad en blijven traceerbaar in
+een inklapbare groep. `dvnPutIfPosted()` zet ze bij een latere relevante wijziging terug naar
+`controle nodig`. Back-upkeuring moet zowel de status als de bevestigde regel-id’s en uren bewaren.

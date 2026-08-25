@@ -179,8 +179,8 @@
     <div class="wk" id="w-grid"></div>
   </section>
   <section>
-    <h2>DVN naar Intapp</h2>
-    <div class="hint" style="margin-bottom:.5rem">Zodra je het dossiernummer hebt, ken je het hier toe. De regels blijven intern aan de DVN hangen, terwijl de Intapp-samenvatting het echte dossiernummer gebruikt.</div>
+    <h2>DVN-status</h2>
+    <div class="hint" style="margin-bottom:.5rem">Week toont hier alleen de actuele DVN-status. Dossiernummers toekennen of aanpassen en boeken in Intapp gebeurt uitsluitend onder Beheer.</div>
     <div id="w-prov"></div>
   </section>
 </div>
@@ -189,7 +189,7 @@
 <div class="view" id="v-beheer">
   <section>
     <h2>DVN naar Intapp</h2>
-    <div class="hint" style="margin-bottom:.55rem">Dossiers waarvan het nummer nog ontbrak blijven hier herleidbaar. Zodra het echte dossiernummer bekend is, gebruikt de Intapp-samenvatting dat nummer. De DVN blijft intern herkenbaar en kan als ingevoerd worden gemarkeerd; latere wijzigingen zetten de status terug naar controle nodig.</div>
+    <div class="hint" style="margin-bottom:.55rem">Beheer is de enige plek voor DVN-dossiernummers en de Intapp-afhandeling. Ken eerst het echte nummer toe, open daarna Boeken in Intapp en bevestig pas na verwerking van alle getoonde regels. Latere wijzigingen zetten een afgehandelde DVN terug naar controle nodig.</div>
     <div id="dvn-intapp"></div>
   </section>
   <section>
@@ -338,18 +338,20 @@
 <div class="modal" id="dvnpost" aria-hidden="true">
   <div class="mbox editbox" role="dialog" aria-modal="true" aria-labelledby="dp-title">
     <div class="mtop">
-      <strong id="dp-title">DVN markeren als ingevoerd</strong>
+      <strong id="dp-title">Boeken in Intapp</strong>
       <span class="pill" id="dp-status">—</span>
       <div class="spacer"></div>
       <button class="sm ghost" id="dp-x" title="Sluiten">&#10005;</button>
     </div>
     <div class="mbody">
       <div class="editmeta" id="dp-meta"></div>
-      <div class="closewarn on" id="dp-warn">Markeer dit pas als je de betrokken regels daadwerkelijk in Intapp hebt ingevoerd. Latere wijzigingen zetten de DVN-status terug naar controle nodig.</div>
+      <div class="tw" style="margin-top:.7rem"><table id="dp-lines"><thead><tr><th>Datum</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody></tbody></table></div>
+      <div class="editmeta" id="dp-total"></div>
+      <div class="closewarn on" id="dp-warn">Neem alle regels hierboven handmatig over in Intapp. Bevestig pas daarna dat alles is ingevoerd. Latere wijzigingen zetten de DVN terug naar controle nodig.</div>
       <div class="hint" id="dp-help"></div>
     </div>
     <div class="mfoot">
-      <button class="go" id="dp-save">Markeer als ingevoerd</button>
+      <button class="go" id="dp-save">Alles ingevoerd in Intapp</button>
       <button class="sm ghost" id="dp-cancel">Annuleren</button>
     </div>
   </div>

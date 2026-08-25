@@ -753,10 +753,9 @@ function renderWeek(){
     const det=Object.keys(dagen).sort().map(k=>kortDag(k)+"  "+uu(dagen[k])).join("   ·   ");
     return '<div style="padding:.7rem 0;border-top:1px solid var(--line)">'+
       '<div style="display:flex;gap:.6rem;align-items:baseline;flex-wrap:wrap">'+
-      "<strong>"+esc(p.naam)+'</strong><span class="tag dvn">'+esc(dvnStatusTekst(p))+'</span>'+
-      '<span class="mono">'+uu(rs.reduce((s,r)=>s+urenOf(r),0))+' u</span>'+
-      '<span style="flex:1"></span>'+(p.voorlopig?'<button class="sm" data-ren="'+esc(p.id)+'">Naam wijzigen</button>':'')+
-      '<button class="sm" data-nr="'+esc(p.id)+'">'+(p.voorlopig?'Nummer toekennen':'Nummer aanpassen')+'</button></div>'+
+      "<strong>"+esc(p.naam)+'</strong><span class="tag dvn">'+esc(dvnStatusTekst(p))+'</span>'+ 
+      '<span class="mono">'+uu(rs.reduce((s,r)=>s+urenOf(r),0))+' u</span>'+ 
+      '<span style="flex:1"></span><span class="hint">Alleen-lezen · wijzigen onder Beheer</span></div>'+ 
       '<div class="hint mono">Intapp: '+esc(info.nummer||'geen nummer')+' · '+esc(info.naam||'geen naam')+' · '+esc(det||"nog geen uren")+"</div></div>";}).join(""):
     '<div class="hint">Geen DVN-dossiers.</div>';}
 $("w-prev").onclick=()=>{weekAnchor=addD(weekAnchor,-7);renderWeek();};
@@ -764,49 +763,55 @@ $("w-next").onclick=()=>{weekAnchor=addD(weekAnchor,7);renderWeek();};
 $("w-now").onclick=()=>{weekAnchor=today();renderWeek();};
 $("w-grid").addEventListener("click",e=>{const b=e.target.closest("[data-day]");if(!b)return;
   viewDate=b.dataset.day;refreshDay();showTab("dag");});
-$("w-prov").addEventListener("click",e=>{
-  const ren=e.target.closest("[data-ren]");if(ren){vraagHernoemVoorlopig(ren.dataset.ren);return;}
-  const post=e.target.closest("[data-post]");if(post){openDvnPostSheet(post.dataset.post);return;}
-  const b=e.target.closest("[data-nr]");if(b)kenNummerToe(b.dataset.nr);});
-
 
 function dvnAuditTekst(d){
   const st=dvnIntappState(d);
-  if(st==="posted"&&d.dvnIntappPostedAt)return "Ingevoerd in Intapp op "+
+  if(st==="posted"&&d.dvnIntappPostedAt)return "Afgehandeld op "+
     new Date(d.dvnIntappPostedAt).toLocaleString("nl-NL",{dateStyle:"short",timeStyle:"short"});
   if(st==="needs_check")return "Controle nodig"+(d.dvnIntappNeedsCheckReason?
     " na "+d.dvnIntappNeedsCheckReason:"");
   return "";}
+function dvnKaartHtml(d,afgehandeld){
+  const rs=dvnRegels(d),info=intappDossierInfo(d),dagen={},st=dvnIntappState(d);
+  rs.forEach(r=>{dagen[r.datum]=(dagen[r.datum]||0)+urenOf(r);});
+  const totaal=rs.reduce((s,r)=>s+urenOf(r),0);
+  const det=rs.slice().sort((a,b)=>(a.datum+a.start)<(b.datum+b.start)?-1:1)
+    .map(r=>'<tr><td class="mono">'+esc(kortDag(r.datum))+'</td><td class="mono">'+
+      esc(r.start+'–'+(r.eind||'loopt'))+'</td><td>'+esc((r.omschrijving||'').replace(VOOR,''))+
+      '</td><td class="mono" style="text-align:right">'+uu(urenOf(r))+'</td></tr>').join("");
+  const dagtekst=Object.keys(dagen).sort().map(k=>kortDag(k)+" "+uu(dagen[k])).join(" · ")||"nog geen uren";
+  const audit=dvnAuditTekst(d);
+  const nummerActie=d.voorlopig?'<button class="sm go" data-dvn-num="'+esc(d.id)+'">Dossiernummer toekennen</button>':
+    '<button class="sm" data-dvn-num="'+esc(d.id)+'">Dossiernummer aanpassen</button>';
+  const boekActie=!afgehandeld&&(st==="ready"||st==="needs_check")?
+    '<button class="sm go" data-dvn-post="'+esc(d.id)+'">Boeken in Intapp</button>':'';
+  const acties=nummerActie+boekActie+
+    (rs.length?'<button class="sm" data-dvn-day="'+esc(rs[0].datum)+'">Toon eerste dag</button>':'');
+  return '<div class="dvncard '+esc(st||'dvn')+'" data-dvn-card="'+esc(d.id)+'">'+
+    '<div class="dvnhead"><div><strong>'+esc(d.naam)+'</strong> '+
+    '<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span></div>'+ 
+    '<span class="mono">'+rs.length+' regel(s) · '+uu(totaal)+' u</span></div>'+ 
+    '<div class="hint">Intapp: '+esc(info.nummer||'geen nummer')+' · '+esc(info.naam||'geen naam')+
+    ' · '+esc(dagtekst)+'</div>'+(audit?'<div class="hint">'+esc(audit)+'</div>':'')+
+    '<div class="bar mini">'+acties+
+    '</div><details><summary>Toon regels</summary><div class="tw"><table><thead><tr><th>Dag</th><th>Tijd</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody>'+ 
+    (det||'<tr><td colspan="4" class="hint">Geen regels.</td></tr>')+
+    '</tbody></table></div></details></div>';}
 function renderDvnIntapp(){
   const el=$("dvn-intapp");if(!el)return;
-  const volg={needs_check:0,ready:1,missing:2,posted:3,"":4};
+  const volg={needs_check:0,ready:1,missing:2,"":3};
   const ds=actief().filter(d=>isDvn(d)).sort((a,b)=>
     (volg[dvnIntappState(a)]??9)-(volg[dvnIntappState(b)]??9)||a.naam.localeCompare(b.naam));
   if(!ds.length){el.innerHTML='<div class="hint">Geen DVN-dossiers.</div>';return;}
-  el.innerHTML=ds.map(d=>{
-    const rs=dvnRegels(d),info=intappDossierInfo(d),dagen={},st=dvnIntappState(d);
-    rs.forEach(r=>{dagen[r.datum]=(dagen[r.datum]||0)+urenOf(r);});
-    const totaal=rs.reduce((s,r)=>s+urenOf(r),0);
-    const det=rs.slice().sort((a,b)=>(a.datum+a.start)<(b.datum+b.start)?-1:1)
-      .map(r=>'<tr><td class="mono">'+esc(kortDag(r.datum))+'</td><td class="mono">'+
-        esc(r.start+'–'+(r.eind||'loopt'))+'</td><td>'+esc((r.omschrijving||'').replace(VOOR,''))+
-        '</td><td class="mono" style="text-align:right">'+uu(urenOf(r))+'</td></tr>').join("");
-    const dagtekst=Object.keys(dagen).sort().map(k=>kortDag(k)+" "+uu(dagen[k])).join(" · ")||"nog geen uren";
-    const audit=dvnAuditTekst(d);
-    const acties=(d.voorlopig?'<button class="sm go" data-dvn-num="'+esc(d.id)+'">Dossiernummer toekennen</button>':
-        '<button class="sm" data-dvn-num="'+esc(d.id)+'">Dossiernummer aanpassen</button>')+
-      ((st==="ready"||st==="needs_check")?'<button class="sm go" data-dvn-post="'+esc(d.id)+'">Markeer als ingevoerd</button>':'')+
-      (rs.length?'<button class="sm" data-dvn-day="'+esc(rs[0].datum)+'">Toon eerste dag</button>':'');
-    return '<div class="dvncard '+esc(st||'dvn')+'">'+
-      '<div class="dvnhead"><div><strong>'+esc(d.naam)+'</strong> '+
-      '<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span></div>'+
-      '<span class="mono">'+rs.length+' regel(s) · '+uu(totaal)+' u</span></div>'+ 
-      '<div class="hint">Intapp: '+esc(info.nummer||'geen nummer')+' · '+esc(info.naam||'geen naam')+
-      ' · '+esc(dagtekst)+'</div>'+(audit?'<div class="hint">'+esc(audit)+'</div>':'')+
-      '<div class="bar mini">'+acties+
-      '</div><details><summary>Toon regels</summary><div class="tw"><table><thead><tr><th>Dag</th><th>Tijd</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody>'+ 
-      (det||'<tr><td colspan="4" class="hint">Geen regels.</td></tr>')+
-      '</tbody></table></div></details></div>';}).join("");}
+  const open=ds.filter(d=>dvnIntappState(d)!=="posted");
+  const klaar=ds.filter(d=>dvnIntappState(d)==="posted").sort((a,b)=>
+    (b.dvnIntappPostedAt||"").localeCompare(a.dvnIntappPostedAt||""));
+  const openHtml='<div id="dvn-open"><div class="cap">Open werkvoorraad</div>'+ 
+    (open.length?open.map(d=>dvnKaartHtml(d,false)).join(""):
+      '<div class="hint" style="margin:.5rem 0">Geen open DVN-acties.</div>')+'</div>';
+  const klaarHtml=klaar.length?'<details id="dvn-done" style="margin-top:.8rem"><summary>Afgehandeld ('+
+    klaar.length+')</summary>'+klaar.map(d=>dvnKaartHtml(d,true)).join("")+'</details>':'';
+  el.innerHTML=openHtml+klaarHtml;}
 
 /* ---------- beheer ---------- */
 function renderBeheer(){
@@ -824,9 +829,9 @@ function renderBeheer(){
       '<input value="'+esc(d.naam)+'" data-dnm="'+esc(d.id)+'" style="flex:1;min-width:170px">'+
       '<select data-dl="'+esc(d.id)+'"><option value="nl"'+(d.lang!=="en"?" selected":"")+
       '>NL</option><option value="en"'+(d.lang==="en"?" selected":"")+">EN</option></select>"+
-      (isDvn(d)?'<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span>'+
-        '<button class="sm" data-nr="'+esc(d.id)+'">'+(d.voorlopig?'Nummer toekennen':'Nummer aanpassen')+'</button>'+
-        ((dvnIntappState(d)==="ready"||dvnIntappState(d)==="needs_check")?'<button class="sm go" data-post="'+esc(d.id)+'">Markeer ingevoerd</button>':""):"")+
+      (isDvn(d)?'<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span>'+ 
+        '<button class="sm" data-nr="'+esc(d.id)+'">'+(d.voorlopig?'Nummer toekennen':'Nummer aanpassen')+'</button>'+ 
+        ((dvnIntappState(d)==="ready"||dvnIntappState(d)==="needs_check")?'<button class="sm go" data-post="'+esc(d.id)+'">Boeken in Intapp</button>':""):"")+ 
       (d.archief?'<span class="tag">archief</span>'+
         '<button class="sm" data-unarch="'+esc(d.id)+'">Activeren</button>':"")+
       (d.isI7||d.archief?"":'<button class="sm ghost warn" data-deldos="'+esc(d.id)+'">'+

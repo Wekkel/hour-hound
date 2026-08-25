@@ -141,7 +141,7 @@ test('wijzigt een bestaande tijdregel via de bewuste bewerkingssheet', async ({ 
   await expect(page.locator('#d-table input[data-f="omschrijving"]')).toHaveValue('nieuwe bewuste omschrijving');
 });
 
-test('kent een dossiernummer toe aan DVN en markeert de DVN als ingevoerd', async ({ page }) => {
+test('doorloopt DVN naar dossiernummer, Intapp en Afgehandeld', async ({ page }) => {
   const today = todayLocal();
   await openAndSeed(page, {
     dossiers: [
@@ -151,11 +151,18 @@ test('kent een dossiernummer toe aan DVN en markeert de DVN als ingevoerd', asyn
         voorlopig: true, isI7: false, dvn: true
       }
     ],
-    regels: [{
-      id: 'r-dvn', datum: today, start: '10:00', eind: '11:00', dossierId: 'd-dvn',
-      code: 'COM', omschrijving: `${today.split('-').reverse().join('.')} · KanAm - Malo X · fee quote`,
-      soort: 'werk', gemaakt: Date.now(), gewijzigd: Date.now()
-    }],
+    regels: [
+      {
+        id: 'r-dvn-a', datum: today, start: '10:00', eind: '11:00', dossierId: 'd-dvn',
+        code: 'COM', omschrijving: `${today.split('-').reverse().join('.')} · KanAm - Malo X · fee quote`,
+        soort: 'werk', gemaakt: Date.now(), gewijzigd: Date.now()
+      },
+      {
+        id: 'r-dvn-b', datum: today, start: '11:00', eind: '11:30', dossierId: 'd-dvn',
+        code: 'COM', omschrijving: `${today.split('-').reverse().join('.')} · KanAm - Malo X · conceptakte`,
+        soort: 'werk', gemaakt: Date.now(), gewijzigd: Date.now()
+      }
+    ],
     codes: baseCodes,
     meta: {}
   });
@@ -168,23 +175,43 @@ test('kent een dossiernummer toe aan DVN en markeert de DVN als ingevoerd', asyn
   await page.locator('#dn-name').fill('KanAm - Malo X final');
   await page.locator('#dn-save').click();
   await expect(page.locator('#dvnnum')).not.toHaveClass(/on/);
-  await expect(page.locator('#dvn-intapp')).toContainText(/nog invoeren/i);
+  await expect(page.locator('#dvn-open')).toContainText(/nog boeken in Intapp/i);
   await expect(page.locator('#dvn-intapp')).toContainText('304999999');
 
-  await page.locator('#dvn-intapp').getByRole('button', { name: 'Markeer als ingevoerd' }).click();
-  await expect(page.locator('#dvnpost')).toContainText('DVN markeren als ingevoerd');
+  await page.locator('#tabs [data-v="week"]').click();
+  await expect(page.locator('#w-prov')).toContainText('304999999');
+  await expect(page.locator('#w-prov')).toContainText(/alleen-lezen/i);
+  await expect(page.locator('#w-prov button')).toHaveCount(0);
+  await page.locator('#tabs [data-v="beheer"]').click();
+
+  await page.locator('#dvn-open').getByRole('button', { name: 'Boeken in Intapp' }).click();
+  await expect(page.locator('#dvnpost')).toContainText('Boeken in Intapp');
+  await expect(page.locator('#dp-meta')).toContainText('304999999');
+  await expect(page.locator('#dp-meta')).toContainText('KanAm - Malo X final');
+  await expect(page.locator('#dp-lines tbody tr')).toHaveCount(2);
+  await expect(page.locator('#dp-lines')).toContainText('fee quote');
+  await expect(page.locator('#dp-lines')).toContainText('conceptakte');
+  await expect(page.locator('#dp-total')).toContainText('1,5 uur');
+  await expect(page.locator('#dp-save')).toHaveText('Alles ingevoerd in Intapp');
   await page.locator('#dp-save').click();
   await expect(page.locator('#dvnpost')).not.toHaveClass(/on/);
-  await expect(page.locator('#dvn-intapp')).toContainText(/ingevoerd in Intapp/i);
+  await expect(page.locator('#dvn-open [data-dvn-card="d-dvn"]')).toHaveCount(0);
+  await expect(page.locator('#dvn-open')).not.toContainText('Boeken in Intapp');
+  await expect(page.locator('#dvn-done')).toContainText('Afgehandeld (1)');
+  await page.locator('#dvn-done > summary').click();
+  await expect(page.locator('#dvn-done [data-dvn-card="d-dvn"]')).toContainText(/afgehandeld/i);
+  await expect(page.locator('#dvn-done [data-dvn-card="d-dvn"]')).toContainText('2 regel(s) · 1,5 u');
 
   await page.locator('#tabs [data-v="dag"]').click();
-  await page.locator('#d-table').getByRole('button', { name: 'bewerk' }).click();
+  await page.locator('#d-table').getByRole('button', { name: 'bewerk' }).first().click();
   await expect(page.locator('#editregel')).toContainText(/controle nodig/i);
   await page.locator('#er-oms').fill('fee quote herzien');
   await page.locator('#er-save').click();
   await expect(page.locator('#editregel')).not.toHaveClass(/on/);
   await page.locator('#tabs [data-v="beheer"]').click();
-  await expect(page.locator('#dvn-intapp')).toContainText(/controle nodig/i);
+  await expect(page.locator('#dvn-open')).toContainText(/controle nodig/i);
+  await expect(page.locator('#dvn-open')).toContainText('Boeken in Intapp');
+  await expect(page.locator('#dvn-done')).toHaveCount(0);
 });
 
 test('sluit een werkdag af via de sheet zonder stilzwijgend Diversen aan te vullen', async ({ page }) => {

@@ -343,3 +343,6 @@ tr.needsreview td{box-shadow:inset 3px 0 0 var(--amber)}
 .bar.mini{margin-top:.55rem;padding:0;gap:.45rem;background:transparent;border:0}
 .dvncard details{margin-top:.55rem}
 .dvncard summary{cursor:pointer;color:var(--muted);font-size:13px}
+#dp-lines{min-width:520px}
+#dp-lines td:nth-child(2){white-space:normal;overflow-wrap:anywhere}
+#dvn-done>summary{cursor:pointer;font-weight:500;padding:.35rem 0}

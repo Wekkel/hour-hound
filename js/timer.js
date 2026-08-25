@@ -364,19 +364,28 @@ async function slaDvnNummerOp(){
   L("dvn-nummer","dos"+idKort(d.id)+" → "+nr+" · "+rs.length+" regel(s)"+(bestaand?" · koppeling":""));
   toast("DVN gebruikt nu dossiernummer "+nr+" voor Intapp");sluitDvnNummerSheet(true);}
 
-/* ---------- DVN markeren als ingevoerd in Intapp ---------- */
+/* ---------- DVN-regels begeleid boeken in Intapp ---------- */
 function openDvnPostSheet(id){
   const d=dosOf(id),dlg=$("dvnpost");
   if(!dlg||!d||!isDvn(d))return Promise.resolve(false);
   if(!dvnResolvedNummer(d)){toast("Ken eerst een dossiernummer toe");return Promise.resolve(false);}
-  const rs=dvnRegels(d),u=rs.reduce((s,r)=>s+urenOf(r),0),info=intappDossierInfo(d);
+  const rs=dvnRegels(d).slice().sort((a,b)=>(a.datum+a.start).localeCompare(b.datum+b.start));
+  const u=Math.round(rs.reduce((s,r)=>s+urenOf(r),0)*10)/10,info=intappDossierInfo(d);
   dlg.dataset.id=id;
   $("dp-status").textContent=dvnStatusTekst(d);
-  $("dp-meta").innerHTML="<b>"+esc(info.nummer)+" · "+esc(info.naam||d.naam)+"</b><br>"+
-    rs.length+" regel(s) · "+uu(u)+" uur";
+  $("dp-meta").innerHTML='<span class="cap">Boeken op dossier</span><br><b class="mono">'+
+    esc(info.nummer)+"</b> · <b>"+esc(info.naam||d.naam)+"</b><br>Oorspronkelijke DVN: "+
+    esc(d.dvnOriginalName||d.naam);
+  $("dp-lines").querySelector("tbody").innerHTML=rs.length?rs.map(r=>
+    '<tr data-dvn-rule="'+esc(r.id)+'"><td class="mono">'+esc(dmy(r.datum))+'</td><td>'+ 
+    esc(((r.omschrijving||"").replace(VOOR,"").trim())||"geen omschrijving")+
+    '</td><td class="mono" style="text-align:right">'+uu(urenOf(r))+"</td></tr>").join(""):
+    '<tr><td colspan="3" class="hint">Geen regels om over te nemen.</td></tr>';
+  $("dp-total").innerHTML='<span class="cap">Totaal</span><br><b class="mono">'+uu(u)+
+    " uur</b> · "+rs.length+" regel"+(rs.length===1?"":"s");
   $("dp-help").textContent=rs.length?
-    "Deze DVN blijft traceerbaar onder Beheer, maar verdwijnt uit de open DVN-acties zodra je bevestigt.":
-    "Deze DVN heeft nog geen tijdregels. Je kunt hem wel markeren, maar meestal is dat niet nodig.";
+    "Verwerk iedere getoonde regel in Intapp op het echte dossiernummer. Na bevestiging verhuist deze DVN naar Afgehandeld onder Beheer.":
+    "Deze DVN heeft geen tijdregels. Controleer of afhandeling werkelijk nodig is.";
   dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
   return new Promise(res=>{dlg._resolve=res;setTimeout(()=>$("dp-save").focus(),0);});}
 function sluitDvnPostSheet(v){
@@ -389,7 +398,8 @@ async function markeerDvnIngevoerd(){
   const nr=dvnResolvedNummer(d);
   if(!nr){toast("Ken eerst een dossiernummer toe");return;}
   const rs=dvnRegels(d),u=Math.round(rs.reduce((s,r)=>s+urenOf(r),0)*10)/10;
-  if(!confirm("Markeer "+rs.length+" regel(s) / "+uu(u)+" uur voor dossier "+nr+" als ingevoerd in Intapp?"))return;
+  if(!confirm("Bevestig dat alle "+rs.length+" regel(s) / "+uu(u)+
+    " uur voor dossier "+nr+" in Intapp zijn ingevoerd."))return;
   const nu=new Date().toISOString();
   const nw=stempel(Object.assign({},d,{
     dvnIntappStatus:"posted",dvnIntappPostedAt:nu,
@@ -401,7 +411,7 @@ async function markeerDvnIngevoerd(){
   catch(e){L("FOUT-dvn-post",String(e));toast("Markeren mislukt — niets gewijzigd: "+e);return;}
   memDossier(nw);renderAll();announce();
   L("dvn-intapp",dosIdLog(id)+" · "+rs.length+" regel(s) · "+uu(u)+" u");
-  toast("DVN gemarkeerd als ingevoerd in Intapp");sluitDvnPostSheet(true);}
+  toast("DVN afgehandeld — alles ingevoerd in Intapp");sluitDvnPostSheet(true);}
 
 
 /* ---------- langloopmelding ----------
@@ -431,4 +441,3 @@ async function middernachtCheck(){
   if(!running||running.datum===today())return;
   if(typeof controleerOudeLopendeTaak==="function")controleerOudeLopendeTaak();
 }
-
