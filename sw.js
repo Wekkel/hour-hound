@@ -32,7 +32,8 @@ const ASSETS = [
   "./js/domain/overbooking.js",
   "./js/storage/indexeddb.js",
   "./js/services/admin.js",
-  "./js/services/day-rules.js"
+  "./js/services/day-rules.js",
+  "./js/services/timer.js"
 ];
 
 self.addEventListener("install", (e) => {
