@@ -141,16 +141,14 @@ function pasMutatieUndoToe(undo){
   else undoData(undo.label,undo.rules,{weg:undo.remove});
 }
 function vervangOverboekingenGeheugen(updated){
-  const map=new Map((updated||[]).map(record=>[record.id,record]));
-  overboekingen=overboekingen.map(record=>map.get(record.id)||record);
+  appState.commit({overbookings:mergeById(overboekingen,updated||[])});
 }
 const {NORM,DAGMAX}=bookingDomain,VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 const autoAanvulTekort=bookingDomain.autoFillShortfall;
 
-let db=null,dossiers=[],templates=[],i7codes=[],alle=[],regels=[],running=null,stack=[];
-let overboekingen=[];
-let viewDate=today(),weekAnchor=today(),tab="nu",liveId=null;
-let hiddenAt=null,rondMode="groep",dagEinde={},dagAudit={},snoozeTot=0,openDagenSnooze=0,oldRunSnooze=0;
+const appState=HH.state,stateSelectors=appState.selectors;
+let liveId=null;
+let hiddenAt=null,snoozeTot=0,openDagenSnooze=0,oldRunSnooze=0;
 /* Centrale waarheid voor de actuele dagafsluitstatus. UI-code leest niet meer
    zelfstandig in dagEinde: zo kunnen banners, Dag-status en afsluitsheet niet
    onderling van mening verschillen na sluiten of heropenen. */
@@ -192,6 +190,14 @@ function txAll(fn){return tx(TXALL,"readwrite",fn);}
    regels klaar zijn, zodat een transactie er niet overheen kan lopen.           */
 const schrijfRij={};
 const kopie1=r=>JSON.parse(JSON.stringify(r));
+function mergeById(base,updates,key){
+  const idKey=key||"id",map=new Map((updates||[]).filter(Boolean).map(x=>[x[idKey],x]));
+  const seen=new Set(),next=(base||[]).map(x=>{if(!map.has(x[idKey]))return x;
+    seen.add(x[idKey]);return map.get(x[idKey]);});
+  (updates||[]).forEach(x=>{if(x&&!seen.has(x[idKey]))next.push(x);});
+  return next;}
+const zonderIds=(base,ids,key)=>{const idKey=key||"id",weg=new Set(ids||[]);
+  return (base||[]).filter(x=>!weg.has(x[idKey]));};
 function schrijfRegel(waarde){
   const id=waarde.id,vorige=schrijfRij[id]||Promise.resolve();
   const p=vorige.then(()=>put("regels",waarde),()=>put("regels",waarde));
@@ -216,10 +222,10 @@ function planOmschr(id,tekst){
 function schrijfOms(p){
   const r=alle.find(x=>x.id===p.id);
   if(!r)return Promise.resolve();
-  r.omschrijving=p.tekst;
+  const gewijzigd=Object.assign({},r,{omschrijving:p.tekst});
   const kl=()=>{try{const n=JSON.parse(localStorage.getItem("hh-oms")||"null");
     if(n&&n.id===p.id&&n.tekst===p.tekst)localStorage.removeItem("hh-oms");}catch(e){}};
-  return saveRegel(r).then(kl,kl);}
+  return saveRegel(gewijzigd).then(kl,kl);}
 function flushOmschr(){
   if(!omsWacht)return Promise.resolve();
   const p=omsWacht;omsWacht=null;clearTimeout(p.t);
@@ -230,11 +236,9 @@ function pakOmschr(id){
     try{localStorage.removeItem("hh-oms");}catch(e){}
     return t;}
   return null;}
-function memRegel(r){const i=alle.findIndex(x=>x.id===r.id);
-  if(i<0)alle.push(r);else alle[i]=r;refreshDay();}
-function memDossier(d){const i=dossiers.findIndex(x=>x.id===d.id);
-  if(i<0)dossiers.push(d);else dossiers[i]=d;}
-let logboek=[],logOms=false,logT=null,appVer="?",codeGebruik={};
+function memRegel(r){appState.upsert("rules",r);}
+function memDossier(d){appState.upsert("dossiers",d);}
+let logboek=[],logOms=false,logT=null,appVer="?";
 const kort=(s,n)=>{s=String(s==null?"":s);
   return s.length>(n||34)?s.slice(0,n||34)+"…":s;};
 /* Logboek: standaard uitsluitend technische gegevens — actiecodes, ID-staarten,
@@ -299,10 +303,9 @@ async function undo(){
     await tx("regels","readwrite",o=>{
       a.regels.forEach(r=>o.put(r));weg.forEach(id=>o.delete(id));});
   }catch(e){L("FOUT-ongedaan",String(e));toast("Ongedaan maken mislukt: "+e);return;}
-  weg.forEach(id=>{alle=alle.filter(x=>x.id!==id);});
-  a.regels.forEach(memRegel);
-  refreshDay();
-  if(runId)running=alle.find(x=>x.id===runId)||running;
+  const nextRules=mergeById(zonderIds(alle,weg),a.regels),delta={rules:nextRules};
+  if(runId)delta.running=nextRules.find(x=>x.id===runId)||running;
+  appState.commit(delta);
   liveId=null;bouwDag();renderAll();announce();
   L("ongedaan","gegevens · "+(a.label||"actie")+" · "+a.regels.length+" regel(s)");
   toast("Ongedaan: "+(a.label||"laatste wijziging")+" — "+
@@ -323,9 +326,9 @@ async function undoTimerStap(a){
     readCurrentTimer:()=>running,rules:a.regels,remove:weg,restoreRunningId:a.herstelRunning,
     waitForRules:rustig});
   if(await meldTimerFout(uit,"Ongedaan maken is niet uitgevoerd"))return;
-  weg.forEach(id=>{alle=alle.filter(x=>x.id!==id);});
-  uit.rules.forEach(memRegel);refreshDay();
-  running=uit.currentTimerId?(alle.find(x=>x.id===uit.currentTimerId)||null):null;
+  const nextRules=mergeById(zonderIds(alle,weg),uit.rules);
+  appState.commit({rules:nextRules,running:uit.currentTimerId?
+    (nextRules.find(x=>x.id===uit.currentTimerId)||null):null});
   liveId=null;bouwDag();renderAll();announce();
   L("ongedaan","timer · "+(a.label||"actie"));
   toast("Ongedaan: "+(a.label||"timerwijziging")+" — "+
@@ -384,7 +387,7 @@ function overboekingStatusTekst(o){
   if(st==="done")return"Afgehandeld";
   if(st==="final_i7")return"Definitief i7";
   return"";}
-const dvnRegels=d=>dvnDomain.rulesFor(d,alle);
+const dvnRegels=d=>stateSelectors.dvnRules(d);
 const dvnResolvedDoel=d=>dvnDomain.resolvedTarget(d,dossiers);
 const dvnResolvedNummer=d=>dvnDomain.resolvedNumber(d,dossiers);
 const dvnIntappState=d=>dvnDomain.intappState(d,dossiers);
@@ -508,7 +511,7 @@ const ruweMin=r=>bookingDomain.rawMinutes(r,boekRekenContext());
 const urenOf=r=>bookingDomain.hoursOf(r,boekRekenContext());
 const pauzeUren=l=>bookingDomain.pauseHours(l,boekRekenContext());
 const totaal=l=>bookingDomain.totalHours(l,boekRekenContext());
-const vandaagRegels=()=>alle.filter(r=>r.datum===today());
+const vandaagRegels=()=>stateSelectors.today(today());
 function nuBreakdown(lijst){
   const out={declarabel:0,i7:0,dvn:0};
   (lijst||[]).filter(r=>r&&r.soort!=="pauze").forEach(r=>{
@@ -525,31 +528,12 @@ function gapsFor(list,datum){return bookingDomain.gapsFor(list,Object.assign(
 const gapHours=bookingDomain.gapHours;
 
 function takenVandaag(){
-  const map=new Map();
-  /* Onvolledige NT-regels zonder dossier horen wel in Dag/controle, maar niet in
-     "Verder op": daar kun je inhoudelijk niets zinnigs op hervatten. Een DVN blijft
-     wel hervatbaar als die ooit via telefoon/onderbreking is ontstaan: de voorlopige
-     dossieridentiteit is daarvoor belangrijker dan het oorspronkelijke regelsoort. */
-  vandaagRegels().filter(r=>r.dossierId&&!dvnDefinitiefI7(dosOf(r.dossierId))&&
-    (r.soort==="werk"||(dosOf(r.dossierId)||{}).voorlopig))
-    .forEach(r=>{
-      const k=(r.dossierId||"-")+"|"+(r.code||"")+"|"+(r.omschrijving||"");
-      const g=map.get(k)||{k,dossierId:r.dossierId,code:r.code,oms:r.omschrijving||"",
-        u:0,laatst:""};
-      g.u+=urenOf(r);if(r.start>g.laatst)g.laatst=r.start;map.set(k,g);});
-  const geparkeerd=stack.length?stack[stack.length-1]:null;
-  const parkKey=geparkeerd?(geparkeerd.dossierId||"-")+"|"+(geparkeerd.code||"")+"|"+
-    (geparkeerd.omschrijving||""):null;
-  return [...map.values()].sort((a,b)=>a.k===parkKey?-1:b.k===parkKey?1:
-    (a.laatst<b.laatst?1:a.laatst>b.laatst?-1:0));}
+  return stateSelectors.recentTasks({date:today(),hoursOf:urenOf,dossierOf:dosOf,
+    isFinalI7:dvnDefinitiefI7});}
 const taakLabel=t=>{const d=dosOf(t.dossierId);
   return (d?(d.nummer?d.nummer+" · ":"")+d.naam:"geen dossier");};
 function recente(){
-  const grens=addD(today(),-11),seen=new Set();
-  alle.filter(r=>r.datum>=grens&&r.dossierId)
-    .sort((a,b)=>(a.datum+a.start)<(b.datum+b.start)?1:-1)
-    .forEach(r=>seen.add(r.dossierId));
-  return [...seen].map(dosOf).filter(d=>d&&!d.isI7&&!d.archief).slice(0,9);}
+  return stateSelectors.recentDossiers({date:today(),addDays:addD,limit:9});}
 const codesGesorteerd=()=>i7codes.slice().sort((a,b)=>
   (codeGebruik[b.code]||0)-(codeGebruik[a.code]||0)||
   (b.favoriet?1:0)-(a.favoriet?1:0)||a.naam.localeCompare(b.naam));

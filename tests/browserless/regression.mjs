@@ -40,6 +40,7 @@ const src = {
   admin: read('js/services/admin.js'),
   dayRules: read('js/services/day-rules.js'),
   timerService: read('js/services/timer.js'),
+  state: read('js/state.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
@@ -98,8 +99,9 @@ function evaluateCorePure(){
   vm.runInContext(src.admin, context, { filename: 'js/services/admin.js' });
   vm.runInContext(src.dayRules, context, { filename: 'js/services/day-rules.js' });
   vm.runInContext(src.timerService, context, { filename: 'js/services/timer.js' });
+  vm.runInContext(src.state, context, { filename: 'js/state.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
-    `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
+    `appState.commit({dossiers:s.dossiers||[],templates:s.templates||[],codes:s.i7codes||[],rules:s.alle||[],overbookings:s.overboekingen||[],running:s.running||null,stack:s.stack||[],viewDate:s.viewDate||today(),dayEnds:s.dagEinde||{},dayAudit:s.dagAudit||{},roundingMode:s.rondMode||"groep",booked:s.geboekt||{},codeUsage:s.codeGebruik||{}});\n`+
     `return true;\n};\n`+
     `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, normOms, simIntappTotaal, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp, codeFout, sumVan, overboekingOpenVoorRegel, overboekingVoorBronId, overboekingVoorRow, overboekingFingerprints, overboekingAfgerondVoorRow, overboekingState, overboekingStatusTekst, overboekingWijzigingen };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
@@ -120,6 +122,14 @@ function evaluateStorage(){
   vm.runInContext(src.hh,context,{filename:'js/hh.js'});
   vm.runInContext(src.storage,context,{filename:'js/storage/indexeddb.js'});
   return context.HH.storage;
+}
+
+function evaluateState(){
+  const context={console,setTimeout,clearTimeout};vm.createContext(context);
+  vm.runInContext(src.hh,context,{filename:'js/hh.js'});
+  vm.runInContext(src.time,context,{filename:'js/domain/time.js'});
+  vm.runInContext(src.state,context,{filename:'js/state.js'});
+  return context.HH;
 }
 
 function evaluateAdmin(){
@@ -199,6 +209,7 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/services/admin.js',
     'js/services/day-rules.js',
     'js/services/timer.js',
+    'js/state.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
@@ -208,6 +219,61 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/booking.js',
     'js/app.js'
   ].join('\n'), 'Scriptvolgorde gewijzigd. Bij klassieke globals kan dat runtime breken.');
+});
+
+test('runtime-state heeft één bron en pure afgeleide selecties', () => {
+  const HH=evaluateState(),state=HH.state,ref=state.read();
+  const rules=[
+    {id:'later',datum:'2026-08-25',start:'10:00',dossierId:'d1',soort:'werk'},
+    {id:'vroeg',datum:'2026-08-25',start:'09:00',dossierId:'d1',soort:'werk'},
+    {id:'morgen',datum:'2026-08-26',start:'09:00',dossierId:'d2',soort:'werk'}];
+  state.commit({rules,dossiers:[{id:'d1',naam:'Zaak'},{id:'d2',naam:'Morgen'}]});
+  assertEq(state.read(),ref,'commit moet hetzelfde centrale state-object behouden');
+  assertEq(state.read().rules,rules,'read/tick/render mag geen volledige deep clone maken');
+  const day=state.selectors.day('2026-08-25');
+  assertEq(day.map(r=>r.id).join(','),'vroeg,later','Dagselector moet filteren en sorteren');
+  assertEq(state.read().rules.map(r=>r.id).join(','),'later,vroeg,morgen',
+    'Een viewselector mag de runtime-state niet sorteren of muteren');
+  state.upsert('rules',{...rules[0],start:'11:00'});
+  assertEq(state.read().rules.length,3,'Upsert mag geen dubbele regelbron maken');
+  state.remove('rules','morgen');
+  assertEq(state.read().rules.length,2,'Remove moet de centrale regelbron bijwerken');
+  assertNotIncludes(src.core,'let db=null,dossiers=',
+    'De vroegere parallelle globale state mag niet terugkomen');
+  assertNotIncludes(src.booking,'let geboekt=',
+    'Boekstatus mag geen tweede runtimebron hebben');
+});
+
+test('rendercoördinator voert alleen gevraagde views uit', () => {
+  const HH=evaluateState(),calls=[];
+  HH.renderCoordinator.register('a',()=>calls.push('a')).register('b',()=>calls.push('b'));
+  HH.renderCoordinator.render('b');
+  assertEq(calls.join(','),'b','Gerichte render mag geen niet-betrokken view uitvoeren');
+  HH.renderCoordinator.render(['a','a']);
+  assertEq(calls.join(','),'b,a','Een view mag per rendercoördinatie maar één keer draaien');
+  assertIncludes(src.app,'renderCoordinator.register("live",renderLive)',
+    'Productierenders moeten bij de coördinator geregistreerd zijn');
+  assertIncludes(src.app,'renderCoordinator.render(["live","totals"])',
+    'De timer-tick mag uitsluitend live en totalen renderen');
+});
+
+test('state-commit volgt opslag en tab-synchronisatie blijft veilig', () => {
+  assertNotIncludes(src.state,'JSON.parse(JSON.stringify',
+    'State-read en renderpaden mogen geen volledige deep clone uitvoeren');
+  const save=src.timer.slice(src.timer.indexOf('const saveRegel='),
+    src.timer.indexOf('function refreshDay'));
+  assert(save.indexOf('const p=vorige.then')>=0&&
+    save.indexOf('appState.commit(delta)')>save.indexOf('const p=vorige.then'),
+    'Een regelwrite moet pas na de geslaagde opslag naar runtime-state committen');
+  const forbidden=/(?<!\.)\b(?:viewDate|weekAnchor|rondMode|dagEinde|dagAudit|geboekt|overboekingen|running|stack|alle|dossiers)\s*=(?!=)/;
+  assert(!forbidden.test(src.views),
+    'Views mogen de gedeelde runtime-state niet rechtstreeks toewijzen');
+  assertIncludes(src.core,'if(bc)bc.onmessage=async e=>',
+    'BroadcastChannel-herladen moet aanwezig blijven');
+  assertIncludes(src.core,'await herlaad();toast("Bijgewerkt vanuit een ander venster")',
+    'Een BroadcastChannel-update moet de volledige opslagsnapshot herladen');
+  assertIncludes(src.core,'document.addEventListener("focusout"',
+    'Uitgesteld herladen na focus-save moet aanwezig blijven');
 });
 
 test('IndexedDB-gateway bewaart exact database 4 en het bestaande schema', async() => {
@@ -291,9 +357,8 @@ test('repositories laden één snapshot en laten geheugen intact bij databasefou
     ?src.app.slice(reloadBegin,reloadEnd):'';
   assert(reload,'herlaad() met snapshot ontbreekt');
   const loaded=reload.indexOf('await storageRepos.loadSnapshot()');
-  assert(loaded>=0&&reload.indexOf('dossiers=snapshot.dossiers')>loaded&&
-    reload.indexOf('alle=snapshot.regels')>loaded,
-  'Productiecode moet database eerst afwachten en geheugen pas daarna vervangen');
+  assert(loaded>=0&&reload.indexOf('appState.commit(delta)')>loaded,
+    'Productiecode moet database eerst afwachten en state daarna één keer vervangen');
   assertNotIncludes(reload,'await getAll(','Herlaad mag geen gedeeltelijke losse storelezingen doen');
 });
 
@@ -950,7 +1015,7 @@ test('i7-codeplicht heeft geen stille standaard en lokale codes blijven leidend'
   assertEq(api.codeVoor(ind,null),null,'Ook codeVoor() moet i7 zonder expliciete keuze leeg laten');
   assertEq(api.codeVoor(ind,'ADM'),'ADM','Een expliciete geldige i7-code moet behouden blijven');
   assertEq(api.defaultCode(dvn),'COM','DVN moet juist wel vast op Commercieel staan');
-  assertIncludes(src.app, 'if(lokaal.length){\n    i7codes=lokaal;',
+  assertIncludes(src.app, 'if(lokaal.length){\n    appState.commit({codes:lokaal});',
     'laadWerkcodes() moet een lokale werklijst vóór netwerkbootstrap gebruiken');
   assertIncludes(src.app, 'return false;}\n  let d=null;',
     'Een bestaande lokale werklijst moet de werkcodes.json-bootstrap overslaan');
@@ -1057,7 +1122,7 @@ test('recente taken worden pas gemeten wanneer Nu zichtbaar is', () => {
     'renderRecent moet weten of de Nu-tab zichtbaar en meetbaar is');
   assertIncludes(src.views, 'if(tk.length>4&&meetbaar)',
     'Een verborgen recente-takenlijst mag geen nulhoogte opslaan');
-  assertIncludes(src.app, 'if(v==="nu")renderRecent()',
+  assertIncludes(src.app, 'if(v==="nu")renderCoordinator.render("recent")',
     'Terugkeren naar Nu moet de recente-takenhoogte opnieuw berekenen');
 });
 

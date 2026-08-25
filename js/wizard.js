@@ -6,8 +6,10 @@
    uitstellen.                                                                  */
 function ntNieuwState(){
   return{id:running?running.id:null,step:"kind",kind:null,hi:0,query:"",
-    newNr:"",newNaam:"",dvnNaam:"",dvnHi:-1,i7q:"",descHi:-1,codeOpen:false,codeHi:0};}
-const ntRauw=()=>running?(running.omschrijving||"").replace(VOOR,"").trim():"";
+    newNr:"",newNaam:"",dvnNaam:"",dvnHi:-1,i7q:"",draft:"",descHi:-1,
+    codeOpen:false,codeHi:0};}
+const ntRauw=()=>ntWizard&&ntWizard.draft!=null?ntWizard.draft:
+  (running?(running.omschrijving||"").replace(VOOR,"").trim():"");
 function ntSoort(){
   const d=running?dosOf(running.dossierId):null,k=ntWizard&&ntWizard.kind;
   if(k==="gewoon"||(!k&&d&&!isIndirect(d)))return["Gewoon dossier","declarabel"];
@@ -286,8 +288,12 @@ async function hernoemVoorlopig(id,naam,opt){
     await txAll(s=>{s.dossiers.put(nwD);nwRs.forEach(r=>s.regels.put(r));
       if(stackRaakt)s.meta.put(nwStack,"stack");});
   }catch(e){L("FOUT-voorlopig-hernoemen",String(e));toast("DVN-naam wijzigen mislukt");return null;}
-  memDossier(nwD);nwRs.forEach(memRegel);if(stackRaakt)stack=nwStack;
-  if(running&&running.dossierId===id)running=alle.find(r=>r.id===running.id)||running;
+  const nextRules=mergeById(alle,nwRs),delta={dossiers:mergeById(dossiers,[nwD]),
+    rules:nextRules};
+  if(stackRaakt)delta.stack=nwStack;
+  if(running&&running.dossierId===id)
+    delta.running=nextRules.find(r=>r.id===running.id)||running;
+  appState.commit(delta);
   if(ntWizard&&running&&running.dossierId===id)ntWizard.dvnNaam=nieuw;
   liveId=null;refreshDay();
   L("voorlopig-hernoemd","dos"+idKort(id)+" · "+nwRs.length+" regel(s)");
@@ -423,8 +429,9 @@ function ntBind(){
   box.querySelectorAll("[data-ntcode]").forEach(x=>x.onclick=async()=>{
     await codeUitVeld(running,x.dataset.ntcode);ntWizard.codeOpen=false;ntRender();ntFocus();});
   if(om){
-    om.oninput=e=>{running.omschrijving=prefixVoor(dosOf(running.dossierId),running.datum,e.target.value);
-      planOmschr(running.id,running.omschrijving);ntWizard.descHi=-1;ntRenderSamenvatting();};
+    om.oninput=e=>{ntWizard.draft=e.target.value;
+      planOmschr(running.id,prefixVoor(dosOf(running.dossierId),running.datum,ntWizard.draft));
+      ntWizard.descHi=-1;ntRenderSamenvatting();};
     om.onkeydown=e=>{
       const sugs=ntOmsSuggesties();
       if((e.key==="ArrowDown"||e.key==="ArrowUp")&&sugs.length){e.preventDefault();e.stopPropagation();
@@ -436,15 +443,16 @@ function ntBind(){
         e.preventDefault();e.stopPropagation();ntWizard.codeOpen=true;ntRender();ntFocus("code");return;}
       if(e.key==="Enter"||e.key==="Tab"){e.preventDefault();e.stopPropagation();
         if(ntWizard.descHi>=0&&sugs[ntWizard.descHi]){
-          const x=sugs[ntWizard.descHi];running.omschrijving=prefixVoor(dosOf(running.dossierId),
-            running.datum,x.value);planOmschr(running.id,running.omschrijving);
+          const x=sugs[ntWizard.descHi];ntWizard.draft=x.value;
+          planOmschr(running.id,prefixVoor(dosOf(running.dossierId),running.datum,x.value));
           ntWizard.descHi=-1;ntRender();ntFocus();return;}
         ntKlaar();}};
   }
   box.querySelectorAll("[data-ntoms]").forEach(x=>x.onclick=()=>{
     const sugs=ntOmsSuggesties(),it=sugs[+x.dataset.ntoms];if(!it)return;
-    running.omschrijving=prefixVoor(dosOf(running.dossierId),running.datum,it.value);
-    planOmschr(running.id,running.omschrijving);ntWizard.descHi=-1;ntRender();ntFocus();});
+    ntWizard.draft=it.value;
+    planOmschr(running.id,prefixVoor(dosOf(running.dossierId),running.datum,it.value));
+    ntWizard.descHi=-1;ntRender();ntFocus();});
 }
 async function nieuweTaak(){
   const nieuw=await startRegel({dossierId:null,code:null,omschrijving:"",soort:"werk"});
@@ -469,4 +477,3 @@ async function kiesDossierItem(it){
     const m=/\{[^}]+\}/.exec(el.value);
     if(m)el.setSelectionRange(m.index,m.index+m[0].length);
     else el.setSelectionRange(el.value.length,el.value.length);},10);}
-

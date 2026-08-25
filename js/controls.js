@@ -32,7 +32,8 @@ $("open-days").addEventListener("click",async e=>{
   const later=e.target.closest("[data-open-later]");
   if(later){openDagenSnooze=Date.now()+6*60*60*1000;renderOpenDagen();return;}
   const view=e.target.closest("[data-open-view]");
-  if(view){viewDate=view.dataset.openView;refreshDay();showTab("dag");renderOpenDagen();return;}
+  if(view){appState.commit({viewDate:view.dataset.openView});showTab("dag");
+    renderCoordinator.render("openDays");return;}
   const close=e.target.closest("[data-open-close]");
   if(close)await sluitWerkdag(close.dataset.openClose);});
 
@@ -129,6 +130,6 @@ if($("oldrun")){
     if(!dicht)return;
     undoTimer("oude lopende taak stoppen",[oud],{herstelRunning:oud.id,verwachtRunning:null,
       verwacht:[{id:oud.id,gewijzigd:dicht.gewijzigd}]});
-    sluitOudeTaak();viewDate=dicht.datum;refreshDay();showTab("dag");renderAll();announce();
+    sluitOudeTaak();appState.commit({viewDate:dicht.datum});showTab("dag");renderAll();announce();
     toast("Taak gestopt op "+dmy(dicht.datum)+" om "+dicht.eind);};
 }

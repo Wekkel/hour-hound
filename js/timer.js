@@ -1,17 +1,17 @@
 "use strict";
 /* ---------- regels ---------- */
 const saveRegel=r=>{
-  r.gewijzigd=Date.now();memRegel(r);
-  const kop=kopie1(r);
-  const dvn=dvnPutIfPosted(dosOf(r.dossierId),"tijdregel gewijzigd");
-  if(dvn)memDossier(dvn);
-  const vorige=schrijfRij[r.id]||Promise.resolve();
+  const kop=Object.assign({},kopie1(r),{gewijzigd:Date.now()});
+  const dvn=dvnPutIfPosted(dosOf(kop.dossierId),"tijdregel gewijzigd");
+  const vorige=schrijfRij[kop.id]||Promise.resolve();
   const p=vorige.then(()=>tx(dvn?["regels","dossiers"]:"regels","readwrite",o=>{
     if(dvn){o.regels.put(kop);o.dossiers.put(dvn);}else o.put(kop);}));
-  schrijfRij[r.id]=p.then(()=>{},()=>{});
-  return p;};
-function refreshDay(){regels=alle.filter(x=>x.datum===viewDate)
-  .sort((a,b)=>(hm2m(a.start)||0)-(hm2m(b.start)||0));}
+  schrijfRij[kop.id]=p.then(()=>{},()=>{});
+  return p.then(()=>{const delta={rules:mergeById(alle,[kop])};
+    if(running&&running.id===kop.id)delta.running=delta.rules.find(x=>x.id===kop.id)||kop;
+    if(dvn)delta.dossiers=mergeById(dossiers,[dvn]);appState.commit(delta);return kop;});};
+/* Dagregels zijn vanaf Patch Q een selector en hebben geen eigen geheugenkopie. */
+function refreshDay(){return stateSelectors.day(viewDate);}
 function prefixVoor(d,datum,tekst){
   const kaal=(tekst||"").replace(VOOR,"");
   if(!d||!d.voorlopig)return kaal;
@@ -48,20 +48,24 @@ function timerStartInput(o){
   return{input,dossier,created};}
 function pasTimerStartToe(uit,context){
   pending=null;vergeetTimerUndo("nieuwe timerwissel");
+  let nextRules=alle;
   if(uit.autoRemoved.length){const ids=new Set(uit.autoRemoved.map(r=>r.id));
-    alle=alle.filter(r=>!ids.has(r.id));
+    nextRules=zonderIds(nextRules,[...ids]);
     undoStack=undoStack.filter(a=>!(a.soort==="data"&&(a.weg||[]).some(id=>ids.has(id))));
     L("aanvullen-ingetrokken",uit.autoRemoved.length+" automatische regel(s) · dag heropend");}
-  if(uit.closedRule)memRegel(uit.closedRule);memRegel(uit.rule);uit.dossiers.forEach(memDossier);
-  running=alle.find(r=>r.id===uit.rule.id)||uit.rule;viewDate=uit.rule.datum;
-  if(uit.stackChanged)stack=uit.stack;
-  if(uit.dayWasClosed){dagEinde=uit.dayEnds;dagAudit=uit.nextDayAudit;}
-  codeGebruik=uit.codeUsage;
+  nextRules=mergeById(nextRules,[uit.closedRule,uit.rule]);
+  const delta={rules:nextRules,dossiers:mergeById(dossiers,uit.dossiers),
+    running:nextRules.find(r=>r.id===uit.rule.id)||uit.rule,viewDate:uit.rule.datum,
+    codeUsage:uit.codeUsage};
+  if(uit.stackChanged)delta.stack=uit.stack;
+  if(uit.dayWasClosed){delta.dayEnds=uit.dayEnds;delta.dayAudit=uit.nextDayAudit;}
+  appState.commit(delta);
   if(context.created)L("dossier-nieuw","dos"+idKort(context.created.id)+
     (context.created.nummer?"":" · VOORLOPIG")+(logOms?" · "+kort(context.created.naam):""));
   L("start-regel",uit.rule.soort+" · "+dosIdLog(uit.rule.dossierId)+" · code "+
     (uit.rule.code||"-")+" · "+uit.rule.start+" · oms "+omsLog(uit.rule.omschrijving));
-  liveId=null;snoozeTot=0;hideWake();renderAll();announce();
+  liveId=null;snoozeTot=0;hideWake();renderAll(["live","recent","totals","openDays",
+    tab==="dag"?"day":tab==="week"?"week":tab==="beheer"?"manage":null].filter(Boolean));announce();
   if(isIndirect(context.dossier)&&!i7codes.length)geenCodes();return uit.rule;}
 async function startViaService(o,method){
   const context=timerStartInput(o),uit=await timerServices[method](context.input);
@@ -72,10 +76,12 @@ async function stopRunning(eindTijd,label,method){
     end:eindTijd,name:label||"stoppen",pendingDescription:running?pakOmschr(running.id):null});
   const uit=await timerServices[method||"stop"](input);
   if(await meldTimerFout(uit,"Stoppen is niet uitgevoerd")||uit.noChange)return null;
-  uit.dossiers.forEach(memDossier);memRegel(uit.closedRule);running=null;liveId=null;
+  appState.commit({dossiers:mergeById(dossiers,uit.dossiers),
+    rules:mergeById(alle,[uit.closedRule]),running:null});liveId=null;
   L("stop-regel",uit.closedRule.start+"-"+uit.closedRule.eind+" · "+
     uu(urenOf(uit.closedRule))+" u · "+dosIdLog(uit.closedRule.dossierId));
-  renderAll();announce();uit.beforeRule=before;return uit.closedRule;}
+  renderAll(["live","recent","totals","openDays",tab==="dag"?"day":null].filter(Boolean));
+  announce();uit.beforeRule=before;return uit.closedRule;}
 function startRegel(o){return startViaService(o||{},"start");}
 /* Elke directe route naar een andere taak (hervatten, i7-snelkeuze, enz.) maakt
    net als N meteen een echte timerwissel. Alleen de NT-wizard start bewust leeg en
@@ -166,21 +172,21 @@ async function koppelRegel(r,op){
   }catch(e){L("FOUT-koppelen",String(e));
     toast("Koppelen mislukt — er is niets gewijzigd: "+e);
     return null;}
-  if(dosK)memDossier(dosK);
-  if(dvnOud)memDossier(dvnOud);
-  if(telCode)codeGebruik=nwCode;
+  const nextDossiers=mergeById(dossiers,[dosK,dvnOud]);
+  const nextRules=mergeById(alle,[nw]);
+  const delta={dossiers:nextDossiers,rules:nextRules};
+  if(telCode)delta.codeUsage=nwCode;
+  if(running&&running.id===nw.id)delta.running=nextRules.find(x=>x.id===nw.id)||nw;
+  appState.commit(delta);
   if(maak)L("dossier-nieuw","dos"+idKort(maak.id)+(maak.nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(maak.naam):""));
-  Object.keys(r).forEach(k=>{delete r[k];});
-  Object.assign(r,nw);
-  memRegel(r);
-  if(running&&running.id===r.id){running=r;liveId=null;}
-  return{regel:r,dossier:dosK};}
+  if(running&&running.id===nw.id)liveId=null;
+  return{regel:nw,dossier:dosK};}
 async function makeDossier(naam,nummer,lang){
   const d={id:uid(),nummer:nummer||null,naam:naam||"Zonder naam",lang:lang||"nl",
     voorlopig:!nummer,codes:[],c:dossiers.length,used:1,isI7:false,archief:false,
     gewijzigd:Date.now()};
-  await put("dossiers",d);dossiers=await getAll("dossiers");
+  await put("dossiers",d);appState.upsert("dossiers",d);
   L("dossier-nieuw","dos"+idKort(d.id)+(nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(naam):""));
   return d;}
@@ -209,7 +215,8 @@ async function terug(){
       pendingDescription:running?pakOmschr(running.id):null});
     const uit=await timerServices.returnToStack(input);
     if(await meldTimerFout(uit,"Terugkeren is niet uitgevoerd"))return;
-    if(uit.closedRule){uit.dossiers.forEach(memDossier);memRegel(uit.closedRule);running=null;}
+    if(uit.closedRule)appState.commit({dossiers:mergeById(dossiers,uit.dossiers),
+      rules:mergeById(alle,[uit.closedRule]),running:null});
     liveId=null;renderAll();announce();L("terug","stapel leeg");await nieuweTaak();return;}
   const context=timerStartInput({dossierId:back.dossierId,code:back.code,
     omschrijving:back.omschrijving,bewaarStack:true,stackNa:st});
@@ -273,7 +280,8 @@ async function maakDvnDefinitiefI7(id){
   }catch(e){L("FOUT-dvn-definitief-i7",String(e));
     toast("Omzetten naar definitief i7 mislukt — niets gewijzigd");return;}
   if(meldAdminFout(uit,"Omzetten naar definitief i7 is niet uitgevoerd"))return;
-  memDossier(uit.dossier);uit.rules.forEach(memRegel);if(uit.stackChanged)stack=uit.stack;
+  const delta={dossiers:mergeById(dossiers,[uit.dossier]),rules:mergeById(alle,uit.rules)};
+  if(uit.stackChanged)delta.stack=uit.stack;appState.commit(delta);
   undoStack=[];liveId=null;refreshDay();renderAll();renderWeek();announce();
   L("dvn-definitief-i7","dos"+idKort(d.id)+" · "+uit.allRules.length+
     " regel(s) · "+uu(uit.total)+" u");
@@ -320,8 +328,12 @@ async function slaDvnNummerOp(){
       rules:alle,stack,waitForRules:rustig,nowMs,nowIso});
   }catch(e){L("FOUT-dvn-nummer",String(e));toast("Dossiernummer opslaan mislukt — niets gewijzigd: "+e);return;}
   if(meldAdminFout(uit,"Dossiernummer is niet opgeslagen"))return;
-  memDossier(uit.dossier);uit.rules.forEach(memRegel);if(uit.stackChanged)stack=uit.stack;
-  if(running&&running.dossierId===d.id)running=alle.find(r=>r.id===running.id)||running;
+  const nextRules=mergeById(alle,uit.rules),delta={dossiers:mergeById(dossiers,[uit.dossier]),
+    rules:nextRules};
+  if(uit.stackChanged)delta.stack=uit.stack;
+  if(running&&running.dossierId===d.id)
+    delta.running=nextRules.find(r=>r.id===running.id)||running;
+  appState.commit(delta);
   undoStack=[];liveId=null;refreshDay();renderAll();renderWeek();announce();
   L("dvn-nummer","dos"+idKort(d.id)+" → "+nr+" · "+uit.rules.length+
     " regel(s)"+(uit.target?" · koppeling":""));

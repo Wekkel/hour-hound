@@ -181,3 +181,15 @@ zoeken en kiezen van een bestaand voorlopig dossier mag niet op een ontbrekende 
 stuklopen. De Dag-tab gebruikt daarnaast een expliciete aggregatieadapter voor het Intapp-totaal.
 De regressiesuite voert beide paden uit: normalisatie van een DVN-zoekterm en een niet-leeg
 Intapp-dagtotaal met een gewone tijdregel. De schema- en service-workercontracten blijven gelijk.
+
+### Patch Q-contract
+
+`js/state.js` bezit de enige runtimekopie van dossiers, regels, timer, stapel, dagmetadata,
+boekstatus en overboekingen. `regels` is geen tweede array meer, maar een pure dagselector.
+State-reads en timer-ticks maken geen volledige deep clone. Service-adapters committen hun
+geretourneerde delta pas nadat IndexedDB is geslaagd; views wijzigen geen gedeelde records vooraf.
+
+De rendercoördinator voert alleen de gevraagde views uit. De 10-secondentick rendert daarom alleen
+de live-timer en Nu-totalen. BroadcastChannel-herladen en het uitgestelde herladen na focusverlies
+blijven een volledige consistente opslagsnapshot gebruiken. `sw.js` moet bij toepassing handmatig
+ook `./js/state.js` cachen; tests verifiëren dat met een complete tijdelijke SW-lijst.

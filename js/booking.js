@@ -7,7 +7,6 @@
    dag onthouden, zodat een onderbreking niet betekent dat je opnieuw moet zoeken waar
    je gebleven was. Met L schakel je naar de hele lijst om buiten de volgorde om een
    willekeurige regel te pakken.                                                  */
-let geboekt={};
 let boek={aan:false,i:0,rows:[],datum:"",lijst:false};
 let parkBoek=null;
 /* De boekstatus hangt aan de vingerafdruk van een Intapp-regel: dossieridentiteit,
@@ -25,16 +24,14 @@ function kanParkeren(row){
   return !!d&&!isIndirect(d)&&!isDvn(d)&&!!d.nummer;
 }
 async function zetGeboekt(fp,aan){
-  const had=Object.prototype.hasOwnProperty.call(geboekt,boek.datum);
-  const oud=had?geboekt[boek.datum].slice():null;
+  const next=Object.assign({},geboekt);
   const lijst=(geboekt[boek.datum]||[]).filter(x=>x!==fp);
   if(aan)lijst.push(fp);
-  if(lijst.length)geboekt[boek.datum]=lijst;else delete geboekt[boek.datum];
-  const dagen=Object.keys(geboekt).sort();
-  while(dagen.length>60)delete geboekt[dagen.shift()];
-  try{await putK("meta",geboekt,"geboekt");return true;}
+  if(lijst.length)next[boek.datum]=lijst;else delete next[boek.datum];
+  const dagen=Object.keys(next).sort();
+  while(dagen.length>60)delete next[dagen.shift()];
+  try{await putK("meta",next,"geboekt");appState.commit({booked:next});return true;}
   catch(e){
-    if(had)geboekt[boek.datum]=oud;else delete geboekt[boek.datum];
     L("FOUT-geboekt",String(e));
     toast("Boekstatus kon niet worden opgeslagen — de markering is teruggedraaid");
     tekenBoek();boekStat();return false;}}
@@ -150,7 +147,7 @@ async function bevestigParkeer(){
   catch(e){L("FOUT-overboeking-parkeren",String(e));toast("Parkeren mislukt — er is niets gewijzigd");return;}
   if(meldAdminFout(uit,"Parkeren is niet uitgevoerd")){
     if(uit&&uit.error==="source_changed")sluitParkeer();return;}
-  const o=uit.overbooking;overboekingen.push(o);
+  const o=uit.overbooking;appState.upsert("overbookings",o);
   L("overboeking-geparkeerd","regels "+bronIdsVan(o).length+" · "+uu(o.hours)+" u");
   sluitParkeer();tekenBoek();boekStat();
   if(!volgendeOpen())toast("Alle regels zijn geboekt of geparkeerd");

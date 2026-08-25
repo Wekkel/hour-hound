@@ -319,3 +319,25 @@ de Intapp-samenvatting omdat `simIntappTotaal` nergens meer was gedefinieerd. Ee
 niet alleen controleren dat een functie in de bron voorkomt, maar haar aanroepen met representatieve
 runtimegegevens en het zichtbare resultaat controleren. Compatibiliteitsnamen mogen terugkomen als
 dunne adapters naar de ene domeinimplementatie; duplicatie van de berekening blijft verboden.
+
+## 25. Afgeleide viewdata is geen tweede runtime-state
+
+Een gefilterde dagarray lijkt goedkoop, maar wordt een tweede waarheid zodra handlers haar apart
+vervangen, tijdelijk omzetten of direct muteren. Bewaar dossiers, regels, timer, stapel,
+dagmetadata, boekstatus en overboekingen daarom precies één keer. Laat Dag, vandaag, recente taken,
+DVN en overboekingslijsten pure selectors zijn die de bron niet sorteren of wijzigen.
+
+Een succesvolle service levert het geheugeneffect als delta terug. Pas die delta pas toe nadat de
+volledige IndexedDB-transactie is geslaagd; wijzig ook voor een debounced omschrijving of eenvoudig
+dossierveld eerst een kopie. Anders kan een writefout alsnog zichtbaar stategeheugen achterlaten
+dat niet met de database overeenkomt.
+
+Centraliseer renderen zonder iedere statewijziging automatisch tot een volledige schermrender te
+maken. Registreer kleine renderdoelen en laat een actie alleen de afhankelijke views coördineren.
+De periodieke timertick heeft bijvoorbeeld alleen live-timer en totalen nodig. Houd herladen uit
+een andere tab juist snapshot-gebaseerd: invoervelden stellen synchronisatie uit tot focusverlies,
+waarna één volledige snapshot in één commit wordt vervangen.
+
+Tijdelijke globale accessors kunnen tijdens een gefaseerde migratie bruikbaar zijn, mits zij geen
+data bezitten en rechtstreeks naar hetzelfde centrale object verwijzen. Documenteer ze als
+compatibiliteitslaag en verwijder ze in de afrondende modulepatch; maak er nooit mirror-arrays van.

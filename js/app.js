@@ -1,15 +1,22 @@
 "use strict";
 /* ---------- render en start ---------- */
-function renderAll(){
-  renderLive();renderRecent();renderTot();renderOpenDagen();
-  if(tab==="dag")bouwDag();if(tab==="week")renderWeek();if(tab==="beheer")renderBeheer();}
+const renderCoordinator=HH.renderCoordinator;
+renderCoordinator.register("live",renderLive).register("recent",renderRecent)
+  .register("totals",renderTot).register("openDays",renderOpenDagen)
+  .register("day",bouwDag).register("week",renderWeek).register("manage",renderBeheer);
+function zichtbareRender(){return tab==="dag"?"day":tab==="week"?"week":
+  tab==="beheer"?"manage":null;}
+function renderAll(doelen){
+  renderCoordinator.render(doelen||["live","recent","totals","openDays",zichtbareRender()]
+    .filter(Boolean));}
 function showTab(v){
-  tab=v;["nu","dag","week","beheer"].forEach(x=>$("v-"+x).classList.toggle("on",x===v));
+  appState.commit({tab:v});["nu","dag","week","beheer"].forEach(x=>$("v-"+x).classList.toggle("on",x===v));
   [...$("tabs").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===v));
   /* renderRecent() meet de natuurlijke hoogte van vier taken. Doe dat opnieuw
      nadat Nu zichtbaar is; metingen tijdens een verborgen Beheer-tab zijn nul. */
-  if(v==="nu")renderRecent();
-  if(v==="dag")bouwDag();if(v==="week")renderWeek();if(v==="beheer")renderBeheer();}
+  if(v==="nu")renderCoordinator.render("recent");
+  if(v==="dag")renderCoordinator.render("day");if(v==="week")renderCoordinator.render("week");
+  if(v==="beheer")renderCoordinator.render("manage");}
 
 async function migrate(){
   if(await get("meta","v3done"))return;
@@ -64,7 +71,7 @@ async function herstelInvariant(snapshotMeta){
     readCurrentTimer:()=>running,rules:alle,pointerId:rid||null,pendingId:oudPending});
   if(await meldTimerFout(uit,"Timerstatus herstellen is niet uitgevoerd"))return;
   pending=null;if(oudPending)L("migratie-pending","oude uitgestelde taakwissel verwijderd");
-  running=uit.currentTimer;
+  appState.commit({running:uit.currentTimer});
   if(!uit.blocked){
     if(uit.pointerChanged){L("herstel","pointer "+(running?"gezet op open regel":"gewist"));
       if(running)toast("Lopende regel hersteld — loopt sinds "+running.start);}
@@ -124,8 +131,9 @@ $("h-ok").onclick=async()=>{
   const uit=await timerServices.confirmRecovery({currentTimer:running,readCurrentTimer:()=>running,
     rules:alle,replacements:nieuw,chosenId:gekozen||null,waitForRules:rustig});
   if(await meldTimerFout(uit,"Herstel is niet uitgevoerd")){alert("Herstel mislukt");return;}
-  uit.rules.forEach(memRegel);running=uit.currentTimerId?
-    (alle.find(x=>x.id===uit.currentTimerId)||null):null;
+  const nextRules=mergeById(alle,uit.rules);
+  appState.commit({rules:nextRules,running:uit.currentTimerId?
+    (nextRules.find(x=>x.id===uit.currentTimerId)||null):null});
   vergeetTimerUndo("herstel bevestigd");
   $("herstel").classList.remove("on");$("l-herstel").classList.remove("on");
   liveId=null;refreshDay();bouwDag();renderAll();announce();
@@ -136,14 +144,13 @@ async function herlaad(metInstellingen){
   /* Eerst één consistente database-snapshot; pas na een volledig geslaagde
      transactie wordt runtime-state vervangen. Een leesfout laat alles intact. */
   const snapshot=await storageRepos.loadSnapshot();
-  dossiers=snapshot.dossiers;templates=snapshot.templates;
-  i7codes=snapshot.codes;alle=snapshot.regels;
-  overboekingen=snapshot.overboekingen;
-  stack=snapshot.meta.stack||[];
-  dagEinde=snapshot.meta.dagEinde||{};
-  dagAudit=snapshot.meta.dagAudit||{};
-  if(metInstellingen)pasInstellingenToe(snapshot.meta);
-  refreshDay();
+  const delta={dossiers:snapshot.dossiers,templates:snapshot.templates,
+    codes:snapshot.codes,rules:snapshot.regels,overbookings:snapshot.overboekingen,
+    stack:snapshot.meta.stack||[],dayEnds:snapshot.meta.dagEinde||{},
+    dayAudit:snapshot.meta.dagAudit||{}};
+  if(metInstellingen)Object.assign(delta,instellingenDelta(snapshot.meta));
+  appState.commit(delta);
+  if(metInstellingen)pasInstellingenUiToe(snapshot.meta);
   await herstelInvariant(snapshot.meta);
   /* Niet awaiten: herlaad() kan vanuit de foutafhandeling van TimerService worden
      aangeroepen, en middernachtCheck() raadpleegt daarna dezelfde service.       */
@@ -159,7 +166,7 @@ async function herlaad(metInstellingen){
 async function laadWerkcodes(){
   const lokaal=await getAll("codes");
   if(lokaal.length){
-    i7codes=lokaal;
+    appState.commit({codes:lokaal});
     L("werkcodes-lokaal","behouden · "+lokaal.length+" codes");
     return false;}
   let d=null;
@@ -172,7 +179,7 @@ async function laadWerkcodes(){
   const rij=keurCodes(d&&Array.isArray(d.codes)?d.codes:d);
   if(!rij.goed.length){L("werkcodes-json","geen bruikbare codes · lokale lijst leeg");return false;}
   await replaceAll("codes",rij.goed);
-  i7codes=await getAll("codes");
+  appState.commit({codes:await getAll("codes")});
   L("werkcodes-json","bootstrap · "+rij.goed.length+" codes"+
     (rij.fout.length?" · "+rij.fout.length+" afgekeurd":""));
   toast("Werkcodelijst geladen uit werkcodes.json — "+rij.goed.length+" codes");
@@ -186,16 +193,16 @@ async function zorgVoorI7(){
     voorlopig:false,codes:[],c:ds.length,used:999,isI7:true,archief:false,
     gewijzigd:Date.now()});}
 
-function pasInstellingenToe(meta){
-  codeGebruik=meta.codeGebruik||{};
-  geboekt=meta.geboekt||{};
+function instellingenDelta(meta){return{codeUsage:meta.codeGebruik||{},
+  booked:meta.geboekt||{},roundingMode:meta.rondMode||"groep"};}
+function pasInstellingenUiToe(meta){
   logboek=meta.log||[];
   logOms=!!meta.logOms;
   $("b-logoms").checked=logOms;$("logstat").textContent=logboek.length+" regels";
   zetThema(meta.thema||"donker");
-  rondMode=meta.rondMode||"groep";
   $("d-mode").value=rondMode;
 }
+function pasInstellingenToe(meta){appState.commit(instellingenDelta(meta));pasInstellingenUiToe(meta);}
 async function laadInstellingen(){
   pasInstellingenToe(await storageRepos.config.getMany([
     "codeGebruik","geboekt","log","logOms","thema","rondMode"]));
@@ -214,7 +221,7 @@ async function boot(){
     " · lopend "+(running?running.start:"nee"));
   if(tick)clearInterval(tick);
   tick=setInterval(()=>{middernachtCheck();checkWake();
-    if(running){renderLive();renderTot();controleerOudeLopendeTaak();}},10000);}
+    if(running){renderCoordinator.render(["live","totals"]);controleerOudeLopendeTaak();}},10000);}
 
 (async function(){
   try{db=await openDB();}catch(e){

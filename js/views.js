@@ -47,7 +47,7 @@ function renderLive(){
     "Deze tijd boekt altijd op "+codeNaam(d,defaultCode(d)):
     (isIndirect(d)?"Een i7-regel moet een werkcode hebben":"");
   hideWake();ntRender();}
-function dagRegels(datum){return alle.filter(r=>r.datum===datum);} 
+function dagRegels(datum){return stateSelectors.day(datum);} 
 function dagIntappTotaal(datum){return simIntappTotaal(dagRegels(datum));}
 function openWerkdagen(){
   const nu=today(),map={};
@@ -153,7 +153,7 @@ async function sluitWerkdag(datum){
   const keuze=await dagAfsluitKeuze(datum);
   if(!keuze)return false;
   if(keuze.actie==="day"){
-    viewDate=datum;refreshDay();showTab("dag");renderOpenDagen();return false;}
+    appState.commit({viewDate:datum});showTab("dag");renderCoordinator.render("openDays");return false;}
   const eind=keuze.eind.trim();
   if(hm2m(eind)==null){toast("Ongeldige eindtijd");return false;}
   const wasRunning=running&&running.datum===datum,dicht=wasRunning?sluitObj(running,eind):null;
@@ -165,9 +165,12 @@ async function sluitWerkdag(datum){
       nowMs:Date.now(),nowIso:new Date().toISOString()});
   if(await meldTimerFout(uit,"Werkdag afsluiten is niet uitgevoerd")||
     meldDagRegelFout(uit,"Werkdag afsluiten is niet uitgevoerd"))return false;
-  uit.dossiers.forEach(memDossier);if(uit.closedRule)memRegel(uit.closedRule);
-  if(wasRunning){pending=null;running=null;stack=[];vergeetTimerUndo("einde werkdag");liveId=null;}
-  dagEinde=uit.dayEnds;dagAudit=uit.dayAudit;viewDate=datum;refreshDay();showTab("dag");renderAll();announce();
+  const delta={dossiers:mergeById(dossiers,uit.dossiers),
+    rules:mergeById(alle,[uit.closedRule]),dayEnds:uit.dayEnds,dayAudit:uit.dayAudit,
+    viewDate:datum};
+  if(wasRunning){pending=null;delta.running=null;delta.stack=[];
+    vergeetTimerUndo("einde werkdag");liveId=null;}
+  appState.commit(delta);showTab("dag");renderAll();announce();
   const totaalNaSluit=dagIntappTotaal(datum),naTekort=dagTekort(datum);
   L("einde-werkdag",datum+" om "+dagSluitStatus(datum).eind+" · "+uu(totaalNaSluit)+" u");
   if(!werkdag(datum))toast("Weekendregistratie afgesloten. "+uu(totaalNaSluit)+
@@ -195,12 +198,8 @@ function voorstelOudeTimerEind(r){
   if(s!=null&&s<e17)return "17:00";
   return r.start;}
 function regelBoekRow(r){
-  const oude=viewDate,oudeRegels=regels;
-  viewDate=r.datum;regels=alle.filter(x=>x.datum===r.datum)
-    .sort((a,b)=>(hm2m(a.start)||0)-(hm2m(b.start)||0));
-  const hit=sumRows().find(x=>x.bron&&x.bron.some(b=>b.id===r.id));
-  viewDate=oude;regels=oudeRegels;
-  return hit||null;}
+  return sumVan(stateSelectors.day(r.datum)).find(x=>
+    x.bron&&x.bron.some(b=>b.id===r.id))||null;}
 function regelBoekFingerprint(r){const hit=regelBoekRow(r);return hit?hit.fp:null;}
 function regelIsGeboekt(r){const hit=regelBoekRow(r);return !!(hit&&
   ((geboekt[r.datum]||[]).indexOf(hit.fp)>=0||overboekingAfgerondVoorRow(hit,r.datum)));}
@@ -307,17 +306,20 @@ function openRegelEditor(id,bron){
           nowMs:Date.now(),nowIso:new Date().toISOString()});
         if(await meldTimerFout(uit,"Opslaan is niet uitgevoerd")||
           meldDagRegelFout(uit,"Opslaan is niet uitgevoerd"))return false;
-        uit.dossiers.forEach(memDossier);memRegel(uit.rule);tmpRule=uit.rule;
-        if(uit.closedRunning){running=null;pending=null;
+        const delta={dossiers:mergeById(dossiers,uit.dossiers),
+          rules:mergeById(alle,[uit.rule])};tmpRule=uit.rule;
+        if(uit.closedRunning){delta.running=null;pending=null;
           vergeetTimerUndo("regel gestopt via bewerksheet");}
-        else if(looptNu){running=alle.find(x=>x.id===uit.rule.id);liveId=null;}
+        else if(looptNu){delta.running=delta.rules.find(x=>x.id===uit.rule.id);liveId=null;}
+        appState.commit(delta);
         pasMutatieUndoToe(uit.undo);
         return true;};
       try{
         if(!await schrijf())return;
       }catch(e){L("FOUT-regel-editor",String(e));toast("Opslaan mislukt — niets gewijzigd: "+e);return;}
       L("regel-editor",tmpRule.start+"-"+(tmpRule.eind||"loopt")+" · "+dosIdLog(tmpRule.dossierId));
-      viewDate=tmpRule.datum;refreshDay();bouwDag();renderAll();announce();
+      appState.commit({viewDate:tmpRule.datum});
+      renderAll(["day","live","recent","totals"]);announce();
       toast("Tijdregel opgeslagen");sluit(true);};});}
 function controleerOudeLopendeTaak(){
   if(!running||running.datum>=today()||timerServices.isBlocked()||
@@ -516,8 +518,8 @@ function bouwSum(){
 $("d-probs").addEventListener("click",e=>{
   const b=e.target.closest("[data-goto]");if(!b)return;
   openRegelEditor(b.dataset.goto,"dag");});
-$("d-mode").onchange=async e=>{rondMode=e.target.value;
-  await putK("meta",rondMode,"rondMode");verversDag();};
+$("d-mode").onchange=async e=>{const next=e.target.value;
+  await putK("meta",next,"rondMode");appState.commit({roundingMode:next});verversDag();};
 $("d-copy").onclick=()=>{
   const rs=sumRows(),probs=controleer(),blok=probs.filter(x=>x.blok);
   if(!rs.length){toast("Niets te kopiëren");return;}
@@ -587,8 +589,8 @@ async function vulAanTot8(){
   }catch(e){L("FOUT-aanvullen",String(e));
     toast("Aanvullen mislukt — er is niets gewijzigd: "+e);return false;}
   if(meldDagRegelFout(uit,"Aanvullen is niet uitgevoerd"))return false;
-  dagAudit=uit.dayAudit;memRegel(uit.rule);pasMutatieUndoToe(uit.undo);
-  bouwDag();renderTot();announce();
+  appState.commit({dayAudit:uit.dayAudit,rules:mergeById(alle,[uit.rule])});
+  pasMutatieUndoToe(uit.undo);renderCoordinator.render(["day","totals","openDays"]);announce();
   const werkelijk=Math.round(intappTotaal()*10)/10;
   L("aanvullen","1 administratieve regel · +"+uu(extra)+" u · nu "+uu(werkelijk)+" u");
   toast("Er was "+uu(plan.currentTotal)+" uur verantwoord. Hour Hound heeft "+uu(extra)+
@@ -619,12 +621,11 @@ async function heropenWerkdag(datum){
       nowMs:Date.now(),nowIso:new Date().toISOString()});
   }catch(e){L("FOUT-heropen",String(e));toast("Heropenen mislukt — niets gewijzigd: "+e);return;}
   if(meldDagRegelFout(uit,"Heropenen is niet uitgevoerd"))return;
-  dagEinde=uit.dayEnds;dagAudit=uit.dayAudit;
+  const delta={dayEnds:uit.dayEnds,dayAudit:uit.dayAudit,viewDate:datum};
   if(verwijder&&autos.length){
-    const ids=new Set(uit.removedRules.map(r=>r.id));
-    alle=alle.filter(r=>!ids.has(r.id));
+    const ids=new Set(uit.removedRules.map(r=>r.id));delta.rules=zonderIds(alle,[...ids]);
     undoStack=undoStack.filter(a=>!(a.soort==="data"&&(a.weg||[]).some(id=>ids.has(id))));}
-  viewDate=datum;refreshDay();bouwDag();renderAll();announce();
+  appState.commit(delta);renderAll(["day","live","recent","totals","openDays"]);announce();
   L("dag-heropend",datum+" · auto verwijderd "+(verwijder?autos.length:0));
   toast("Werkdag heropend"+(verwijder&&autos.length?" — automatische Diversen-regels verwijderd":""));}
 $("d-fill").onclick=vulAanTot8;
@@ -664,11 +665,11 @@ function renderWeek(){
       '<span style="flex:1"></span><span class="hint">Alleen-lezen · wijzigen onder Beheer</span></div>'+ 
       '<div class="hint mono">Intapp: '+esc(info.nummer||'geen nummer')+' · '+esc(info.naam||'geen naam')+' · '+esc(det||"nog geen uren")+"</div></div>";}).join(""):
     '<div class="hint">Geen DVN-dossiers.</div>';}
-$("w-prev").onclick=()=>{weekAnchor=addD(weekAnchor,-7);renderWeek();};
-$("w-next").onclick=()=>{weekAnchor=addD(weekAnchor,7);renderWeek();};
-$("w-now").onclick=()=>{weekAnchor=today();renderWeek();};
+$("w-prev").onclick=()=>{appState.commit({weekAnchor:addD(weekAnchor,-7)});renderWeek();};
+$("w-next").onclick=()=>{appState.commit({weekAnchor:addD(weekAnchor,7)});renderWeek();};
+$("w-now").onclick=()=>{appState.commit({weekAnchor:today()});renderWeek();};
 $("w-grid").addEventListener("click",e=>{const b=e.target.closest("[data-day]");if(!b)return;
-  viewDate=b.dataset.day;refreshDay();showTab("dag");});
+  appState.commit({viewDate:b.dataset.day});showTab("dag");});
 
 function dvnAuditTekst(d){
   const st=dvnIntappState(d);
@@ -708,7 +709,8 @@ function dvnKaartHtml(d,afgehandeld){
 function renderDvnIntapp(){
   const el=$("dvn-intapp");if(!el)return;
   const volg={needs_check:0,ready:1,missing:2,"":3};
-  const ds=actief().filter(d=>isDvn(d)&&!dvnDefinitiefI7(d)).sort((a,b)=>
+  const ds=stateSelectors.dvnDossiers({isDvn,isFinalI7:dvnDefinitiefI7})
+    .filter(d=>!d.archief).sort((a,b)=>
     (volg[dvnIntappState(a)]??9)-(volg[dvnIntappState(b)]??9)||a.naam.localeCompare(b.naam));
   if(!ds.length){el.innerHTML='<div class="hint">Geen DVN-dossiers.</div>';return;}
   const open=ds.filter(d=>dvnIntappState(d)!=="posted");
@@ -755,7 +757,8 @@ function overboekingKaartHtml(o){
     '</tbody></table></div></details></div>';}
 function renderOverboekingen(){
   const el=$("overboek-intapp");if(!el)return;
-  const open=overboekingen.filter(overboekingOpen),klaar=overboekingen.filter(o=>o.status==="done"),groepen={};
+  const open=stateSelectors.overbookings({openOnly:true,isOpen:overboekingOpen}),
+    klaar=stateSelectors.overbookings().filter(o=>o.status==="done"),groepen={};
   open.forEach(o=>{(groepen[o.targetDossierId]||(groepen[o.targetDossierId]=[])).push(o);});
   const ids=Object.keys(groepen);
   const openHtml=!ids.length?'<div class="hint">Geen regels die nog naar een dossier moeten.</div>':ids.map(id=>{const os=groepen[id].sort((a,b)=>a.sourceDate.localeCompare(b.sourceDate));
@@ -796,7 +799,8 @@ async function handelOverboekingenAf(){
     nowIso,bookedDate});}
   catch(e){L("FOUT-overboeking-afhandelen",String(e));toast("Afhandelen mislukt — er is niets gewijzigd");return;}
   if(meldAdminFout(uit,"Afhandelen is niet uitgevoerd")){sluitOverboekPost();return;}
-  geboekt=uit.booked;vervangOverboekingenGeheugen(uit.overbookings);
+  appState.commit({booked:uit.booked,
+    overbookings:mergeById(overboekingen,uit.overbookings)});
   sluitOverboekPost();renderBeheer();boekStat();
   L("overboeking-afgehandeld",uit.overbookings.length+" item(s)");
   toast("Afgehandeld — de eerdere i7-boeking blijft staan");}
@@ -827,8 +831,8 @@ async function maakOverboekingDefinitiefI7(id){
     summarize:sumVan,booked:geboekt,waitForRules:rustig,nowMs,nowIso});}
   catch(e){L("FOUT-overboeking-definitief-i7",String(e));toast("Omzetten mislukt — er is niets gewijzigd");return;}
   if(meldAdminFout(uit,"Omzetten is niet uitgevoerd"))return;
-  geboekt=uit.booked;uit.rules.forEach(memRegel);
-  vervangOverboekingenGeheugen([uit.overbooking]);refreshDay();renderAll();
+  appState.commit({booked:uit.booked,rules:mergeById(alle,uit.rules),
+    overbookings:mergeById(overboekingen,[uit.overbooking])});renderAll();
   L("overboeking-definitief-i7",uit.rules.length+" regel(s)");
   toast("Definitief i7 · Commercieel");}
 
@@ -876,7 +880,7 @@ $("dvn-intapp").addEventListener("click",async e=>{
   const finalI7=e.target.closest("[data-dvn-final-i7]");
   if(finalI7){await maakDvnDefinitiefI7(finalI7.dataset.dvnFinalI7);return;}
   const day=e.target.closest("[data-dvn-day]");
-  if(day){viewDate=day.dataset.dvnDay;refreshDay();showTab("dag");return;}
+  if(day){appState.commit({viewDate:day.dataset.dvnDay});showTab("dag");return;}
 });
 $("overboek-intapp").addEventListener("click",async e=>{
   const post=e.target.closest("[data-over-post]");if(post){openOverboekPost(post.dataset.overPost);return;}
@@ -894,38 +898,35 @@ $("b-list").addEventListener("change",async e=>{
     if(!nr){toast("Leegmaken kan niet — gebruik Nummer toekennen");t.value=d.nummer||"";return;}
     if(nummerBezet(nr,d.id)){toast("Dat dossiernummer hoort al bij een ander dossier");
       t.value=d.nummer||"";return;}
-    d.nummer=nr;stempel(d);await put("dossiers",d);
-    dossiers=await getAll("dossiers");renderAll();}
+    const next=stempel(Object.assign({},d,{nummer:nr}));await put("dossiers",next);
+    appState.upsert("dossiers",next);renderAll();}
   if(t.dataset.dnm){const d=dosOf(t.dataset.dnm),naam=t.value.trim();
     if(d.voorlopig){if(!naam){t.value=d.naam;toast("De DVN-naam kan niet leeg zijn");return;}
       const oud=d.naam,uit=await hernoemVoorlopig(d.id,naam);if(!uit)t.value=oud;}
-    else{d.naam=naam||d.naam;stempel(d);
-      const dvn=dvnPutIfPosted(d,"dossiernaam gewijzigd");
-      if(dvn){memDossier(dvn);await put("dossiers",dvn);}
-      else await put("dossiers",d);
-      dossiers=await getAll("dossiers");renderAll();}}
-  if(t.dataset.dl){const d=dosOf(t.dataset.dl);d.lang=t.value;stempel(d);
-    await put("dossiers",d);
-    dossiers=await getAll("dossiers");}});
+    else{const gewijzigd=stempel(Object.assign({},d,{naam:naam||d.naam}));
+      const next=dvnPutIfPosted(gewijzigd,"dossiernaam gewijzigd")||gewijzigd;
+      await put("dossiers",next);appState.upsert("dossiers",next);renderAll();}}
+  if(t.dataset.dl){const d=dosOf(t.dataset.dl),next=stempel(Object.assign({},d,{lang:t.value}));
+    await put("dossiers",next);appState.upsert("dossiers",next);}});
 $("b-list").addEventListener("click",async e=>{
   const post=e.target.closest("[data-post]");if(post){openDvnPostSheet(post.dataset.post);return;}
   const finalI7=e.target.closest("[data-final-i7]");
   if(finalI7){await maakDvnDefinitiefI7(finalI7.dataset.finalI7);return;}
   const nr=e.target.closest("[data-nr]");if(nr){kenNummerToe(nr.dataset.nr);return;}
   const ua=e.target.closest("[data-unarch]");
-  if(ua){const d=dosOf(ua.dataset.unarch);d.archief=false;await put("dossiers",d);
-    dossiers=await getAll("dossiers");renderAll();return;}
+  if(ua){const d=dosOf(ua.dataset.unarch),next=stempel(Object.assign({},d,{archief:false}));
+    await put("dossiers",next);appState.upsert("dossiers",next);renderAll();return;}
   const a=e.target.closest("[data-addcode]");
   if(a){const d=dosOf(a.dataset.addcode);
     const c=document.querySelector('[data-nc="'+d.id+'"]').value.trim();
     const n=document.querySelector('[data-ncn="'+d.id+'"]').value.trim();
     if(!c){toast("Vul een code in");return;}
-    d.codes=d.codes||[];d.codes.push({code:c,naam:n||c});
-    await put("dossiers",d);dossiers=await getAll("dossiers");renderBeheer();return;}
+    const next=stempel(Object.assign({},d,{codes:(d.codes||[]).concat([{code:c,naam:n||c}])}));
+    await put("dossiers",next);appState.upsert("dossiers",next);renderBeheer();return;}
   const rm=e.target.closest("[data-rmcode]");
   if(rm){const[id,code]=rm.dataset.rmcode.split("|");const d=dosOf(id);
-    d.codes=(d.codes||[]).filter(x=>x.code!==code);await put("dossiers",d);
-    dossiers=await getAll("dossiers");renderBeheer();return;}
+    const next=stempel(Object.assign({},d,{codes:(d.codes||[]).filter(x=>x.code!==code)}));
+    await put("dossiers",next);appState.upsert("dossiers",next);renderBeheer();return;}
   const dd=e.target.closest("[data-deldos]");
   if(dd){const d=dosOf(dd.dataset.deldos);
     if(overboekingen.some(o=>overboekingOpen(o)&&o.targetDossierId===d.id)){
@@ -933,9 +934,11 @@ $("b-list").addEventListener("click",async e=>{
     const inGebruik=alle.some(r=>r.dossierId===d.id);
     if(inGebruik){
       if(!confirm('"'+d.naam+'" heeft regels en wordt gearchiveerd in plaats van verwijderd.\nDoorgaan?'))return;
-      d.archief=true;await put("dossiers",d);}
-    else{if(!confirm("Dossier verwijderen?"))return;await del("dossiers",d.id);}
-    dossiers=await getAll("dossiers");renderAll();}});
+      const next=stempel(Object.assign({},d,{archief:true}));await put("dossiers",next);
+      appState.upsert("dossiers",next);}
+    else{if(!confirm("Dossier verwijderen?"))return;await del("dossiers",d.id);
+      appState.remove("dossiers",d.id);}
+    renderAll();}});
 $("b-logoms").onchange=async e=>{
   logOms=e.target.checked;
   await putK("meta",logOms,"logOms");
@@ -960,7 +963,8 @@ $("b-wipe").onclick=async()=>{
     o.overboekingen.clear();
     timerServices.writePointer(o,null);o.meta.delete("stack");o.meta.delete("dagEinde");
     o.meta.delete("dagAudit");o.meta.delete("geboekt");});
-  stack=[];dagEinde={};dagAudit={};undoStack=[];geboekt={};overboekingen=[];running=null;
+  appState.commit({stack:[],dayEnds:{},dayAudit:{},booked:{},overbookings:[],running:null});
+  undoStack=[];
   await zorgVoorI7();await herlaad();
   L("alles-gewist","");toast("Gewist — hourhound begint schoon");};
 $("b-adddos").onclick=async()=>{
@@ -989,16 +993,15 @@ $("l-code").addEventListener("input",e=>{
   openAC(e.target,codeItems(d,e.target.value),kiesCodeItem);});
 $("l-omschr").addEventListener("input",e=>{
   if(!running)return;
-  running.omschrijving=e.target.value;
   planOmschr(running.id,e.target.value);
   const d=dosOf(running.dossierId),q=e.target.value.replace(VOOR,"");
   if(q.length>=2)openAC(e.target,omschrItems(d,q),async it=>{
-    const p=(running.omschrijving||"").match(VOOR);
-    running.omschrijving=(p?p[0]:"")+it.value;
+    const current=running,p=(e.target.value||current.omschrijving||"").match(VOOR);
+    const next=Object.assign({},current,{omschrijving:(p?p[0]:"")+it.value});
     /* Een omschrijvingssuggestie mag nooit stilzwijgend een optionele dossiercode
        invullen. i7 heeft zijn code al expliciet gekozen vóór de omschrijving. */
-    if(it.code&&!running.code&&isIndirect(d))running.code=it.code;
-    await saveRegel(running);liveId=null;
+    if(it.code&&!next.code&&isIndirect(d))next.code=it.code;
+    await saveRegel(next);liveId=null;
     $("l-omschr").value=running.omschrijving;$("l-code").value=codeNaam(d,running.code);
     const m=/\{[^}]+\}/.exec($("l-omschr").value);$("l-omschr").focus();
     if(m)$("l-omschr").setSelectionRange(m.index,m.index+m[0].length);
@@ -1077,7 +1080,7 @@ $("l-code").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
       if(running.code!==null)await koppelRegel(running,{code:null});
       toast("Een i7-regel moet een werkcode hebben — kies er een uit de lijst");
       eisCode();}
-    else if(running.code!==null){running.code=null;await saveRegel(running);}}
+    else if(running.code!==null)await koppelRegel(running,{code:null});}
   const nd=dosOf(running.dossierId);
   $("l-code").value=codeNaam(nd,running.code);
   $("l-code").classList.toggle("miss",isIndirect(nd)&&!running.code);
@@ -1097,8 +1100,7 @@ async function herstelOmschr(){
   try{localStorage.removeItem("hh-oms");}catch(e){}
   const r=alle.find(x=>x.id===n.id);
   if(!r||r.omschrijving===n.tekst)return;
-  r.omschrijving=n.tekst;
-  await saveRegel(r);
+  await saveRegel(Object.assign({},r,{omschrijving:n.tekst}));
   L("omschrijving-hersteld","na afsluiten · "+omsLog(n.tekst));
   toast("Laatst getypte omschrijving is alsnog opgeslagen");}
 
@@ -1126,8 +1128,8 @@ $("d-table").addEventListener("click",async e=>{
         nowMs:Date.now(),nowIso:new Date().toISOString()});
     if(await meldTimerFout(uit,"Verwijderen is niet uitgevoerd")||
       meldDagRegelFout(uit,"Verwijderen is niet uitgevoerd"))return;
-    uit.dossiers.forEach(memDossier);if(wasRunning)running=null;
-    alle=alle.filter(r=>r.id!==id);refreshDay();pasMutatieUndoToe(uit.undo);
+    const delta={dossiers:mergeById(dossiers,uit.dossiers),rules:zonderIds(alle,[id])};
+    if(wasRunning)delta.running=null;appState.commit(delta);pasMutatieUndoToe(uit.undo);
     L("regel-weg",oud.start+"-"+(oud.eind||"loopt")+" · "+uu(urenOf(oud))+" u");
     bouwDag();renderAll();announce();return;}
   const mk=e.target.closest("[data-maaklopend]");
@@ -1176,14 +1178,15 @@ async function maakLopend(id){
       nowMs:Date.now(),nowIso:new Date().toISOString()});
   if(await meldTimerFout(uit,"Regel opnieuw starten is niet uitgevoerd")||
     meldDagRegelFout(uit,"Regel opnieuw starten is niet uitgevoerd"))return;
-  pending=null;ntWizard=null;if(uit.closedRule)memRegel(uit.closedRule);
-  uit.dossiers.forEach(memDossier);memRegel(uit.rule);running=alle.find(x=>x.id===uit.rule.id);
+  pending=null;ntWizard=null;const nextRules=mergeById(alle,[uit.closedRule,uit.rule]);
+  appState.commit({dossiers:mergeById(dossiers,uit.dossiers),rules:nextRules,
+    running:nextRules.find(x=>x.id===uit.rule.id)});
   vergeetTimerUndo("timer overgezet");liveId=null;bouwDag();renderAll();announce();
   L("timer-overgezet",dosIdLog(uit.rule.dossierId)+" · sinds "+uit.rule.start);
   toast("Deze regel loopt weer sinds "+uit.rule.start);}
-$("d-prev").onclick=()=>{viewDate=addD(viewDate,-1);refreshDay();bouwDag();};
-$("d-next").onclick=()=>{viewDate=addD(viewDate,1);refreshDay();bouwDag();};
-$("d-today").onclick=()=>{viewDate=today();refreshDay();bouwDag();};
+$("d-prev").onclick=()=>{appState.commit({viewDate:addD(viewDate,-1)});bouwDag();};
+$("d-next").onclick=()=>{appState.commit({viewDate:addD(viewDate,1)});bouwDag();};
+$("d-today").onclick=()=>{appState.commit({viewDate:today()});bouwDag();};
 $("d-add").onclick=async()=>{
   if(!dagRuimte(viewDate,0.1,null))return;
   const r=nieuweRegel({start:nowHM(),eind:nowHM()});

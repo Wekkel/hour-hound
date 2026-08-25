@@ -71,6 +71,12 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
     taakwissel direct knipt, een oude timer nooit vanzelf sluit en een opslagfout geen zichtbare
     half-uitgevoerde timerstatus achterlaat.
 
+15. **Eén runtime-state en gerichte renders**
+    Bestaande browserflows blijven dezelfde IndexedDB-data tonen na herladen en na een wijziging in
+    een ander tabblad. Dagdata is afgeleid uit de centrale regelset; de timer-tick hoeft verborgen
+    Dag-, Week- of Beheerschermen niet opnieuw op te bouwen. Een actief invoerveld stelt een
+    BroadcastChannel-herlaad uit tot focusverlies, zodat de invoer eerst veilig kan worden bewaard.
+
 Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 
 ## Uitvoeren

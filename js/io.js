@@ -201,7 +201,7 @@ async function importFile(file){
       /* Werk de geheugenstate meteen bij. herlaad() doet dit straks nogmaals als
          integriteitsstap, maar hierdoor is ook tijdens een open N-wizard de nieuwe
          lijst al de actuele bron van waarheid. */
-      i7codes=await getAll("codes");soort="werkcodes";
+      appState.commit({codes:await getAll("codes")});soort="werkcodes";
       L("werkcodes-import",i7codes.length+" codes"+
         (gekeurd.fout.length?" · "+gekeurd.fout.length+" afgekeurd":""));
       toast(i7codes.length+" werkcodes geïmporteerd"+
@@ -341,7 +341,7 @@ async function importFile(file){
           o.meta.put(mCode,"codeGebruik");
           o.meta.put(mBoek,"geboekt");
           o.meta.put(mThema,"thema");});
-        running=null;pending=null;stack=neemStack?mStack:[];
+        appState.commit({running:null,stack:neemStack?mStack:[]});pending=null;
         toast("Teruggezet: "+D.goed.length+" dossiers, "+R.goed.length+" regels"+
           (hervatId?" · lopende timer hervat":"")+
           (neemStack?" · stapel meegenomen":""));
