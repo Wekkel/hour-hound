@@ -101,7 +101,7 @@ function evaluateCorePure(){
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
     `return true;\n};\n`+
-    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp, codeFout, sumVan, overboekingOpenVoorRegel, overboekingVoorBronId, overboekingVoorRow, overboekingFingerprints, overboekingAfgerondVoorRow, overboekingState, overboekingStatusTekst, overboekingWijzigingen };`;
+    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, normOms, simIntappTotaal, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp, codeFout, sumVan, overboekingOpenVoorRegel, overboekingVoorBronId, overboekingVoorRow, overboekingFingerprints, overboekingAfgerondVoorRow, overboekingState, overboekingStatusTekst, overboekingWijzigingen };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
   return { api: context.__hhPure, setState: context.__hhSetState, context };
 }
@@ -1088,6 +1088,24 @@ test('auto-aanvultekort kent alleen tekort of geen aanvulling', () => {
   assertEq(api.autoAanvulTekort(7.9), 0.1, '7,9 uur moet exact 0,1 uur aanvullen');
   assertEq(api.autoAanvulTekort(8.0), 0, '8,0 uur heeft geen aanvulling nodig');
   assertEq(api.autoAanvulTekort(8.6), 0, 'Boven 8,0 uur mag niets worden toegevoegd');
+});
+
+test('Patch P.1 herstelt DVN-normalisatie en Intapp-dagtotaal', () => {
+  const { api, setState } = evaluateCorePure();
+  assertEq(api.normOms('  Bouwfonds\n  Zuid  '),'bouwfonds zuid',
+    'DVN-zoektekst moet via de gedeelde booking-normalisatie lopen');
+  const dossier={id:'d-p1',nummer:'304000123',naam:'Dossier P1',codes:[]};
+  const regel={id:'r-p1',datum:'2026-08-25',start:'09:00',eind:'10:00',
+    dossierId:dossier.id,code:null,omschrijving:'Werk P1',uren:1,urenHand:false,soort:'werk',gewijzigd:1};
+  setState({dossiers:[dossier],alle:[regel],regels:[regel],viewDate:'2026-08-25',rondMode:'groep'});
+  assertEq(api.simIntappTotaal([regel]),1,
+    'Dagtotaal voor Samengevat voor Intapp moet afgeronde Intapp-uren teruggeven');
+  assertIncludes(src.wizard,'normOms(',
+    'De DVN-wizard moet de gedeelde normalisatieadapter blijven gebruiken');
+  assertIncludes(src.core,'const normOms=bookingDomain.normalizeDescription',
+    'Core moet normOms als dunne compatibiliteitsadapter aanbieden');
+  assertIncludes(src.core,'const simIntappTotaal=lijst=>sumVan(lijst)',
+    'Core moet het Intapp-dagtotaal als dunne aggregatieadapter aanbieden');
 });
 
 test('dagafsluitstatus heeft één centrale bron voor open en gesloten dagen', () => {

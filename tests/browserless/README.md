@@ -173,3 +173,11 @@ runtimegeheugen niet vooraf wijzigen.
 Een timer van een eerdere dag wordt alleen geïnspecteerd totdat de gebruiker bewust kiest voor
 doorlopen of stoppen. Meerdere open regels blokkeren de hele timerketting; opstartreparatie sluit
 ze nooit stilzwijgend en alleen het expliciete herstelvenster mag de blokkade opheffen.
+
+### Patch P.1-contract
+
+De klassieke DVN-wizard gebruikt opnieuw de gedeelde normalisatieadapter uit de booking-domeinlaag;
+zoeken en kiezen van een bestaand voorlopig dossier mag niet op een ontbrekende globale helper
+stuklopen. De Dag-tab gebruikt daarnaast een expliciete aggregatieadapter voor het Intapp-totaal.
+De regressiesuite voert beide paden uit: normalisatie van een DVN-zoekterm en een niet-leeg
+Intapp-dagtotaal met een gewone tijdregel. De schema- en service-workercontracten blijven gelijk.

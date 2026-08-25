@@ -439,6 +439,11 @@ function sumVan(lijst){
     hasCodeError:codeFout,
     getBoundaryId:r=>{const over=overboekingVoorBronId(r.id);return over?over.id:"";}
   });}
+/* Compatibiliteitsadapters voor klassieke UI-scripts. De implementatie blijft in
+   de pure booking-domain; wizard en Dag mogen geen eigen normalisatie of totaallogica
+   introduceren. */
+const normOms=bookingDomain.normalizeDescription;
+const simIntappTotaal=lijst=>sumVan(lijst).reduce((t,row)=>t+row.u,0);
 /* Een regel op i7 of op een dossier waarvan het nummer nog volgt móét een werkcode
    hebben; dat is geen vrije keuze van de gebruiker. Voor "dossier volgt nog" ligt de
    code bovendien vast op Commercieel. codeVoor() is de enige plek waar dat wordt

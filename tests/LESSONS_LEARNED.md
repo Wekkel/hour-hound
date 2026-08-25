@@ -305,3 +305,17 @@ Een oude timer is geen technisch foutgeval dat automatisch gerepareerd mag worde
 wel een invariantconflict, maar ook daar mag opstartcode niets stilzwijgend afsluiten. Blokkeer de
 ketting en laat alleen een expliciet, gevalideerd herstelbesluit de betrokken regels en pointer in
 één transactie vervangen.
+
+## 24. Test klassieke UI-entrypoints na domeinextractie
+
+Bij het verplaatsen van logica naar een pure domeinlaag blijven klassieke scripts vaak een oude
+globale helpernaam aanroepen. Een syntaxcheck en een pure domeintest zien dat niet: de fout ontstaat
+pas wanneer de gebruiker de specifieke UI-route opent. Na de booking-extractie verwees de DVN-wizard
+nog naar `normOms`, terwijl de implementatie alleen nog als `normalizeDescription` in het domein
+bestond.
+
+Hetzelfde geldt voor kleine aggregatieadapters. `Dag` renderde de losse regels wel, maar brak vóór
+de Intapp-samenvatting omdat `simIntappTotaal` nergens meer was gedefinieerd. Een test moet daarom
+niet alleen controleren dat een functie in de bron voorkomt, maar haar aanroepen met representatieve
+runtimegegevens en het zichtbare resultaat controleren. Compatibiliteitsnamen mogen terugkomen als
+dunne adapters naar de ene domeinimplementatie; duplicatie van de berekening blijft verboden.
