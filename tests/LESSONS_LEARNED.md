@@ -184,3 +184,26 @@ Deze scheiding is gedragsneutraal. Bewaak bij iedere vervolgstap in het bijzonde
 
 Vaste voorbeelden alleen zijn onvoldoende voor deze kern. Vergelijk bij een refactor ook veel
 deterministisch gegenereerde regelsets rechtstreeks tussen de oude en nieuwe implementatie.
+
+## 19. Administratieve status is data, presentatie is tekst
+
+DVN- en overboekingsstatussen worden voortaan in pure domeinfuncties bepaald. Die functies krijgen
+dossiers, regels, vingerafdrukken en tijdstempels expliciet mee. Ze lezen geen globale arrays,
+tonen geen UI en schrijven niets. De bestaande globale namen blijven adapters, zodat timer-,
+Beheer-, Dag- en Intapp-workflows in deze refactor niet veranderen.
+
+Houd de volgende scheiding vast:
+
+- DVN-statuscodes zijn `missing`, `ready`, `posted`, `needs_check` en `final_i7`;
+- bij overboekingen blijven alleen `waiting`, `done` en `final_i7` opgeslagen;
+- `needs_check` bij een overboeking wordt telkens afgeleid uit bronregels, dossiermetadata en
+  Intapp-vingerafdrukken en is geen vierde opgeslagen eindstatus;
+- `done` en `final_i7` zijn terminaal en mogen niet opnieuw worden geopend;
+- wijzigingsdetectie levert stabiele interne codes; Nederlandse gebruikerslabels en details worden
+  pas in de presentatieadapter samengesteld;
+- oude Patch H-records met alleen `sourceFingerprint` blijven herkenbaar;
+- auditfuncties ontvangen hun klokwaarden expliciet, zodat pure tests geen echte klok nodig hebben.
+
+Een refactor van deze statuslogica vereist directe vergelijking met de vorige productiecode, naast
+gerichte tests voor ontbrekende bronregels, gewijzigd dossiernummer, resolved DVN, definitief i7,
+posted-terugval en beide terminale overboekingsroutes.

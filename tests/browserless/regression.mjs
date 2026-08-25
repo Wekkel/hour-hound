@@ -34,6 +34,8 @@ const src = {
   hh: read('js/hh.js'),
   time: read('js/domain/time.js'),
   bookingDomain: read('js/domain/booking.js'),
+  dvnDomain: read('js/domain/dvn.js'),
+  overbookingDomain: read('js/domain/overbooking.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
@@ -86,6 +88,8 @@ function evaluateCorePure(){
   vm.runInContext(src.hh, context, { filename: 'js/hh.js' });
   vm.runInContext(src.time, context, { filename: 'js/domain/time.js' });
   vm.runInContext(src.bookingDomain, context, { filename: 'js/domain/booking.js' });
+  vm.runInContext(src.dvnDomain, context, { filename: 'js/domain/dvn.js' });
+  vm.runInContext(src.overbookingDomain, context, { filename: 'js/domain/overbooking.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
     `return true;\n};\n`+
@@ -121,6 +125,8 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/hh.js',
     'js/domain/time.js',
     'js/domain/booking.js',
+    'js/domain/dvn.js',
+    'js/domain/overbooking.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
@@ -130,6 +136,67 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/booking.js',
     'js/app.js'
   ].join('\n'), 'Scriptvolgorde gewijzigd. Bij klassieke globals kan dat runtime breken.');
+});
+
+test('DVN-domein houdt classificatie, resolutie en audit puur', () => {
+  const context={};vm.createContext(context);
+  vm.runInContext(src.hh,context,{filename:'js/hh.js'});
+  vm.runInContext(src.dvnDomain,context,{filename:'js/domain/dvn.js'});
+  const api=context.HH.domain.dvn,ind={id:'i7',nummer:'I700000000',naam:'Indirect'},
+    doel={id:'doel',nummer:'304000001',naam:'Doeldossier'},
+    dvn={id:'dvn',naam:'Oude naam',voorlopig:true,dvn:true,dvnTo:doel.id,
+      dvnIntappStatus:'posted',dvnIntappAudit:[{type:'oud',t:'eerder'}]};
+  assert(api&&Object.isFrozen(api),'HH.domain.dvn moet bestaan en bevroren zijn');
+  assertEq(api.resolvedNumber(dvn,[ind,doel]),doel.nummer,
+    'DVN-nummer moet uit expliciet meegegeven dossiers worden opgelost');
+  assertEq(api.intappState(dvn,[ind,doel]),'posted','Afgehandelde DVN-status moet behouden blijven');
+  const info=api.intappInfo(dvn,{dossiers:[ind,doel],i7Dossier:ind});
+  assertEq(JSON.stringify(info),JSON.stringify({nummer:'304000001',naam:'Doeldossier',
+    dvn:true,state:'posted'}),'Intapp-info moet het opgeloste dossier gebruiken');
+  const changed=api.markNeedsCheck(dvn,'tijd gewijzigd',{dossiers:[ind,doel],
+    needsAt:'2026-08-25T10:00:00Z',auditAt:'2026-08-25T10:00:01Z',modifiedAt:123});
+  assertEq(changed.dvnIntappStatus,'needs_check','Posted DVN moet controle nodig kunnen worden');
+  assertEq(changed.dvnIntappAudit.at(-1).reden,'tijd gewijzigd','Auditreden moet expliciet blijven');
+  assertEq(changed.gewijzigd,123,'Wijzigstempel moet uit expliciete invoer komen');
+  assertNotIncludes(src.dvnDomain,'document','DVN-domein mag de DOM niet lezen');
+  assertNotIncludes(src.dvnDomain,'indexedDB','DVN-domein mag geen opslag lezen');
+  for(const label of ['afgehandeld','controle nodig','nog boeken in Intapp','Indirecte uren',
+    'tijdregel gewijzigd'])
+    assertNotIncludes(src.dvnDomain,label,'Gebruikerslabels horen niet in de DVN-statusmachine');
+});
+
+test('overboekingsdomein bewaakt afgeleide en terminale status puur', () => {
+  const context={};vm.createContext(context);
+  vm.runInContext(src.hh,context,{filename:'js/hh.js'});
+  vm.runInContext(src.overbookingDomain,context,{filename:'js/domain/overbooking.js'});
+  const api=context.HH.domain.overbooking,doel={id:'d1',nummer:'304000001',naam:'Doel'},
+    regel={id:'r1',dossierId:doel.id,gewijzigd:10},
+    wacht={id:'o1',status:'waiting',targetDossierId:doel.id,
+      targetNumberSnapshot:doel.nummer,targetNameSnapshot:doel.naam,sourceDate:'2026-08-25',
+      sourceRuleIds:[regel.id],sourceSnapshot:[{id:regel.id,gewijzigd:10}],
+      sourceFingerprints:['fp']},options={rules:[regel],dossiers:[doel],
+      summarize:()=>[{fp:'fp'}]};
+  assert(api&&Object.isFrozen(api),'HH.domain.overbooking moet bestaan en bevroren zijn');
+  assertEq(api.state(wacht,options),'waiting','Ongewijzigde brondata moet waiting blijven');
+  assertEq(api.state(wacht,{...options,rules:[{...regel,gewijzigd:11}]}),'needs_check',
+    'Needs-check moet uit gewijzigde brondata worden afgeleid');
+  assertEq(api.changeCodes(wacht,{...options,rules:[{...regel,gewijzigd:11}]})[0],
+    'source_rule_changed','Statusmachine moet een stabiele code teruggeven');
+  assertEq(api.state({...wacht,status:'done'},options),'done','Done moet terminaal blijven');
+  assertEq(api.state({...wacht,status:'final_i7'},options),'final_i7',
+    'Definitief i7 moet terminaal blijven');
+  assertEq(api.canFinish(wacht,'done'),true,'Waiting mag naar done');
+  assertEq(api.canFinish(wacht,'final_i7'),true,'Waiting mag naar definitief i7');
+  assertEq(api.canFinish({...wacht,status:'done'},'final_i7'),false,
+    'Een terminale overboeking mag niet opnieuw overgaan');
+  assertNotIncludes(src.overbookingDomain,'document','Overboekingsdomein mag de DOM niet lezen');
+  assertNotIncludes(src.overbookingDomain,'indexedDB','Overboekingsdomein mag geen opslag lezen');
+  for(const label of ['Wacht op dossierboeking','Gewijzigd — controleren','Afgehandeld'])
+    assertNotIncludes(src.overbookingDomain,label,
+      'Gebruikerslabels horen niet in de overboekingsstatusmachine');
+  for(const detail of ['tijdregel verwijderd','tijdregel gewijzigd','dossiernummer gewijzigd'])
+    assertNotIncludes(src.overbookingDomain,detail,
+      'Wijzigingsdetails horen pas in de presentatieadapter vertaald te worden');
 });
 
 test('boekingsmodule berekent zonder globale runtime-state', () => {
@@ -334,6 +401,9 @@ test('Nu-breakdown bewaart registratiebron en afgeronde uren', () => {
   assertEq(api.defaultCode(finalI7), 'COM', 'Definitief i7 blijft vast op Commercieel');
   assertEq(api.nuBreakdown([regel('r-hand', gewoon.id, '14:00', '14:01', { urenHand: true, uren: 0.4 })]).declarabel,
     0.4, 'Afgeronde handmatige uren moeten behouden blijven');
+  setState({ dossiers: [finalI7] });
+  assertEq(api.intappDossierInfo(finalI7).naam,'Indirecte uren',
+    'De presentatieadapter moet de bestaande i7-fallbacknaam behouden');
 });
 
 test('Nu toont de compacte declarabel-i7-DVN-breakdown', () => {
@@ -412,6 +482,9 @@ test('DVN pure statushelpers onderscheiden ontbrekend, klaar, ingevoerd en contr
     'De gebruikersstatus van een posted DVN moet afgehandeld zijn');
   const checked = api.markDvnControleNodig(posted, 'testwijziging');
   assertEq(api.dvnIntappState(checked), 'needs_check', 'posted DVN moet naar controle nodig kunnen vallen');
+  const standaard = api.markDvnControleNodig(posted);
+  assertEq(standaard.dvnIntappNeedsCheckReason,'tijdregel gewijzigd',
+    'De presentatieadapter moet de bestaande standaardreden behouden');
 });
 
 test('lopende taak van eerdere dag telt niet stilzwijgend door tot nu', () => {
@@ -572,7 +645,8 @@ test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', ()
   assertIncludes(src.timer, 'async function markeerDvnIngevoerd', 'Markeer-als-ingevoerd functie ontbreekt');
   assertIncludes(src.timer, 'data-dvn-rule', 'Boekingssheet moet herkenbare bronregels tonen');
   assertIncludes(src.timer, 'dvnIntappPostedRuleIds:rs.map', 'Afhandeling moet de betrokken regel-id’s vastleggen');
-  assertIncludes(src.core, 'function dvnIntappState', 'DVN-statushelper ontbreekt');
+  assertIncludes(src.core, 'const dvnIntappState=d=>dvnDomain.intappState',
+    'DVN-statusadapter ontbreekt');
   assertIncludes(src.core, 'function dvnPutIfPosted', 'Gedeelde posted-DVN-terugval ontbreekt');
   assertIncludes(src.core, '"posted"', 'DVN posted-status ontbreekt');
   assertIncludes(src.core, '"needs_check"', 'DVN controle-nodig status ontbreekt');

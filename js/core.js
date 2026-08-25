@@ -79,6 +79,7 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>
 const {pad,uu,ymd,today,nowHM,hm2m,m2hm,dmy,parseD,addD,dagLabel,kortDag,
   weekend,werkdag,schoon}=HH.domain.time;
 const bookingDomain=HH.domain.booking;
+const dvnDomain=HH.domain.dvn,overbookingDomain=HH.domain.overbooking;
 const {NORM,DAGMAX}=bookingDomain,VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 const autoAanvulTekort=bookingDomain.autoFillShortfall;
 
@@ -333,60 +334,32 @@ document.addEventListener("focusout",()=>{
 const dosOf=id=>dossiers.find(d=>d.id===id);
 const i7=()=>dossiers.find(d=>d.isI7);
 const actief=()=>dossiers.filter(d=>!d.archief);
-const isDvn=d=>!!d&&(d.voorlopig||d.dvn);
-const dvnDefinitiefI7=d=>!!d&&d.dvnDisposition==="final_i7";
-const isIndirect=d=>!!d&&(d.isI7||d.voorlopig||dvnDefinitiefI7(d));
+const isDvn=dvnDomain.isDvn;
+const dvnDefinitiefI7=dvnDomain.isFinalI7;
+const isIndirect=dvnDomain.isIndirect;
 const dosVeld=d=>d?(d.nummer||d.naam):"";
-const overboekingOpen=o=>!!o&&o.status==="waiting";
-const bronIdsVan=o=>(o&&Array.isArray(o.sourceRuleIds)?o.sourceRuleIds:[])
-  .filter(Boolean).slice().sort();
-const overboekingOpenVoorRegel=id=>overboekingen.find(o=>overboekingOpen(o)&&
-  bronIdsVan(o).indexOf(id)>=0)||null;
-const overboekingVoorBronId=id=>overboekingOpenVoorRegel(id)||overboekingen.slice().reverse()
-  .find(o=>bronIdsVan(o).indexOf(id)>=0)||null;
-function overboekingBronMatch(row,o,datum){
-  const ids=(row&&Array.isArray(row.bron)?row.bron.map(b=>b.id):[]).filter(Boolean).sort();
-  const bron=bronIdsVan(o);
-  return !!ids.length&&o.sourceDate===(datum||viewDate)&&ids.every(id=>bron.indexOf(id)>=0);}
-function overboekingVoorRow(row,datum){
-  return overboekingen.find(o=>overboekingOpen(o)&&overboekingBronMatch(row,o,datum))||null;}
-function overboekingFingerprints(o){
-  if(!o)return[];
-  const lijst=o.status==="final_i7"?o.finalI7Fingerprints:o.sourceFingerprints;
-  if(Array.isArray(lijst)&&lijst.length)return lijst.filter(x=>typeof x==="string");
-  return o.sourceFingerprint?[o.sourceFingerprint]:[];}
-function overboekingAfgerondVoorRow(row,datum){
-  if(!row||!row.fp)return null;
-  return overboekingen.find(o=>(o.status==="done"||o.status==="final_i7")&&
-    o.sourceDate===(datum||viewDate)&&overboekingFingerprints(o).indexOf(row.fp)>=0)||null;}
-function overboekingWijzigingen(o){
-  if(!overboekingOpen(o))return[];
-  const uit=[],snap=Array.isArray(o.sourceSnapshot)?o.sourceSnapshot:[];
-  const act={};alle.forEach(r=>{act[r.id]=r;});
-  snap.forEach(s=>{
-    const r=act[s.id];
-    if(!r){uit.push("tijdregel verwijderd");return;}
-    if((r.gewijzigd||0)!==(s.gewijzigd||0))uit.push("tijdregel gewijzigd");
-    if(r.dossierId!==o.targetDossierId)uit.push("doeldossier van tijdregel gewijzigd");
-  });
-  if(snap.length!==bronIdsVan(o).length)uit.push("bronselectie gewijzigd");
-  const bron=bronIdsVan(o).map(id=>act[id]).filter(Boolean);
-  if(bron.length===bronIdsVan(o).length){
-    const oud=overboekingFingerprints(o).slice().sort();
-    const huidig=sumVan(bron).map(x=>x.fp).sort();
-    if(oud.length&&oud.join("\n")!==huidig.join("\n"))
-      uit.push("Intapp-samenvatting gewijzigd");}
-  const d=dosOf(o.targetDossierId);
-  if(!d)uit.push("doeldossier ontbreekt");
-  else{
-    if((d.nummer||"")!==(o.targetNumberSnapshot||""))uit.push("dossiernummer gewijzigd");
-    if((d.naam||"")!==(o.targetNameSnapshot||""))uit.push("dossiernaam gewijzigd");
-  }
-  return[...new Set(uit)];}
-function overboekingState(o){
-  if(!o)return"";
-  if(o.status==="done"||o.status==="final_i7")return o.status;
-  return overboekingWijzigingen(o).length?"needs_check":"waiting";}
+const overboekingOpen=overbookingDomain.isOpen;
+const bronIdsVan=overbookingDomain.sourceIds;
+const overboekingOpenVoorRegel=id=>overbookingDomain.openForRule(id,overboekingen);
+const overboekingVoorBronId=id=>overbookingDomain.forSourceId(id,overboekingen);
+const overboekingBronMatch=(row,o,datum)=>
+  overbookingDomain.sourceMatches(row,o,datum||viewDate);
+const overboekingVoorRow=(row,datum)=>
+  overbookingDomain.waitingForRow(row,datum||viewDate,overboekingen);
+const overboekingFingerprints=overbookingDomain.fingerprints;
+const overboekingAfgerondVoorRow=(row,datum)=>
+  overbookingDomain.terminalForRow(row,datum||viewDate,overboekingen);
+const overboekingRekenContext=()=>({rules:alle,dossiers,summarize:sumVan});
+const overboekingWijzigingTekst=code=>({
+  source_rule_removed:"tijdregel verwijderd",source_rule_changed:"tijdregel gewijzigd",
+  source_rule_target_changed:"doeldossier van tijdregel gewijzigd",
+  source_selection_changed:"bronselectie gewijzigd",summary_changed:"Intapp-samenvatting gewijzigd",
+  target_missing:"doeldossier ontbreekt",target_number_changed:"dossiernummer gewijzigd",
+  target_name_changed:"dossiernaam gewijzigd"
+}[code]||code);
+const overboekingWijzigingen=o=>overbookingDomain.changeCodes(o,overboekingRekenContext())
+  .map(overboekingWijzigingTekst);
+const overboekingState=o=>overbookingDomain.state(o,overboekingRekenContext());
 function overboekingStatusTekst(o){
   const st=overboekingState(o);
   if(st==="waiting")return"Wacht op dossierboeking";
@@ -394,19 +367,10 @@ function overboekingStatusTekst(o){
   if(st==="done")return"Afgehandeld";
   if(st==="final_i7")return"Definitief i7";
   return"";}
-function dvnRegels(d){return d?alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze"):[];}
-function dvnResolvedDoel(d){return d&&d.dvnTo?dosOf(d.dvnTo):null;}
-function dvnResolvedNummer(d){
-  if(!d)return"";
-  const doel=dvnResolvedDoel(d);
-  return (doel&&doel.nummer)||d.nummer||d.dvnResolvedNr||"";}
-function dvnIntappState(d){
-  if(!isDvn(d))return"";
-  if(dvnDefinitiefI7(d))return"final_i7";
-  if(!dvnResolvedNummer(d))return"missing";
-  if(d.dvnIntappStatus==="posted")return"posted";
-  if(d.dvnIntappStatus==="needs_check")return"needs_check";
-  return"ready";}
+const dvnRegels=d=>dvnDomain.rulesFor(d,alle);
+const dvnResolvedDoel=d=>dvnDomain.resolvedTarget(d,dossiers);
+const dvnResolvedNummer=d=>dvnDomain.resolvedNumber(d,dossiers);
+const dvnIntappState=d=>dvnDomain.intappState(d,dossiers);
 function dvnStatusTekst(d){
   const nr=dvnResolvedNummer(d),st=dvnIntappState(d);
   if(st==="missing")return"dossiernummer ontbreekt";
@@ -423,33 +387,19 @@ function dvnSummaryStatus(d){
   if(st==="missing")return"DVN · nummer ontbreekt";
   if(st==="final_i7")return"";
   return"";}
-function dvnAuditAdd(d,type,extra){
-  const ev=(Array.isArray(d&&d.dvnIntappAudit)?d.dvnIntappAudit:[]).slice(-19);
-  ev.push(Object.assign({type,t:new Date().toISOString()},extra||{}));
-  return ev;}
+const dvnAuditAdd=(d,type,extra)=>
+  dvnDomain.auditAdd(d,type,extra,new Date().toISOString());
 function markDvnControleNodig(d,reden){
   if(!isDvn(d)||dvnIntappState(d)!=="posted")return d;
-  return stempel(Object.assign({},d,{dvnIntappStatus:"needs_check",
-    dvnIntappNeedsCheckAt:new Date().toISOString(),
-    dvnIntappNeedsCheckReason:reden||"tijdregel gewijzigd",
-    dvnIntappAudit:dvnAuditAdd(d,"controle-nodig",{reden:reden||"tijdregel gewijzigd"})}));}
+  return dvnDomain.markNeedsCheck(d,reden||"tijdregel gewijzigd",{dossiers,
+    needsAt:new Date().toISOString(),auditAt:new Date().toISOString(),modifiedAt:Date.now()});}
 function dvnPutIfPosted(d,reden){
   if(!d||!isDvn(d)||dvnIntappState(d)!=="posted")return null;
   return markDvnControleNodig(d,reden||"tijdregel gewijzigd");}
 function intappDossierInfo(d){
-  const ind=i7();
-  if(!d)return{nummer:"",naam:"",dvn:false,status:""};
-  if(dvnDefinitiefI7(d))return{nummer:ind?ind.nummer:"",
-    naam:ind?ind.naam:"Indirecte uren",dvn:false,status:""};
-  if(d.dvnTo){
-    const doel=dvnResolvedDoel(d);
-    if(doel)return{nummer:doel.nummer||"",naam:doel.naam,dvn:true,
-      status:dvnSummaryStatus(d)};}
-  if(d.voorlopig&&!d.nummer)return{nummer:ind?ind.nummer:"",
-    naam:ind?ind.naam:"Indirecte uren",dvn:true,status:dvnSummaryStatus(d)};
-  if(isDvn(d))return{nummer:dvnResolvedNummer(d),naam:d.naam,dvn:true,
-    status:dvnSummaryStatus(d)};
-  return{nummer:d.nummer||"",naam:d.naam,dvn:false,status:""};}
+  const info=dvnDomain.intappInfo(d,{dossiers,i7Dossier:i7(),fallbackI7Name:"Indirecte uren"});
+  return{nummer:info.nummer,naam:info.naam,dvn:info.dvn,
+    status:info.dvn?dvnSummaryStatus(d):""};}
 const dosColor=d=>{const P=["#3f6b3a","#a8452a","#39607f","#7a5090","#8a6b2c","#2f6f6b",
   "#8f3f5c","#5a6b2c","#6b4a3f","#455a64"];return d?P[(d.c||0)%P.length]:"#888";};
 function codesFor(d){
