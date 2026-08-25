@@ -350,6 +350,21 @@ test('state-commit volgt opslag en tab-synchronisatie blijft veilig', () => {
     'Uitgesteld herladen na focus-save moet aanwezig blijven');
 });
 
+test('N, T, O en P bouwen timerinput met de centrale dagaudit', () => {
+  const {context,setState}=evaluateCorePure();
+  const audit={'2026-08-25':{events:[{type:'gesloten',t:'test'}]}};
+  setState({dagEinde:{'2026-08-25':'17:00'},dagAudit:audit});
+  vm.runInContext(src.timer,context,{filename:'js/timer.js'});
+  const inputs=vm.runInContext('[timerStartInput({}).input,'+
+    'timerStartInput({soort:"telefoon"}).input,timerStartInput({soort:"onderbreking"}).input,'+
+    'timerStartInput({soort:"pauze"}).input]',context);
+  assertEq(inputs.length,4,'De vier basale timerpaden moeten invoer kunnen bouwen');
+  inputs.forEach(input=>assertEq(JSON.stringify(input.dayAudit),JSON.stringify(audit),
+    'Timerinput moet dagAudit uit de centrale state als dayAudit doorgeven'));
+  assertIncludes(src.timer,'dayAudit:dagAudit',
+    'De Nederlandse state-alias moet expliciet naar het serviceveld worden vertaald');
+});
+
 test('IndexedDB-gateway bewaart exact database 4 en het bestaande schema', async() => {
   const storage=evaluateStorage(),gateway=storage.indexedDB;
   const created=[],indices=[];

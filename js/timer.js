@@ -34,7 +34,7 @@ function sluitObj(r,eindTijd){
   return k;}
 
 function timerBasis(nowMs){return{currentTimer:running,readCurrentTimer:()=>running,
-  rules:alle,dossiers,stack,dayEnds:dagEinde,dayAudit,codeUsage:codeGebruik,
+  rules:alle,dossiers,stack,dayEnds:dagEinde,dayAudit:dagAudit,codeUsage:codeGebruik,
   date:today(),time:nowHM(),nowMs,nowIso:new Date(nowMs).toISOString(),
   waitForRules:rustig};}
 function timerStartInput(o){

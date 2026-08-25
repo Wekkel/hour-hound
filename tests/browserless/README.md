@@ -194,6 +194,13 @@ de live-timer en Nu-totalen. BroadcastChannel-herladen en het uitgestelde herlad
 blijven een volledige consistente opslagsnapshot gebruiken. `sw.js` moet bij toepassing handmatig
 ook `./js/state.js` cachen; tests verifiëren dat met een complete tijdelijke SW-lijst.
 
+### Patch Q.1-contract
+
+De klassieke timeradapter vertaalt de centrale state-accessor `dagAudit` expliciet naar het
+serviceveld `dayAudit`. De browserloze suite voert de echte `timerStartInput()` uit voor nieuwe
+taak, telefoon, onderbreking en pauze. Een ontbrekende of verkeerd gespelde state-accessor moet daardoor
+falen vóór oplevering, in plaats van pas bij een klik in de draaiende app.
+
 ### Patch R-contract
 
 De vroegere monolithische `views.js` is verdeeld over kleine schermviews en controllers in

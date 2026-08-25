@@ -359,3 +359,14 @@ Als dat bestand eerder runtimecode bevatte, lever dan een kleine niet-geladen co
 mee die de oude kopie overschrijft. Verwijder tegelijk iedere runtimeverwijzing ernaar en controleer
 de echte scriptvolgorde plus de volledige tijdelijke service-workerassetlijst. Zo is de migratie
 veilig zonder het persistente IndexedDB-schema of bestaande DVN-data aan te raken.
+
+## 27. Roep klassieke UI-adapters echt aan na een state-refactor
+
+Een groene servicetest bewijst niet dat de laatste UI-adapter geldige invoer kan bouwen. Een typo
+in een globale accessor kan syntaxgeldig zijn en pas bij de eerste klik een `ReferenceError` geven.
+Voer daarom voor ieder basaal timerentrypoint minstens de echte inputadapter uit met representatieve
+state. Test daarbij zowel de veldnamen van het servicecontract als de concrete statewaarden.
+
+Voor Hour Hound delen N, T, O en P dezelfde timerinputgrens. Een kleine matrix met werk-, telefoon-
+en pauze-invoer vangt daardoor fouten vóór persistence, zonder dat een volledige browser nodig is.
+Playwright blijft daarnaast nodig voor knopbinding, focus, zichtbaarheid en de complete workflow.
