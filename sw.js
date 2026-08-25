@@ -34,6 +34,7 @@ const ASSETS = [
   "./js/services/day-rules.js",
   "./js/services/timer.js",
   "./js/state.js",
+  "./js/app-runtime.js",
   "./js/services/settings.js",
   "./js/ui/modal.js",
   "./js/ui/now-live-view.js",
