@@ -33,104 +33,54 @@ function sluitObj(r,eindTijd){
   k.gewijzigd=Date.now();
   return k;}
 
-/* _stop en _start doen het databasewerk en worden uitsluitend binnen een timerOp
-   aangeroepen. stopRunning() is de publieke variant met wachtrij.              */
-async function _stop(eindTijd){
-  if(!running)return null;
-  const voor=kopie1(running);
-  const dicht=sluitObj(running,eindTijd);
-  const dvn=dvnPutIfPosted(dosOf(dicht.dossierId),"tijdregel gewijzigd");
-  await rustig([dicht.id]);
-  await txAll(o=>{o.regels.put(dicht);if(dvn)o.dossiers.put(dvn);o.meta.delete("running");});
-  running=null;memRegel(dicht);if(dvn)memDossier(dvn);
-  L("stop-regel",dicht.start+"-"+dicht.eind+" · "+uu(urenOf(dicht))+" u · "+
-    dosIdLog(dicht.dossierId));
-  return{dicht,voor};}
-function stopRunning(eindTijd,label){
-  return timerOp(label||"stoppen",async t=>{
-    const verwacht=running?running.id:null;
-    if(!opGeldig(t,verwacht))return null;
-    const r=await _stop(eindTijd);
-    if(!r)return null;
-    liveId=null;renderAll();announce();
-    return r.dicht;});}
-
-async function _start(o){
-  const dag=today();
-  const maak=o.nieuwDossier?bouwDossier(o.nieuwDossier):null;
-  const dosId=maak?maak.id:(o.dossierId||null);
-  const d=maak||(dosId?dosOf(dosId):null);
-  const nieuw={id:uid(),datum:dag,start:nowHM(),eind:null,dossierId:dosId,
-    code:codeVoor(d,o.code),
-    omschrijving:prefixVoor(d,dag,o.omschrijving||""),
-    uren:0.1,urenHand:false,soort:o.soort||"werk",
-    gemaakt:Date.now(),gewijzigd:Date.now()};
-  const dicht=running?sluitObj(running):null;
-  let nwStack=null;
-  if(o.stackNa)nwStack=o.stackNa;
-  else if((o.soort||"werk")==="werk"&&!o.bewaarStack&&stack.length)nwStack=[];
-  const nwDagEinde=Object.assign({},dagEinde);
-  const nwDagAudit=Object.assign({},dagAudit);
-  const dagEindeWeg=nwDagEinde[dag]!=null;
-  const autoWeg=dagEindeWeg?alle.filter(r=>r.datum===dag&&r.autoAanvul):[];
-  if(dagEindeWeg){
-    delete nwDagEinde[dag];
-    nwDagAudit[dag]=auditDag(dag,"heropend",{
-      reden:"nieuwe timer gestart",autoVerwijderd:autoWeg.length,
-      vorigeEind:dagEinde[dag]});}
-  const dos=maak||(nieuw.dossierId?dosOf(nieuw.dossierId):null);
-  let dosNw=dos?stempel(Object.assign({},dos,{used:(dos.used||0)+1})):null;
-  const dvnPuts=[];
-  const noteDvn=(d,reden)=>{const nw=dvnPutIfPosted(d,reden);
-    if(nw){dvnPuts.push(nw);return nw;}return d;};
-  if(dosNw)dosNw=noteDvn(dosNw,"tijdregel toegevoegd");
-  if(dicht)noteDvn((dosNw&&dicht.dossierId===dosNw.id)?null:dosOf(dicht.dossierId),
-    "tijdregel gewijzigd");
-  const nwCode=Object.assign({},codeGebruik);
-  if(nieuw.code)nwCode[nieuw.code]=(nwCode[nieuw.code]||0)+1;
-  await rustig([nieuw.id,dicht?dicht.id:null].concat(autoWeg.map(r=>r.id)));
-  await txAll(s=>{
-    s.meta.delete("pending"); /* opruimen van oude T3-versies */
-    autoWeg.forEach(r=>s.regels.delete(r.id));
-    if(dicht)s.regels.put(dicht);
-    s.regels.put(nieuw);
-    s.meta.put(nieuw.id,"running");
-    if(nwStack)s.meta.put(nwStack,"stack");
-    if(dagEindeWeg){s.meta.put(nwDagEinde,"dagEinde");s.meta.put(nwDagAudit,"dagAudit");}
-    if(dosNw)s.dossiers.put(dosNw);
-    dvnPuts.forEach(d=>{if(!dosNw||d.id!==dosNw.id)s.dossiers.put(d);});
-    if(nieuw.code)s.meta.put(nwCode,"codeGebruik");});
-  pending=null;
-  vergeetTimerUndo("nieuwe timerwissel");
-  if(autoWeg.length){
-    const ids=new Set(autoWeg.map(r=>r.id));
+function timerBasis(nowMs){return{currentTimer:running,readCurrentTimer:()=>running,
+  rules:alle,dossiers,stack,dayEnds:dagEinde,dayAudit,codeUsage:codeGebruik,
+  date:today(),time:nowHM(),nowMs,nowIso:new Date(nowMs).toISOString(),
+  waitForRules:rustig};}
+function timerStartInput(o){
+  const spec=o||{},nowMs=Date.now(),created=spec.nieuwDossier?bouwDossier(spec.nieuwDossier):null;
+  const dossier=created||(spec.dossierId?dosOf(spec.dossierId):null),input=Object.assign(
+    timerBasis(nowMs),{id:uid(),createdDossier:created,dossierId:dossier?dossier.id:null,
+      code:codeVoor(dossier,spec.code),description:prefixVoor(dossier,today(),spec.omschrijving||""),
+      kind:spec.soort||"werk",preserveStack:!!spec.bewaarStack,
+      pendingDescription:running?pakOmschr(running.id):null});
+  if(Object.prototype.hasOwnProperty.call(spec,"stackNa"))input.stackAfter=spec.stackNa;
+  return{input,dossier,created};}
+function pasTimerStartToe(uit,context){
+  pending=null;vergeetTimerUndo("nieuwe timerwissel");
+  if(uit.autoRemoved.length){const ids=new Set(uit.autoRemoved.map(r=>r.id));
     alle=alle.filter(r=>!ids.has(r.id));
     undoStack=undoStack.filter(a=>!(a.soort==="data"&&(a.weg||[]).some(id=>ids.has(id))));
-    L("aanvullen-ingetrokken",autoWeg.length+" automatische regel(s) · dag heropend");}
-  if(dicht)memRegel(dicht);
-  memRegel(nieuw);
-  running=nieuw;viewDate=dag;
-  if(nwStack)stack=nwStack;
-  if(dagEindeWeg){dagEinde=nwDagEinde;dagAudit=nwDagAudit;}
-  if(dosNw)memDossier(dosNw);
-  dvnPuts.forEach(d=>{if(!dosNw||d.id!==dosNw.id)memDossier(d);});
-  if(maak)L("dossier-nieuw","dos"+idKort(maak.id)+(maak.nummer?"":" · VOORLOPIG")+
-    (logOms?" · "+kort(maak.naam):""));
-  codeGebruik=nwCode;
-  L("start-regel",nieuw.soort+" · "+dosIdLog(nieuw.dossierId)+" · code "+
-    (nieuw.code||"-")+" · "+nieuw.start+" · oms "+omsLog(nieuw.omschrijving));
+    L("aanvullen-ingetrokken",uit.autoRemoved.length+" automatische regel(s) · dag heropend");}
+  if(uit.closedRule)memRegel(uit.closedRule);memRegel(uit.rule);uit.dossiers.forEach(memDossier);
+  running=alle.find(r=>r.id===uit.rule.id)||uit.rule;viewDate=uit.rule.datum;
+  if(uit.stackChanged)stack=uit.stack;
+  if(uit.dayWasClosed){dagEinde=uit.dayEnds;dagAudit=uit.nextDayAudit;}
+  codeGebruik=uit.codeUsage;
+  if(context.created)L("dossier-nieuw","dos"+idKort(context.created.id)+
+    (context.created.nummer?"":" · VOORLOPIG")+(logOms?" · "+kort(context.created.naam):""));
+  L("start-regel",uit.rule.soort+" · "+dosIdLog(uit.rule.dossierId)+" · code "+
+    (uit.rule.code||"-")+" · "+uit.rule.start+" · oms "+omsLog(uit.rule.omschrijving));
   liveId=null;snoozeTot=0;hideWake();renderAll();announce();
-  if(isIndirect(d)&&!i7codes.length)geenCodes();
-  return nieuw;}
-
-function startRegel(o){
-  return timerOp("starten",async t=>{
-    if(!opGeldig(t,running?running.id:null))return null;
-    return await _start(o||{});});}
+  if(isIndirect(context.dossier)&&!i7codes.length)geenCodes();return uit.rule;}
+async function startViaService(o,method){
+  const context=timerStartInput(o),uit=await timerServices[method](context.input);
+  if(await meldTimerFout(uit,"Starten is niet uitgevoerd"))return null;
+  return pasTimerStartToe(uit,context);}
+async function stopRunning(eindTijd,label,method){
+  const before=running?kopie1(running):null,nowMs=Date.now(),input=Object.assign(timerBasis(nowMs),{
+    end:eindTijd,name:label||"stoppen",pendingDescription:running?pakOmschr(running.id):null});
+  const uit=await timerServices[method||"stop"](input);
+  if(await meldTimerFout(uit,"Stoppen is niet uitgevoerd")||uit.noChange)return null;
+  uit.dossiers.forEach(memDossier);memRegel(uit.closedRule);running=null;liveId=null;
+  L("stop-regel",uit.closedRule.start+"-"+uit.closedRule.eind+" · "+
+    uu(urenOf(uit.closedRule))+" u · "+dosIdLog(uit.closedRule.dossierId));
+  renderAll();announce();uit.beforeRule=before;return uit.closedRule;}
+function startRegel(o){return startViaService(o||{},"start");}
 /* Elke directe route naar een andere taak (hervatten, i7-snelkeuze, enz.) maakt
    net als N meteen een echte timerwissel. Alleen de NT-wizard start bewust leeg en
    vult de identiteit daarna op de reeds lopende regel aan.                      */
-function kiesTaak(w){return startRegel(w);}
+function kiesTaak(w){return startViaService(w||{},"switchTask");}
 
 async function eindeWerkdag(){
   return sluitWerkdag(today());}
@@ -245,35 +195,35 @@ const parkeerLijst=()=>{const st=stack.slice();
 async function interrupt(soort,label){
   ntWizard=null;
   if(running&&running.soort===soort){await terug();return;}
-  const ok=await timerOp("onderbreken",async t=>{
-    if(!opGeldig(t,running?running.id:null))return false;
-    const ind=i7();
-    return !!await _start({dossierId:ind?ind.id:null,omschrijving:"",soort:soort,
-      stackNa:parkeerLijst()});});
-  if(!ok)return;
+  const ind=i7(),nieuw=await startViaService({dossierId:ind?ind.id:null,omschrijving:"",
+    soort:soort,stackNa:parkeerLijst()},"interrupt");
+  if(!nieuw)return;
   naStart();
   L("onderbreking",soort+" · stapel "+stack.length);
   toast(label+" loopt — druk R of dezelfde toets om terug te keren");}
 async function terug(){
   ntWizard=null;
-  const uit=await timerOp("terugkeren",async t=>{
-    if(!opGeldig(t,running?running.id:null))return null;
-    const st=stack.slice(),back=st.pop();
-    if(!back){await _stop();liveId=null;renderAll();announce();return{leeg:true};}
-    await _start({dossierId:back.dossierId,code:back.code,
-      omschrijving:back.omschrijving,bewaarStack:true,stackNa:st});
-    return{leeg:false,naam:(dosOf(back.dossierId)||{}).naam||"vorige taak"};});
-  if(!uit)return;
-  L("terug",uit.leeg?"stapel leeg":"stapel "+stack.length);
-  if(uit.leeg)await nieuweTaak();else toast("Terug bij "+uit.naam);}
+  const st=stack.slice(),back=st.pop();
+  if(!back){
+    const nowMs=Date.now(),input=Object.assign(timerBasis(nowMs),{returnEmpty:true,
+      pendingDescription:running?pakOmschr(running.id):null});
+    const uit=await timerServices.returnToStack(input);
+    if(await meldTimerFout(uit,"Terugkeren is niet uitgevoerd"))return;
+    if(uit.closedRule){uit.dossiers.forEach(memDossier);memRegel(uit.closedRule);running=null;}
+    liveId=null;renderAll();announce();L("terug","stapel leeg");await nieuweTaak();return;}
+  const context=timerStartInput({dossierId:back.dossierId,code:back.code,
+    omschrijving:back.omschrijving,bewaarStack:true,stackNa:st});
+  context.input.returnEmpty=false;
+  const uit=await timerServices.returnToStack(context.input);
+  if(await meldTimerFout(uit,"Terugkeren is niet uitgevoerd"))return;
+  pasTimerStartToe(uit,context);L("terug","stapel "+stack.length);
+  toast("Terug bij "+((dosOf(back.dossierId)||{}).naam||"vorige taak"));}
 async function pauze(){
   ntWizard=null;
   /* P is een toggle, net als T en O: nogmaals P keert terug naar de geparkeerde taak. */
   if(running&&running.soort==="pauze"){await terug();return;}
-  await timerOp("pauzeren",async t=>{
-    if(!opGeldig(t,running?running.id:null))return;
-    await _start({dossierId:null,code:null,omschrijving:"Pauze",soort:"pauze",
-      stackNa:parkeerLijst()});});}
+  await startViaService({dossierId:null,code:null,omschrijving:"Pauze",soort:"pauze",
+    stackNa:parkeerLijst()},"pause");}
 
 async function kiesCodeItem(it){
   if(!running)return;
@@ -447,6 +397,6 @@ $("wake-nee").onclick=async()=>{hideWake();
    stilzwijgend afgesloten of doorgeboekt: de gebruiker krijgt dezelfde expliciete
    keuzesheet als bij een herstart de volgende ochtend.                        */
 async function middernachtCheck(){
-  if(!running||running.datum===today())return;
+  if(!timerServices.inspectOldTimer({currentTimer:running,date:today()}).old)return;
   if(typeof controleerOudeLopendeTaak==="function")controleerOudeLopendeTaak();
 }

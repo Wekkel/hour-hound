@@ -13,6 +13,10 @@
   const copy=value=>JSON.parse(JSON.stringify(value||{}));
   const waitFor=(input,ids)=>typeof input.waitForRules==="function"
     ?input.waitForRules((ids||[]).filter(Boolean)):Promise.resolve();
+  const writeTimerPointer=(stores,id)=>{
+    if(!HH.services.timer)throw new Error("TimerService ontbreekt");
+    HH.services.timer.writePointer(stores,id);
+  };
   const byId=(rows,id)=>(rows||[]).find(row=>row.id===id)||null;
 
   function dayAuditAfter(audit,date,type,extra,nowIso){
@@ -94,7 +98,7 @@
     await waitFor(input,[rule.id]);
     await gateway.tx(gateway.TIMER_STORES,"readwrite",stores=>{
       dossiers.forEach(dossier=>stores.dossiers.put(dossier));stores.regels.put(rule);
-      if(closing){stores.meta.delete("running");stores.meta.delete("pending");}
+      if(closing){writeTimerPointer(stores,null);stores.meta.delete("pending");}
     });
     const undo=closing?{kind:"timer",label:"regel bewerken",rules:[copy(current)],remove:[],
       restoreRunning:current.id,expectedRunning:null,
@@ -112,7 +116,7 @@
     await waitFor(input,[current.id]);
     await gateway.tx(gateway.TIMER_STORES,"readwrite",stores=>{
       stores.regels.delete(current.id);dossiers.forEach(dossier=>stores.dossiers.put(dossier));
-      if(wasRunning)stores.meta.delete("running");
+      if(wasRunning)writeTimerPointer(stores,null);
     });
     const undo=wasRunning?{kind:"timer",label:"regel verwijderen",rules:[copy(current)],remove:[],
       restoreRunning:current.id,expectedRunning:null,expected:[{id:current.id,modified:null}]}:
@@ -137,7 +141,7 @@
     await waitFor(input,[rule.id,closed&&closed.id]);
     await gateway.tx(gateway.TIMER_STORES,"readwrite",stores=>{
       if(closed)stores.regels.put(closed);dossiers.forEach(dossier=>stores.dossiers.put(dossier));
-      stores.regels.put(rule);stores.meta.put(rule.id,"running");stores.meta.delete("pending");
+      stores.regels.put(rule);writeTimerPointer(stores,rule.id);stores.meta.delete("pending");
     });
     return ok({rule,closedRule:closed,dossiers,warnings:warningCheck.warnings,
       runningId:rule.id,invalidateTimerUndo:true});
@@ -158,7 +162,7 @@
     await waitFor(input,[closed&&closed.id]);
     await gateway.tx(gateway.TIMER_STORES,"readwrite",stores=>{
       if(closed)stores.regels.put(closed);dossiers.forEach(dossier=>stores.dossiers.put(dossier));
-      if(input.runningId&&closed){stores.meta.delete("running");stores.meta.delete("pending");
+      if(input.runningId&&closed){writeTimerPointer(stores,null);stores.meta.delete("pending");
         stores.meta.put([],"stack");}
       stores.meta.put(dayEnds,"dagEinde");stores.meta.put(dayAudit,"dagAudit");
     });

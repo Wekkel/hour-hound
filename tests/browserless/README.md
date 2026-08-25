@@ -21,7 +21,7 @@ Deze map bevat de kleine regressiesuite die zonder browser draait. Het doel is n
    - sneltoetsen voor recente taken blijven beperkt tot 1–4;
    - sheets/modals blokkeren globale sneltoetsen;
    - dagafsluiting, heropenen, oude lopende timers, veilige regelbewerking en DVN → Intapp-statussen blijven aanwezig;
-   - oude timers en bewerking van een lopende regel blijven op het timerOp-contract;
+   - oude timers en bewerking van een lopende regel blijven op het TimerService-contract;
    - hervatten van een recente taak start niet per ongeluk twee timerwissels;
    - backup/import bewaart nieuwe dag- en DVN-metadata;
    - service worker cacheert geen testbestanden.
@@ -155,3 +155,21 @@ Dagafsluiting, open-dagenbanner, Dag-status en audit blijven één combinatie va
 `dagAudit` lezen. Auto-aanvullen blijft beperkt tot afgesloten werkdagen, maakt geen fictief
 tijdvak en vult 5,9 uur exact met 2,1 uur aan. Heropenen kan automatische regels volgens de
 bestaande keuze verwijderen of laten staan; een weekend krijgt nooit een 8-uursaanvulling.
+
+### Patch P-contract
+
+`js/services/timer.js` is de enige eigenaar van de geserialiseerde timerketting en van writes naar
+`meta.running`; alleen expliciete import/restore in `io.js` blijft een toegestane uitzondering.
+Starten, wisselen, onderbreken, pauzeren, terugkeren, stoppen, timer-undo, oude-timerkeuzes en
+invariantherstel lopen allemaal door TimerService. Dagacties die de lopende pointer kunnen wijzigen
+worden door dezelfde ketting om de bestaande dagregelservice heen uitgevoerd.
+
+De service ontvangt klok, actuele timer, regels, dossiers, stack en dagmetadata expliciet. Zij
+onthoudt daarnaast de laatst succesvol opgeslagen timer-ID, zodat een tweede actie met een
+ingehaalde UI-snapshot niet tussen databasecommit en schermupdate een extra open regel kan maken.
+Na iedere geslaagde transitie is er hooguit één open timerpointer. Een databasefout mag invoer of
+runtimegeheugen niet vooraf wijzigen.
+
+Een timer van een eerdere dag wordt alleen geïnspecteerd totdat de gebruiker bewust kiest voor
+doorlopen of stoppen. Meerdere open regels blokkeren de hele timerketting; opstartreparatie sluit
+ze nooit stilzwijgend en alleen het expliciete herstelvenster mag de blokkade opheffen.

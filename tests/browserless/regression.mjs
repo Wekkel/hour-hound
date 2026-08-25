@@ -39,6 +39,7 @@ const src = {
   storage: read('js/storage/indexeddb.js'),
   admin: read('js/services/admin.js'),
   dayRules: read('js/services/day-rules.js'),
+  timerService: read('js/services/timer.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
@@ -96,6 +97,7 @@ function evaluateCorePure(){
   vm.runInContext(src.storage, context, { filename: 'js/storage/indexeddb.js' });
   vm.runInContext(src.admin, context, { filename: 'js/services/admin.js' });
   vm.runInContext(src.dayRules, context, { filename: 'js/services/day-rules.js' });
+  vm.runInContext(src.timerService, context, { filename: 'js/services/timer.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
     `return true;\n};\n`+
@@ -136,10 +138,12 @@ function evaluateDayRules(){
   for(const [name,code] of [['hh',src.hh],['domain/time',src.time],
     ['domain/booking',src.bookingDomain],['domain/dvn',src.dvnDomain],
     ['domain/overbooking',src.overbookingDomain],['storage/indexeddb',src.storage],
-    ['services/day-rules',src.dayRules]])
+    ['services/day-rules',src.dayRules],['services/timer',src.timerService]])
     vm.runInContext(code,context,{filename:`js/${name}.js`});
   return context.HH;
 }
+
+function evaluateTimerService(){return evaluateDayRules();}
 
 function fakeDatabase(values={},options={}){
   const calls=[];
@@ -194,6 +198,7 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/storage/indexeddb.js',
     'js/services/admin.js',
     'js/services/day-rules.js',
+    'js/services/timer.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
@@ -563,12 +568,12 @@ test('Dag-UI is alleen adapter voor dag- en regelmutaties', () => {
   const slice=(start,end)=>{const a=src.views.indexOf(start),b=src.views.indexOf(end,a+1);
     assert(a>=0&&b>a,`Workflowgrens ontbreekt: ${start}`);return src.views.slice(a,b);};
   const workflows=[
-    [slice('async function sluitWerkdag','/* ---------- bewuste regelbewerking'),'dayRuleServices.closeDay'],
-    [slice('function openRegelEditor','function controleerOudeLopendeTaak'),'dayRuleServices.editRule'],
+    [slice('async function sluitWerkdag','/* ---------- bewuste regelbewerking'),'timerServices.closeDay'],
+    [slice('function openRegelEditor','function controleerOudeLopendeTaak'),'timerServices.editRule'],
     [slice('async function vulAanTot8','async function heropenWerkdag'),'dayRuleServices.autoFillDay'],
     [slice('async function heropenWerkdag','$("d-fill").onclick'),'dayRuleServices.reopenDay'],
-    [slice('async function maakLopend','$("d-prev").onclick'),'dayRuleServices.reopenRule'],
-    [slice('$("d-table").addEventListener','/* De enige manier'),'dayRuleServices.deleteRule']
+    [slice('async function maakLopend','$("d-prev").onclick'),'timerServices.reopenRule'],
+    [slice('$("d-table").addEventListener','/* De enige manier'),'timerServices.deleteRule']
   ];
   for(const [body,serviceCall] of workflows){
     assertIncludes(body,serviceCall,`${serviceCall} ontbreekt in de UI-adapter`);
@@ -581,6 +586,80 @@ test('Dag-UI is alleen adapter voor dag- en regelmutaties', () => {
   assertNotIncludes(src.dayRules,'confirm(','Bevestigingen blijven eigendom van de UI');
   assertNotIncludes(src.dayRules,'toast(','Meldingen blijven eigendom van de UI');
   assertNotIncludes(src.dayRules,'Date.now','Klokken moeten expliciet worden geïnjecteerd');
+});
+
+test('TimerService knipt direct, serialiseert en houdt maximaal één regel open', async() => {
+  const HH=evaluateTimerService(),service=HH.services.timer,gateway=HH.storage.indexedDB;
+  const db=fakeDatabase();gateway.use(db);
+  const oud={id:'r-oud',datum:'2026-08-25',start:'09:00',eind:null,dossierId:'d1',
+    code:null,omschrijving:'Oud werk',uren:0.1,urenHand:false,soort:'werk',gewijzigd:1};
+  const dossiers=[{id:'d1',naam:'Oud dossier',used:0},{id:'d2',naam:'Nieuw dossier',used:0}];
+  let runtime=oud;
+  const input={currentTimer:runtime,readCurrentTimer:()=>runtime,rules:[oud],dossiers,
+    stack:[],dayEnds:{},dayAudit:{},codeUsage:{},id:'r-nieuw',dossierId:'d2',
+    code:'A',description:'Nieuw werk',kind:'werk',date:'2026-08-25',time:'10:07',
+    nowMs:2,nowIso:'2026-08-25T10:07:00.000Z',waitForRules:()=>Promise.resolve()};
+  const switched=await service.switchTask(input);
+  assert(switched.ok,'Een geldige taakwissel moet slagen');
+  assertEq(switched.closedRule.eind,'10:07','N moet op het exacte actiemoment een tijdknip maken');
+  const resulting=[switched.closedRule,switched.rule].filter(rule=>!rule.eind);
+  assertEq(resulting.length,1,'Na een taakwissel mag precies één open regel overblijven');
+  assertEq(switched.currentTimerId,'r-nieuw','De nieuwe regel moet de enige timerpointer worden');
+  const pointerWrites=db.calls.filter(call=>call.store==='meta'&&call.key==='running');
+  assertEq(pointerWrites.length,1,'De pointer hoort één keer in dezelfde transactie te wijzigen');
+
+  const stale=await service.start({...input,id:'r-dubbel'});
+  assertEq(stale.error,'timer_changed',
+    'Een al ingehaalde UI-snapshot mag geen tweede open timer starten');
+
+  runtime=switched.rule;
+  const failed=fakeDatabase({}, {fail:true});gateway.use(failed);
+  const before=JSON.stringify(runtime);
+  const stopped=await service.stop({currentTimer:runtime,readCurrentTimer:()=>runtime,
+    rules:[runtime],dossiers,stack:[],date:'2026-08-25',time:'10:08',end:'10:08',
+    nowMs:3,nowIso:'2026-08-25T10:08:00.000Z',waitForRules:()=>Promise.resolve()});
+  assertEq(stopped.error,'write_failed','Een databasefout moet als timer-writefout terugkomen');
+  assertEq(JSON.stringify(runtime),before,
+    'Een databasefout mag de runtime-regel niet vooraf muteren');
+});
+
+test('TimerService laat oude timers en meervoudige open regels alleen expliciet herstellen', async() => {
+  const HH=evaluateTimerService(),service=HH.services.timer,gateway=HH.storage.indexedDB;
+  const db=fakeDatabase();gateway.use(db);
+  const a={id:'a',datum:'2026-08-24',start:'09:00',eind:null,dossierId:null,
+    uren:0.1,urenHand:false,soort:'werk'},
+    b={id:'b',datum:'2026-08-25',start:'10:00',eind:null,dossierId:null,
+      uren:0.1,urenHand:false,soort:'werk'};
+  const inspected=service.inspectOldTimer({currentTimer:a,date:'2026-08-25'});
+  assert(inspected.old,'Een timer van een vorige dag moet als oud worden herkend');
+  const kept=await service.keepOldTimer({currentTimer:a,readCurrentTimer:()=>a});
+  assert(kept.ok,'Bewust door laten lopen moet de oude timer behouden');
+  assertEq(db.calls.filter(call=>call.op==='transaction').length,0,
+    'Inspecteren en behouden mogen een oude timer niet stilzwijgend sluiten');
+
+  const repaired=await service.repairInvariant({currentTimer:null,readCurrentTimer:()=>null,
+    rules:[a,b],pointerId:null,pendingId:'oud-pending'});
+  assert(repaired.blocked&&service.isBlocked(),
+    'Meerdere open regels moeten de timerketting blokkeren');
+  const blocked=await service.start({currentTimer:null,readCurrentTimer:()=>null,rules:[a,b]});
+  assertEq(blocked.error,'blocked','Een geblokkeerde ketting mag niet verder starten');
+  const replacements=[{...a,eind:'09:30'},{...b,eind:'10:30'}];
+  const confirmed=await service.confirmRecovery({currentTimer:null,readCurrentTimer:()=>null,
+    rules:[a,b],replacements,chosenId:null,waitForRules:()=>Promise.resolve()});
+  assert(confirmed.ok&&!service.isBlocked(),'Alleen expliciete bevestiging mag het conflict vrijgeven');
+  assertEq(confirmed.currentTimerId,null,'Herstel zonder keuze moet geen timer laten lopen');
+});
+
+test('TimerService is de enige productie-eigenaar van meta.running', () => {
+  const direct=/meta\.(?:put|delete)\([^\n]*["']running["']/;
+  const owners=Object.entries(src).filter(([name,code])=>name!=='sw'&&direct.test(code))
+    .map(([name])=>name).sort();
+  assertEq(owners.join(','),'io,timerService',
+    'Alleen TimerService en expliciete import/restore mogen meta.running schrijven');
+  assertIncludes(src.timerService,'let counter=0,currentToken=0,chain=Promise.resolve()',
+    'TimerService moet één geserialiseerde productieketting bezitten');
+  for(const code of [src.timer,src.wizard,src.views,src.controls,src.app])
+    assertNotIncludes(code,'meta.put("running")','Controllers mogen de pointer niet schrijven');
 });
 
 test('DVN-domein houdt classificatie, resolutie en audit puur', () => {
@@ -996,8 +1075,8 @@ test('dagafsluiting gebruikt expliciete sheet en auditvelden', () => {
   assertIncludes(src.views, 'function dagAfsluitKeuze', 'Dagafsluitkeuze moet via sheet lopen');
   assertIncludes(src.dayRules, 'dayAuditAfter(input.dayAudit,input.date,"gesloten"',
     'Dagafsluitservice moet audit schrijven');
-  assertIncludes(src.views, 'dayRuleServices.closeDay',
-    'De afsluitsheet moet de dagservice aanroepen');
+  assertIncludes(src.views, 'timerServices.closeDay',
+    'De afsluitsheet moet de dagservice via TimerService aanroepen');
   assertIncludes(src.views, 'function heropenWerkdag', 'Heropenfunctie ontbreekt');
   assertIncludes(src.views, 'autoAanvulRegels', 'Heropenen moet automatische aanvulregels kennen');
 });
@@ -1269,14 +1348,16 @@ test('hervatten van een recente taak start exact één nieuwe timerwissel', () =
     'hervat() moet de taak één keer opzoeken en daarna dezelfde snapshot gebruiken');
 });
 
-test('oude timer en editor volgen timerOp-contract', () => {
+test('oude timer en editor volgen het TimerService-contract', () => {
   assertIncludes(src.timer, 'function middernachtCheck', 'middernachtCheck ontbreekt');
   const midnight = (src.timer.match(/async function middernachtCheck\(\)\{[\s\S]*?\n\}/) || [''])[0];
   assertNotIncludes(midnight, 'await _stop', 'middernachtCheck mag niet rechtstreeks stoppen');
-  assertIncludes(src.views, 'timerOp("bewerk lopende regel"',
-    'Bewerken van de lopende regel moet door timerOp() lopen');
-  assertNotIncludes(src.views, 'meta.delete("running");});\n        Object.values(extraDos).forEach(memDossier);',
-    'Editor mag meta.running niet buiten het timerOp-pad wijzigen');
+  assertIncludes(src.timer, 'timerServices.inspectOldTimer',
+    'Een oude timer moet eerst zonder mutatie door TimerService worden geïnspecteerd');
+  assertIncludes(src.views, 'timerServices.editRule',
+    'Bewerken van de lopende regel moet door TimerService lopen');
+  assertNotIncludes(src.views, 'meta.delete("running")',
+    'De viewlaag mag meta.running niet rechtstreeks wijzigen');
 });
 
 test('timer-invariant herstelt alleen eenduidige state en blokkeert conflicten', () => {
@@ -1284,17 +1365,16 @@ test('timer-invariant herstelt alleen eenduidige state en blokkeert conflicten',
   const einde=src.app.indexOf('\nfunction openRegels()',begin);
   const herstel=begin>=0&&einde>begin?src.app.slice(begin,einde):'';
   assert(herstel,'herstelInvariant() ontbreekt');
-  assertIncludes(herstel,'const open=alle.filter(r=>!r.eind)',
-    'De invariant moet alle regels zonder eindtijd inspecteren');
-  assertIncludes(herstel,'if(open.length<=1)',
-    'Alleen nul of één open regel mag automatisch worden hersteld');
-  assertIncludes(herstel,'await txAll',
-    'Pointerherstel moet transactioneel via het centrale timerpad schrijven');
-  assertIncludes(herstel,'opBlok=true',
+  assertIncludes(herstel,'timerServices.repairInvariant',
+    'Opstartreparatie moet door TimerService lopen');
+  assertIncludes(src.timerService,'if(open.length>1)',
+    'Meerdere open regels moeten expliciet als conflict worden behandeld');
+  assertIncludes(src.timerService,'blocked=true',
     'Meerdere open regels moeten nieuwe timeracties blokkeren');
   assertIncludes(herstel,'toonHerstel()',
     'Een conflict moet het expliciete herstelvenster openen');
-  assertNotIncludes(herstel,'o.regels.put',
+  assertNotIncludes(src.timerService.slice(src.timerService.indexOf('function repairInvariant'),
+    src.timerService.indexOf('function confirmRecovery')),'stores.regels.put',
     'De opstartcontrole mag conflicterende open regels niet stilzwijgend afsluiten');
   assertIncludes(src.app, 'if(open.length<2){$("herstel").classList.remove("on");return;}',
     'Het herstelvenster moet alleen voor een werkelijk meervoudig conflict verschijnen');

@@ -281,3 +281,27 @@ timer-undo of maakt oudere timer-undo bewust ongeldig.
 Gebruik voor dagstatus steeds hetzelfde paar `dagEinde` en `dagAudit`. Als afsluiten, heropenen,
 banner, Dag-tab en audit ieder een eigen afleiding maken, kan het scherm na één succesvolle write
 zichzelf tegenspreken. Een service-resultaat retourneert daarom beide nieuwe metadataobjecten samen.
+
+## 23. De timerketting bezit ook de verwachte pointer
+
+Alleen transacties centraliseren is niet genoeg voor een timer. Twee vrijwel gelijktijdige acties
+kunnen allebei dezelfde oude runtimepointer hebben gelezen. De eerste kan al duurzaam zijn
+opgeslagen terwijl haar UI-effecten nog niet zijn toegepast; zonder extra bewaking zou de tweede
+dan eveneens slagen en een onverwachte open regel achterlaten.
+
+Laat TimerService daarom zowel de ene Promise-ketting als de laatst succesvol opgeslagen
+`running`-ID bezitten. Iedere opdracht bevriest de timer-ID die de aanroeper verwacht en wordt bij
+uitvoering geweigerd wanneer die niet meer overeenkomt met de servicepointer. Werk die pointer pas
+bij nadat de volledige IndexedDB-transactie is geslaagd. Bij een writefout blijven zowel de
+servicepointer als het runtimegeheugen onveranderd.
+
+Maak alle timerinvoer expliciet: huidige timer, klok, ids, regels, dossiers, stack, dagmetadata en
+eventuele uitgestelde regelwrites. De service retourneert kopieën en geheugeneffecten; de UI toont
+meldingen en rendert pas na succes. Dag-/regelacties die `meta.running` kunnen raken moeten door
+dezelfde ketting om de dagregelservice heen lopen, anders ontstaan alsnog twee timer-eigenaren.
+
+Een oude timer is geen technisch foutgeval dat automatisch gerepareerd mag worden. Inspectie en
+`door laten lopen` schrijven niets; stoppen vereist een expliciete keuze. Meerdere open regels zijn
+wel een invariantconflict, maar ook daar mag opstartcode niets stilzwijgend afsluiten. Blokkeer de
+ketting en laat alleen een expliciet, gevalideerd herstelbesluit de betrokken regels en pointer in
+één transactie vervangen.

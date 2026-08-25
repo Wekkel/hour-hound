@@ -60,23 +60,17 @@ async function herstelInvariant(snapshotMeta){
      huidige versie kent dat concept niet meer; de oude marker wordt daarom alleen
      opgeruimd, zonder retroactief een tijdknip te verzinnen. */
   const oudPending=(uitSnapshot?snapshotMeta.pending:await get("meta","pending"))||null;
-  pending=null;
-  if(oudPending){try{await del("meta","pending");}catch(e){}
-    L("migratie-pending","oude uitgestelde taakwissel verwijderd");}
-  const open=alle.filter(r=>!r.eind);
-  if(open.length<=1){
-    const lopend=open[0]||null;
-    if((rid||null)!==(lopend?lopend.id:null)){
-      await txAll(o=>{if(lopend)o.meta.put(lopend.id,"running");
-        else o.meta.delete("running");});
-      L("herstel","pointer "+(lopend?"gezet op open regel":"gewist"));
-      if(lopend)toast("Lopende regel hersteld — loopt sinds "+lopend.start);}
-    running=lopend;opBlok=false;$("l-herstel").classList.remove("on");
-    return;}
-  running=rid?open.find(r=>r.id===rid)||null:null;
-  opBlok=true;
+  const uit=await timerServices.repairInvariant({currentTimer:running,
+    readCurrentTimer:()=>running,rules:alle,pointerId:rid||null,pendingId:oudPending});
+  if(await meldTimerFout(uit,"Timerstatus herstellen is niet uitgevoerd"))return;
+  pending=null;if(oudPending)L("migratie-pending","oude uitgestelde taakwissel verwijderd");
+  running=uit.currentTimer;
+  if(!uit.blocked){
+    if(uit.pointerChanged){L("herstel","pointer "+(running?"gezet op open regel":"gewist"));
+      if(running)toast("Lopende regel hersteld — loopt sinds "+running.start);}
+    $("l-herstel").classList.remove("on");return;}
   $("l-herstel").classList.add("on");
-  L("herstel-nodig",open.length+" open regels");
+  L("herstel-nodig",uit.openRules.length+" open regels");
   toonHerstel();}
 function openRegels(){return alle.filter(r=>!r.eind)
   .sort((a,b)=>(a.datum+a.start)<(b.datum+b.start)?-1:1);}
@@ -127,15 +121,12 @@ $("h-ok").onclick=async()=>{
       hersteld:true,herstelOp:Date.now(),
       herstelOrigineel:{eind:null,uren:r.uren,urenHand:!!r.urenHand},
       gewijzigd:Date.now()}));}
-  try{
-    await rustig(nieuw.map(r=>r.id));
-    await txAll(o=>{
-      nieuw.forEach(r=>o.regels.put(r));
-      if(gekozen)o.meta.put(gekozen,"running");else o.meta.delete("running");});
-  }catch(e){L("FOUT-herstel",String(e));alert("Herstel mislukt: "+e);return;}
-  nieuw.forEach(memRegel);
-  running=gekozen?(alle.find(x=>x.id===gekozen)||null):null;
-  opBlok=false;vergeetTimerUndo("herstel bevestigd");
+  const uit=await timerServices.confirmRecovery({currentTimer:running,readCurrentTimer:()=>running,
+    rules:alle,replacements:nieuw,chosenId:gekozen||null,waitForRules:rustig});
+  if(await meldTimerFout(uit,"Herstel is niet uitgevoerd")){alert("Herstel mislukt");return;}
+  uit.rules.forEach(memRegel);running=uit.currentTimerId?
+    (alle.find(x=>x.id===uit.currentTimerId)||null):null;
+  vergeetTimerUndo("herstel bevestigd");
   $("herstel").classList.remove("on");$("l-herstel").classList.remove("on");
   liveId=null;refreshDay();bouwDag();renderAll();announce();
   L("herstel-bevestigd",nieuw.length+" afgesloten · lopend "+(gekozen?"ja":"nee"));
@@ -154,8 +145,8 @@ async function herlaad(metInstellingen){
   if(metInstellingen)pasInstellingenToe(snapshot.meta);
   refreshDay();
   await herstelInvariant(snapshot.meta);
-  /* Niet awaiten: herlaad() kan vanuit de foutafhandeling van een timerOp worden
-     aangeroepen, en middernachtCheck() zet zelf weer een timerOp in de wachtrij.  */
+  /* Niet awaiten: herlaad() kan vanuit de foutafhandeling van TimerService worden
+     aangeroepen, en middernachtCheck() raadpleegt daarna dezelfde service.       */
   setTimeout(middernachtCheck,0);
   liveId=null;renderAll();}
 

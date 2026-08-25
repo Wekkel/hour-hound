@@ -145,7 +145,7 @@ function dagAfsluitKeuze(datum){
     $("dc-cancel").onclick=()=>done(null);
     $("dc-x").onclick=()=>done(null);});}
 async function sluitWerkdag(datum){
-  if(opBlok){toast("Rond eerst het herstelvenster af");return false;}
+  if(timerServices.isBlocked()){toast("Rond eerst het herstelvenster af");return false;}
   const ds=dagSluitStatus(datum);
   if(ds.gesloten){toast("Deze werkdag is al afgesloten om "+ds.eind);return false;}
   const list=dagRegels(datum);
@@ -156,21 +156,18 @@ async function sluitWerkdag(datum){
     viewDate=datum;refreshDay();showTab("dag");renderOpenDagen();return false;}
   const eind=keuze.eind.trim();
   if(hm2m(eind)==null){toast("Ongeldige eindtijd");return false;}
-  const klaar=await timerOp("einde werkdag",async t=>{
-    if(!opGeldig(t,running?running.id:null))return false;
-    const wasRunning=running&&running.datum===datum;
-    const dicht=wasRunning?sluitObj(running,eind):null;
-    const uit=await dayRuleServices.closeDay({date:datum,end,closedRule:dicht,
+  const wasRunning=running&&running.datum===datum,dicht=wasRunning?sluitObj(running,eind):null;
+  const uit=await timerServices.closeDay({currentTimer:running,readCurrentTimer:()=>running,
+      date:datum,end,closedRule:dicht,
       runningId:wasRunning?running.id:null,rules:alle,dossiers,overbookings:overboekingen,
       dayEnds:dagEinde,dayAudit,stack,totalBefore:dagIntappTotaal(datum),
       bookingContext:boekRekenContext(),waitForRules:rustig,
       nowMs:Date.now(),nowIso:new Date().toISOString()});
-    if(meldDagRegelFout(uit,"Werkdag afsluiten is niet uitgevoerd"))return false;
-    uit.dossiers.forEach(memDossier);if(uit.closedRule)memRegel(uit.closedRule);
-    if(wasRunning){pending=null;running=null;stack=[];vergeetTimerUndo("einde werkdag");liveId=null;}
-    dagEinde=uit.dayEnds;dagAudit=uit.dayAudit;viewDate=datum;refreshDay();showTab("dag");renderAll();announce();
-    return true;});
-  if(!klaar)return false;
+  if(await meldTimerFout(uit,"Werkdag afsluiten is niet uitgevoerd")||
+    meldDagRegelFout(uit,"Werkdag afsluiten is niet uitgevoerd"))return false;
+  uit.dossiers.forEach(memDossier);if(uit.closedRule)memRegel(uit.closedRule);
+  if(wasRunning){pending=null;running=null;stack=[];vergeetTimerUndo("einde werkdag");liveId=null;}
+  dagEinde=uit.dayEnds;dagAudit=uit.dayAudit;viewDate=datum;refreshDay();showTab("dag");renderAll();announce();
   const totaalNaSluit=dagIntappTotaal(datum),naTekort=dagTekort(datum);
   L("einde-werkdag",datum+" om "+dagSluitStatus(datum).eind+" · "+uu(totaalNaSluit)+" u");
   if(!werkdag(datum))toast("Weekendregistratie afgesloten. "+uu(totaalNaSluit)+
@@ -302,12 +299,14 @@ function openRegelEditor(id,bron){
       if(c.nieuweCode&&tmpD&&!isIndirect(tmpD)&&!(tmpD.codes||[]).some(x=>x.code===c.nieuweCode)){
         tmpD=Object.assign({},tmpD,{codes:(tmpD.codes||[]).concat([{code:c.nieuweCode,naam:c.nieuweCode}])});stempel(tmpD);}
       const schrijf=async()=>{
-        const uit=await dayRuleServices.editRule({before:voor,rule:tmpRule,rules:alle,
+        const uit=await timerServices.editRule({currentTimer:running,readCurrentTimer:()=>running,
+          before:voor,rule:tmpRule,rules:alle,
           dossiers,overbookings:overboekingen,dossierWrites:tmpD?[tmpD]:[],
           runningId:looptNu?cur.id:null,isBooked:regelIsGeboekt(cur),confirmedWarnings:true,
           bookingContext:boekRekenContext(),waitForRules:rustig,nowTime:nowHM(),
           nowMs:Date.now(),nowIso:new Date().toISOString()});
-        if(meldDagRegelFout(uit,"Opslaan is niet uitgevoerd"))return false;
+        if(await meldTimerFout(uit,"Opslaan is niet uitgevoerd")||
+          meldDagRegelFout(uit,"Opslaan is niet uitgevoerd"))return false;
         uit.dossiers.forEach(memDossier);memRegel(uit.rule);tmpRule=uit.rule;
         if(uit.closedRunning){running=null;pending=null;
           vergeetTimerUndo("regel gestopt via bewerksheet");}
@@ -315,18 +314,14 @@ function openRegelEditor(id,bron){
         pasMutatieUndoToe(uit.undo);
         return true;};
       try{
-        if(looptNu){
-          const ok=await timerOp("bewerk lopende regel",async t=>{
-            if(!opGeldig(t,id)){toast("De timer is inmiddels gewijzigd");return false;}
-            return await schrijf();});
-          if(!ok)return;
-        }else if(!await schrijf())return;
+        if(!await schrijf())return;
       }catch(e){L("FOUT-regel-editor",String(e));toast("Opslaan mislukt — niets gewijzigd: "+e);return;}
       L("regel-editor",tmpRule.start+"-"+(tmpRule.eind||"loopt")+" · "+dosIdLog(tmpRule.dossierId));
       viewDate=tmpRule.datum;refreshDay();bouwDag();renderAll();announce();
       toast("Tijdregel opgeslagen");sluit(true);};});}
 function controleerOudeLopendeTaak(){
-  if(!running||running.datum>=today()||opBlok||Date.now()<oldRunSnooze||isModalOpen())return;
+  if(!running||running.datum>=today()||timerServices.isBlocked()||
+    Date.now()<oldRunSnooze||isModalOpen())return;
   const dlg=$("oldrun");if(!dlg)return;
   const r=running,d=dosOf(r.dossierId),tekst=(r.omschrijving||"geen omschrijving");
   $("xr-date").textContent=dagLabel(r.datum);
@@ -566,7 +561,7 @@ function maakAanvulPlan(){
     id:uid(),batchId:uid(),nowMs,nowIso:new Date(nowMs).toISOString(),waitForRules:rustig};
   return Object.assign({input,ind,code},dayRuleServices.planAutoFill(input));}
 async function vulAanTot8(){
-  if(opBlok){toast("Rond eerst het herstelvenster af");return false;}
+  if(timerServices.isBlocked()){toast("Rond eerst het herstelvenster af");return false;}
   if(!werkdag(viewDate)){toast("Weekenddagen hebben geen 8-uursaanvulling");return false;}
   if(dagSluitStatus(viewDate).open){toast("Sluit deze werkdag eerst af met E");return false;}
   if(running&&running.datum===viewDate){
@@ -600,7 +595,7 @@ async function vulAanTot8(){
     " uur Diversen toegevoegd. Totaal: "+uu(werkelijk)+" uur.");
   return true;}
 async function heropenWerkdag(datum){
-  if(opBlok){toast("Rond eerst het herstelvenster af");return;}
+  if(timerServices.isBlocked()){toast("Rond eerst het herstelvenster af");return;}
   if(dagSluitStatus(datum).open){toast("Deze dag is al open");return;}
   if(running&&running.datum===datum){toast("Er loopt nog een regel op deze dag");return;}
   const autos=autoAanvulRegels(datum);
@@ -963,7 +958,7 @@ $("b-wipe").onclick=async()=>{
   if(!confirm("Zeker weten? Maak eerst een export als je iets wilt bewaren."))return;
   await txAll(o=>{o.dossiers.clear();o.regels.clear();
     o.overboekingen.clear();
-    o.meta.delete("running");o.meta.delete("stack");o.meta.delete("dagEinde");
+    timerServices.writePointer(o,null);o.meta.delete("stack");o.meta.delete("dagEinde");
     o.meta.delete("dagAudit");o.meta.delete("geboekt");});
   stack=[];dagEinde={};dagAudit={};undoStack=[];geboekt={};overboekingen=[];running=null;
   await zorgVoorI7();await herlaad();
@@ -1124,19 +1119,15 @@ $("d-table").addEventListener("click",async e=>{
     if(!confirm("Deze regel verwijderen?"+(mutatieWarnings.length?
       "\n\nDeze regel heeft een administratieve status. De status valt terug naar controleren.":"")))return;
     const wasRunning=!!(running&&running.id===id);
-    const gelukt=await timerOp("regel verwijderen",async t=>{
-      if(!opGeldig(t,running?running.id:null))return false;
-      const uit=await dayRuleServices.deleteRule({rule:oud,rules:alle,dossiers,
+    const uit=await timerServices.deleteRule({currentTimer:running,readCurrentTimer:()=>running,
+      rule:oud,rules:alle,dossiers,
         overbookings:overboekingen,runningId:running?running.id:null,
         isBooked:regelIsGeboekt(oud),waitForRules:rustig,
         nowMs:Date.now(),nowIso:new Date().toISOString()});
-      if(meldDagRegelFout(uit,"Verwijderen is niet uitgevoerd"))return false;
-      uit.dossiers.forEach(memDossier);
-      if(wasRunning)running=null;
-      alle=alle.filter(r=>r.id!==id);refreshDay();
-      pasMutatieUndoToe(uit.undo);
-      return true;});
-    if(!gelukt)return;
+    if(await meldTimerFout(uit,"Verwijderen is niet uitgevoerd")||
+      meldDagRegelFout(uit,"Verwijderen is niet uitgevoerd"))return;
+    uit.dossiers.forEach(memDossier);if(wasRunning)running=null;
+    alle=alle.filter(r=>r.id!==id);refreshDay();pasMutatieUndoToe(uit.undo);
     L("regel-weg",oud.start+"-"+(oud.eind||"loopt")+" · "+uu(urenOf(oud))+" u");
     bouwDag();renderAll();announce();return;}
   const mk=e.target.closest("[data-maaklopend]");
@@ -1176,23 +1167,20 @@ async function maakLopend(id){
     (running?".\nDe regel die nu loopt wordt afgesloten op dit moment.":".")+
     (overlap?"\n\nLet op: dit overlapt met een andere regel van vandaag.":"")+
     (mutatieWarnings.length?"\n\nDeze regel heeft een administratieve status. De status valt terug naar controleren.":"")))return;
-  await timerOp("timer overzetten",async t=>{
-    if(!opGeldig(t,running?running.id:null))return;
-    const dicht=running?sluitObj(running):null;
-    const uit=await dayRuleServices.reopenRule({rule:r,closedRule:dicht,rules:alle,
+  const dicht=running?sluitObj(running):null;
+  const uit=await timerServices.reopenRule({currentTimer:running,readCurrentTimer:()=>running,
+      rule:r,closedRule:dicht,rules:alle,
       dossiers,overbookings:overboekingen,runningId:running?running.id:null,
       isBooked:regelIsGeboekt(r),confirmedWarnings:true,today:today(),nowTime:nowHM(),
       bookingContext:boekRekenContext(),waitForRules:rustig,
       nowMs:Date.now(),nowIso:new Date().toISOString()});
-    if(meldDagRegelFout(uit,"Regel opnieuw starten is niet uitgevoerd"))return false;
-    pending=null;ntWizard=null;
-    if(uit.closedRule)memRegel(uit.closedRule);
-    uit.dossiers.forEach(memDossier);memRegel(uit.rule);
-    running=alle.find(x=>x.id===uit.rule.id);
-    vergeetTimerUndo("timer overgezet");
-    liveId=null;bouwDag();renderAll();announce();
-    L("timer-overgezet",dosIdLog(uit.rule.dossierId)+" · sinds "+uit.rule.start);
-    toast("Deze regel loopt weer sinds "+uit.rule.start);return true;});}
+  if(await meldTimerFout(uit,"Regel opnieuw starten is niet uitgevoerd")||
+    meldDagRegelFout(uit,"Regel opnieuw starten is niet uitgevoerd"))return;
+  pending=null;ntWizard=null;if(uit.closedRule)memRegel(uit.closedRule);
+  uit.dossiers.forEach(memDossier);memRegel(uit.rule);running=alle.find(x=>x.id===uit.rule.id);
+  vergeetTimerUndo("timer overgezet");liveId=null;bouwDag();renderAll();announce();
+  L("timer-overgezet",dosIdLog(uit.rule.dossierId)+" · sinds "+uit.rule.start);
+  toast("Deze regel loopt weer sinds "+uit.rule.start);}
 $("d-prev").onclick=()=>{viewDate=addD(viewDate,-1);refreshDay();bouwDag();};
 $("d-next").onclick=()=>{viewDate=addD(viewDate,1);refreshDay();bouwDag();};
 $("d-today").onclick=()=>{viewDate=today();refreshDay();bouwDag();};

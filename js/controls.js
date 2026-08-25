@@ -113,7 +113,10 @@ if($("oldrun")){
   const sluitOudeTaak=()=>{$("oldrun").classList.remove("on");$("oldrun").setAttribute("aria-hidden","true");};
   $("xr-x").onclick=()=>{oldRunSnooze=Date.now()+60*60*1000;sluitOudeTaak();};
   $("xr-cancel").onclick=()=>{oldRunSnooze=Date.now()+60*60*1000;sluitOudeTaak();};
-  $("xr-continue").onclick=()=>{oldRunSnooze=Date.now()+24*60*60*1000;sluitOudeTaak();
+  $("xr-continue").onclick=async()=>{const nowMs=Date.now(),uit=await timerServices.keepOldTimer(
+    Object.assign(timerBasis(nowMs),{}));
+    if(await meldTimerFout(uit,"Door laten lopen is niet uitgevoerd"))return;
+    oldRunSnooze=Date.now()+24*60*60*1000;sluitOudeTaak();
     toast(running?"Lopende taak blijft op "+dmy(running.datum)+" — uren tellen niet door naar vandaag":"Lopende taak blijft doorlopen");};
   $("xr-edit").onclick=async()=>{const id=running&&running.id;sluitOudeTaak();if(id)await openRegelEditor(id,"oldrun");};
   document.addEventListener("keydown",e=>{if($("oldrun").classList.contains("on")&&e.key==="Escape"){e.preventDefault();oldRunSnooze=Date.now()+60*60*1000;sluitOudeTaak();}},true);
@@ -122,7 +125,7 @@ if($("oldrun")){
     const r=running,e=$("xr-end").value.trim(),m=hm2m(e);
     if(m==null){toast("Ongeldige eindtijd");$("xr-end").focus();return;}
     if(hm2m(r.start)!=null&&m<hm2m(r.start)){toast("Eindtijd ligt vóór de starttijd");$("xr-end").focus();return;}
-    const oud=kopie1(r),dicht=await stopRunning(m2hm(m),"oude lopende taak stoppen");
+    const oud=kopie1(r),dicht=await stopRunning(m2hm(m),"oude lopende taak stoppen","stopOldTimer");
     if(!dicht)return;
     undoTimer("oude lopende taak stoppen",[oud],{herstelRunning:oud.id,verwachtRunning:null,
       verwacht:[{id:oud.id,gewijzigd:dicht.gewijzigd}]});

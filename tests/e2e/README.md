@@ -65,6 +65,12 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
     servicelaag na een echte IndexedDB-transactie dezelfde Dag-status, audit, DVN-terugval,
     overboekingsbescherming en undo-categorie aan de UI teruggeeft.
 
+14. **Eén timer-eigenaar**
+    Starten, taak wisselen, onderbreken, pauzeren, terugkeren, stoppen, oude-timerkeuzes en
+    timerherstel lopen via één geserialiseerde TimerService. De bestaande flows bewaken dat een
+    taakwissel direct knipt, een oude timer nooit vanzelf sluit en een opslagfout geen zichtbare
+    half-uitgevoerde timerstatus achterlaat.
+
 Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 
 ## Uitvoeren

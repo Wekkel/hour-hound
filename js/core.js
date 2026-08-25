@@ -26,11 +26,11 @@
        indirect (i7) en dossier volgt nog (i7). Geen daarvan is de default.
 
    TIJD EN TIMER
-   T1. Elke toestandsovergang van de timer gaat door timerOp() en wordt in één
-       transactie geschreven (txAll). Geheugen pas bijwerken ná succes.
+   T1. Elke toestandsovergang van de timer gaat door TimerService en wordt in één
+       volledige IndexedDB-transactie geschreven. Geheugen pas bijwerken ná succes.
    T2. Invariant: hooguit één open regel, en meta.running wijst precies daarnaar.
        Alleen een eenduidige situatie wordt automatisch hersteld; bij meerdere open
-       regels komt het herstelvenster en liggen timeracties stil (opBlok).
+       regels komt het herstelvenster en blokkeert TimerService alle timeracties.
    T3. N maakt de tijdknip ONMIDDELLIJK: de lopende regel wordt gesloten en in
        dezelfde transactie wordt een lege nieuwe werkregel gestart. Dossier, code en
        omschrijving zijn metadata die daarna via de NT-wizard mogen worden ingevuld.
@@ -80,7 +80,8 @@ const {pad,uu,ymd,today,nowHM,hm2m,m2hm,dmy,parseD,addD,dagLabel,kortDag,
   weekend,werkdag,schoon}=HH.domain.time;
 const bookingDomain=HH.domain.booking;
 const dvnDomain=HH.domain.dvn,overbookingDomain=HH.domain.overbooking;
-const adminServices=HH.services.admin,dayRuleServices=HH.services.dayRules;
+const adminServices=HH.services.admin,dayRuleServices=HH.services.dayRules,
+  timerServices=HH.services.timer;
 const adminFoutTekst={invalid_dvn:"Deze DVN is niet meer beschikbaar",
   number_required:"Vul eerst een dossiernummer in",
   target_is_dvn:"Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.",
@@ -117,6 +118,20 @@ const dagRegelFoutTekst={rule_missing:"De tijdregel ontbreekt",
 function meldDagRegelFout(result,fallback){
   if(result&&result.ok)return false;
   toast(dagRegelFoutTekst[result&&result.error]||fallback||"Dagactie niet uitgevoerd");
+  return true;}
+const timerFoutTekst={blocked:"Rond eerst het herstelvenster af",
+  timer_changed:"De lopende timer is intussen gewijzigd",
+  timer_missing:"Er loopt geen timer meer",dossier_missing:"Het dossier bestaat niet meer",
+  invalid_recovery:"De herstelkeuze past niet meer bij de open regels",
+  write_failed:"Timeractie mislukt — er is niets gewijzigd"};
+async function meldTimerFout(result,fallback){
+  if(result&&result.ok)return false;
+  if(result&&result.error&&!Object.prototype.hasOwnProperty.call(timerFoutTekst,result.error))
+    return false;
+  const message=timerFoutTekst[result&&result.error]||fallback||"Timeractie niet uitgevoerd";
+  L("FOUT-timer",(result&&result.error||"onbekend")+
+    (result&&result.cause?" · "+result.cause:""));toast(message);
+  if(result&&result.error==="write_failed")try{await herlaad();}catch(ignore){}
   return true;}
 function pasMutatieUndoToe(undo){
   if(!undo)return;
@@ -169,32 +184,6 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
    bijgewerkt nadat de transactie is geslaagd.                                    */
 const TXALL=storageGateway.TIMER_STORES;
 function txAll(fn){return tx(TXALL,"readwrite",fn);}
-
-/* ---------- één wachtrij voor alle timerovergangen ----------
-   Knoppen, sneltoetsen, handmatig stoppen, de langloopmelding, de middernachtcontrole,
-   herstel, update en synchronisatie lopen hier doorheen. Er kan dus nooit een tweede
-   overgang tussendoor glippen. Elke operatie krijgt een token; na een await mag een
-   functie de globale timerstatus alleen nog aanpassen wanneer haar token nog het
-   actieve token is én de verwachte timer-ID nog klopt. Een vertraagde stopactie kan
-   daardoor geen inmiddels nieuw gestarte timer meer wissen.                     */
-let opTeller=0,opHuidig=0,opKetting=Promise.resolve(),opBlok=false;
-function timerOp(naam,fn){
-  const draai=async()=>{
-    if(opBlok){toast("Rond eerst het herstelvenster af");return null;}
-    const t={id:++opTeller,naam,start:running?running.id:null};
-    opHuidig=t.id;
-    try{return await fn(t);}
-    catch(e){L("FOUT-"+naam.replace(/\s+/g,"-"),String(e));
-      toast(naam+" mislukt — er is niets gewijzigd: "+e);
-      try{await herlaad();}catch(x){}
-      return null;}};
-  const p=opKetting.then(draai,draai);
-  opKetting=p.then(()=>{},()=>{});
-  return p;}
-function opGeldig(t,verwachtTimerId){
-  if(!t||t.id!==opHuidig)return false;
-  if(verwachtTimerId!==undefined&&(running?running.id:null)!==verwachtTimerId)return false;
-  return true;}
 
 /* ---------- schrijfacties per regel geserialiseerd ----------
    Iedere schrijfactie bevriest de bedoelde waarde en wordt achter de vorige schrijf-
@@ -330,23 +319,17 @@ async function undoTimerStap(a){
   if(scheef){
     L("undo-geweigerd","betrokken regel is inmiddels gewijzigd");
     toast("De betrokken regel is inmiddels gewijzigd — niet teruggedraaid");return;}
-  await timerOp("ongedaan maken",async t=>{
-    if(!opGeldig(t,a.verwachtRunning))return;
-    const weg=a.weg||[];
-    await rustig(a.regels.map(r=>r.id).concat(weg));
-    await txAll(o=>{
-      a.regels.forEach(r=>o.regels.put(r));
-      weg.forEach(id=>o.regels.delete(id));
-      if(a.herstelRunning)o.meta.put(a.herstelRunning,"running");
-      else o.meta.delete("running");});
-    weg.forEach(id=>{alle=alle.filter(x=>x.id!==id);});
-    a.regels.forEach(memRegel);
-    refreshDay();
-    running=a.herstelRunning?(alle.find(x=>x.id===a.herstelRunning)||null):null;
-    liveId=null;bouwDag();renderAll();announce();
-    L("ongedaan","timer · "+(a.label||"actie"));
-    toast("Ongedaan: "+(a.label||"timerwijziging")+" — "+
-      undoStack.length+" stap(pen) over");});}
+  const weg=a.weg||[],uit=await timerServices.restoreUndo({currentTimer:running,
+    readCurrentTimer:()=>running,rules:a.regels,remove:weg,restoreRunningId:a.herstelRunning,
+    waitForRules:rustig});
+  if(await meldTimerFout(uit,"Ongedaan maken is niet uitgevoerd"))return;
+  weg.forEach(id=>{alle=alle.filter(x=>x.id!==id);});
+  uit.rules.forEach(memRegel);refreshDay();
+  running=uit.currentTimerId?(alle.find(x=>x.id===uit.currentTimerId)||null):null;
+  liveId=null;bouwDag();renderAll();announce();
+  L("ongedaan","timer · "+(a.label||"actie"));
+  toast("Ongedaan: "+(a.label||"timerwijziging")+" — "+
+    undoStack.length+" stap(pen) over");}
 function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");
   clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),2600);}
 let syncOpen=false;
