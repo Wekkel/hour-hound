@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.17"; // DVN implementation (including Grok Build review)
+const VERSION = "0.1.18"; // various patches up to Patch J
 
 const CACHE = "hourhound-" + VERSION;
 
@@ -24,7 +24,9 @@ const ASSETS = [
   "./js/controls.js",
   "./js/io.js",
   "./js/booking.js",
-  "./js/app.js"
+  "./js/app.js",
+  "./js/hh.js",
+  "./js/domain/time.js"
 ];
 
 self.addEventListener("install", (e) => {
