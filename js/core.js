@@ -469,6 +469,16 @@ const pauzeUren=l=>l.filter(r=>r.soort==="pauze")
   .reduce((s,r)=>s+Math.ceil(ruweMin(r)/6)/10,0);
 const totaal=l=>l.reduce((s,r)=>s+urenOf(r),0);
 const vandaagRegels=()=>alle.filter(r=>r.datum===today());
+function nuBreakdown(lijst){
+  const out={declarabel:0,i7:0,dvn:0};
+  (lijst||[]).filter(r=>r&&r.soort!=="pauze").forEach(r=>{
+    const d=dosOf(r.dossierId),u=urenOf(r),isDvnRegel=!!d&&isDvn(d);
+    if(isDvnRegel){out.dvn+=u;out.i7+=u;return;}
+    if(!d||r.soort!=="werk"||isIndirect(d))out.i7+=u;
+    else out.declarabel+=u;});
+  Object.keys(out).forEach(k=>{out[k]=Math.round(out[k]*10)/10;});
+  return out;
+}
 
 function gapsFor(list,datum){
   const iv=list.filter(r=>hm2m(r.start)!=null)

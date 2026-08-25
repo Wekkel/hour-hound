@@ -70,3 +70,10 @@ DVN biedt `Boeken in Intapp`, toont alle gekoppelde regels en het totaal, en wor
 expliciete bevestiging `Alles ingevoerd in Intapp` afgehandeld. Afgehandelde DVN’s blijven onder
 een inklapbare groep traceerbaar en vallen bij latere wijzigingen terug naar `controle nodig`.
 De importkeuring bewaart de interne `posted`-status en de daarbij vastgelegde regel-id’s en uren.
+
+### Patch G-contract
+
+Nu toont compact `Declarabel X · i7 Y (DVN Z)`. Gewone dossiers zijn declarabel; alle
+niet-declarabele/i7-tijd, inclusief DVN, telt bij i7. DVN blijft daarnaast apart zichtbaar,
+ook nadat een echt dossiernummer is toegekend. De breakdown gebruikt de oorspronkelijke
+registratiesoort en de bestaande afgeronde uren.

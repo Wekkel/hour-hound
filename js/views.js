@@ -384,6 +384,9 @@ function renderTot(){
   const v=vandaagRegels(),t=totaal(v),g=gapHours(gapsFor(v,today()));
   $("t-uren").textContent=uu(t);$("t-void").textContent=uu(g);
   $("t-regels").textContent=v.filter(r=>r.soort!=="pauze").length;
+  const b=nuBreakdown(v);
+  $("t-breakdown").textContent="Declarabel "+uu(b.declarabel)+" · i7 "+uu(b.i7)+
+    " (DVN "+uu(b.dvn)+")";
   $("t-voidwrap").className=g>0?"isbad":"";
   const isWerkdag=werkdag(today());
   $("t-progress").style.display=isWerkdag?"":"none";

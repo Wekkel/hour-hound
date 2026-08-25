@@ -78,7 +78,7 @@ function evaluateCorePure(){
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{};\n`+
     `return true;\n};\n`+
-    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
+    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
   return { api: context.__hhPure, setState: context.__hhSetState, context };
 }
@@ -163,6 +163,42 @@ test('urenOf rondt losse tijdregels altijd naar boven af op 0,1 uur', () => {
   assertEq(api.urenOf({ start: '09:00', eind: '09:06' }), 0.1, '6 minuten moet 0,1 uur worden');
   assertEq(api.urenOf({ start: '09:00', eind: '09:07' }), 0.2, '7 minuten moet naar 0,2 uur afronden');
   assertEq(api.urenOf({ start: '09:00', eind: '09:30', urenHand: true, uren: 0.4 }), 0.4, 'Handmatige uren moeten leidend blijven');
+});
+
+test('Nu-breakdown bewaart registratiebron en afgeronde uren', () => {
+  const { api, setState } = evaluateCorePure();
+  const gewoon = { id: 'd-gewoon', nummer: '304000001', naam: 'Dossier', codes: [] };
+  const i7d = { id: 'd-i7-breakdown', nummer: 'I700000001', naam: 'Indirecte uren', isI7: true };
+  const dvn = { id: 'd-dvn-breakdown', naam: 'DVN', dvn: true, voorlopig: false, dvnResolvedNr: '304000002' };
+  setState({ dossiers: [gewoon, i7d, dvn] });
+  const regel = (id, dossierId, start, eind, extra = {}) =>
+    Object.assign({ id, dossierId, datum: '2026-08-25', start, eind, soort: 'werk' }, extra);
+  assertEq(JSON.stringify(api.nuBreakdown([regel('r-only-dos', gewoon.id, '08:00', '09:00')])),
+    JSON.stringify({ declarabel: 1, i7: 0, dvn: 0 }), 'Alleen een gewoon dossier hoort bij declarabel');
+  assertEq(JSON.stringify(api.nuBreakdown([regel('r-only-i7', i7d.id, '08:00', '09:00')])),
+    JSON.stringify({ declarabel: 0, i7: 1, dvn: 0 }), 'Alleen i7 hoort bij i7');
+  assertEq(JSON.stringify(api.nuBreakdown([regel('r-only-dvn', dvn.id, '08:00', '09:00')])),
+    JSON.stringify({ declarabel: 0, i7: 1, dvn: 1 }), 'Alleen DVN hoort bij i7 en DVN');
+  assertEq(JSON.stringify(api.nuBreakdown([
+    regel('r-dos', gewoon.id, '09:00', '10:01'),
+    regel('r-i7', i7d.id, '10:00', '11:06'),
+    regel('r-dvn', dvn.id, '11:00', '12:07')
+  ])), JSON.stringify({ declarabel: 1.1, i7: 2.3, dvn: 1.2 }),
+  'Mix moet gewone dossiers, i7 en DVN apart en op afgeronde uren tonen');
+  const resolved = api.nuBreakdown([regel('r-dvn-2', dvn.id, '13:00', '13:06')]);
+  assertEq(resolved.declarabel, 0, 'Opgeloste DVN mag niet declarabel worden');
+  assertEq(resolved.i7, 0.1, 'Opgeloste DVN blijft i7');
+  assertEq(resolved.dvn, 0.1, 'Opgeloste DVN blijft apart herkenbaar');
+  assertEq(api.nuBreakdown([regel('r-hand', gewoon.id, '14:00', '14:01', { urenHand: true, uren: 0.4 })]).declarabel,
+    0.4, 'Afgeronde handmatige uren moeten behouden blijven');
+});
+
+test('Nu toont de compacte declarabel-i7-DVN-breakdown', () => {
+  assertIncludes(src.html, 'id="t-breakdown"', 'Nu-breakdown ontbreekt in de samenvatting');
+  assertIncludes(src.views, 'nuBreakdown(v)', 'Nu moet de breakdown uit de actuele regels worden berekend');
+  assertIncludes(src.views, 'Declarabel "+uu(b.declarabel)', 'Declarabele tijd moet apart worden gelabeld');
+  assertIncludes(src.views, 'DVN "+uu(b.dvn)', 'DVN-tijd moet apart tussen haakjes worden getoond');
+  assertIncludes(src.core, 'function nuBreakdown(lijst)', 'Historische Nu-registratieclassificatie ontbreekt');
 });
 
 test('DVN pure statushelpers onderscheiden ontbrekend, klaar, ingevoerd en controle nodig', () => {

@@ -98,3 +98,12 @@ De interne status `posted` blijft voor back-upcompatibiliteit bestaan, maar heet
 `afgehandeld`. Afgehandelde DVN’s verdwijnen uit de open werkvoorraad en blijven traceerbaar in
 een inklapbare groep. `dvnPutIfPosted()` zet ze bij een latere relevante wijziging terug naar
 `controle nodig`. Back-upkeuring moet zowel de status als de bevestigde regel-id’s en uren bewaren.
+
+## 13. Nu-breakdown volgt de oorspronkelijke registratiesoort
+
+De compacte breakdown naast de Nu-samenvatting toont `Declarabel`, `i7` en tussen haakjes
+`DVN`. DVN-uren tellen mee in het i7-totaal én blijven apart zichtbaar. Classificeer daarvoor
+op de oorspronkelijke DVN-identiteit (`isDvn(d)`), niet op het latere Intapp-dossiernummer:
+een opgeloste DVN mag nooit door de nummerkoppeling naar Declarabel verschuiven. Gebruik
+`urenOf()` per tijdregel, zodat afgeronde en handmatig vastgelegde uren gelijk blijven aan de
+bestaande Nu-totalen.

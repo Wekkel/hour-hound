@@ -167,6 +167,7 @@ test('doorloopt DVN naar dossiernummer, Intapp en Afgehandeld', async ({ page })
     meta: {}
   });
 
+  await expect(page.locator('#t-breakdown')).toHaveText('Declarabel 0,0 · i7 1,5 (DVN 1,5)');
   await page.locator('#tabs [data-v="beheer"]').click();
   await expect(page.locator('#dvn-intapp')).toBeVisible();
   await page.locator('#dvn-intapp').getByRole('button', { name: 'Dossiernummer toekennen' }).click();

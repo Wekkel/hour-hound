@@ -167,6 +167,7 @@ h2{font:500 14px/1.2 var(--sans);margin:0 0 .5rem}
 .tot{display:flex;gap:1.3rem;align-items:baseline;flex-wrap:wrap}
 .tot b{font:500 20px/1 var(--mono)}
 .tot small{color:var(--soft);font-size:13px}
+.tot .breakdown{color:var(--soft);font-size:13px}
 .tot .isbad b{color:var(--rust)}
 
 .tw{overflow-x:auto}
