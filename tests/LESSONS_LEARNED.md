@@ -116,3 +116,17 @@ regel-id’s voor audit en back-up, terwijl `dvnDisposition: "final_i7"` de oper
 is. De regels verdwijnen uit de DVN-werkvoorraad, uit recente hervatacties en uit het DVN-deel
 van Nu; ze blijven wel meetellen in i7 en gebruiken in de Intapp-samenvatting het gewone
 i7-dossier. Voer de overgang transactioneel uit en blokkeer hem zolang een betrokken regel loopt.
+
+## 15. Tijdelijk geblokkeerd dossier is geen DVN en geen boekstatus
+
+Een gewone dossierregel met een bestaand nummer kan pas tijdens handmatige invoer tijdelijk
+onboekbaar blijken. Na bevestigde invoer op `i7 · Commercieel` hoort die regel daarom in de
+aparte store `overboekingen`: niet in DVN-metadata en niet in `meta.geboekt`. De dagwizard telt
+zo'n regel wel als behandeld en toont afzonderlijk geboekt, geparkeerd en open.
+
+De wachtrij heeft precies twee eindroutes. Bij `Op dossier geboekt · afhandelen` verandert alleen
+de wachtrijstatus; er ontstaat geen nieuwe HH-tijdregel en de eerdere i7-boeking in Intapp blijft
+staan. Bij `Naar definitief i7` worden de oorspronkelijke HH-bronregels transactioneel werkelijk
+naar het hoofd-i7-dossier met werkcode Commercieel verplaatst. Wijzigingen aan bronregels of
+doeldossiermetadata moeten eerst zichtbaar worden als `Gewijzigd — controleren`; overschrijf de
+opgeslagen herkenningsgegevens nooit stilzwijgend. Backupversie 9 bewaart de hele wachtrij.

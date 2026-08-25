@@ -3,20 +3,25 @@
 $("b-import").onclick=()=>$("file").click();
 $("file").onchange=e=>{const f=e.target.files[0];if(f)importFile(f);e.target.value="";};
 const str=(v,max)=>typeof v==="string"?v.slice(0,max||400):"";
-const BACKUPVERSIE=8;
+const BACKUPVERSIE=9;
 /* Een datum is pas geldig als hij na parsen exact dezelfde tekst oplevert: zo vallen
    2026-02-30 en 2026-13-01 er ook uit.                                          */
 const isDatum=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&
   !isNaN(parseD(s).getTime())&&ymd(parseD(s))===s;
 /* Eenvoudige FNV-1a over de kernvelden. Hiermee is te zien of een back-upbestand
    onderweg is aangepast of afgekapt.                                            */
-function checksumVan(dos,reg,tpl,cod){
-  const stuk=[
+function checksumVan(dos,reg,tpl,cod,over){
+  const stukken=[
     (dos||[]).map(d=>d&&(d.id+"|"+(d.nummer||"")+"|"+(d.naam||""))).sort().join(";"),
     (reg||[]).map(r=>r&&(r.id+"|"+r.datum+"|"+r.start+"|"+(r.eind||"")+"|"+r.uren))
       .sort().join(";"),
     (tpl||[]).map(t=>t&&t.id).sort().join(";"),
-    (cod||[]).map(c=>c&&c.code).sort().join(";")].join("#");
+    (cod||[]).map(c=>c&&c.code).sort().join(";")];
+  /* Versie 8 en ouder hadden geen vijfde checksumdeel. Laat dat deel bij controle
+     van zo'n back-up weg, zodat bestaande geldige exports geldig blijven. */
+  if(Array.isArray(over))stukken.push(over.map(o=>o&&(o.id+"|"+o.status+"|"+
+    (o.targetDossierId||"")+"|"+(o.updatedAt||""))).sort().join(";"));
+  const stuk=stukken.join("#");
   let h=0x811c9dc5;
   for(let i=0;i<stuk.length;i++){h^=stuk.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
   return("0000000"+h.toString(16)).slice(-8);}
@@ -97,6 +102,40 @@ function keurDossiers(arr){
       codes:Array.isArray(x.codes)?x.codes.filter(c=>c&&c.code)
         .map(c=>({code:str(c.code,60),naam:str(c.naam,120)||str(c.code,60)})):[]});});
   return{goed,fout};}
+function keurOverboekingen(arr){
+  const goed=[],fout=[],gezien={};
+  (Array.isArray(arr)?arr:[]).forEach((x,i)=>{
+    const nr="overboeking "+(i+1);
+    if(!x||typeof x!=="object"||typeof x.id!=="string"||!x.id){fout.push(nr+": geen bruikbaar id");return;}
+    if(gezien[x.id]){fout.push(nr+": dubbel id");return;}
+    if(["waiting","done","final_i7"].indexOf(x.status)<0){fout.push(nr+": ongeldige status");return;}
+    if(typeof x.targetDossierId!=="string"||!x.targetDossierId){fout.push(nr+": doeldossier ontbreekt");return;}
+    if(!isDatum(x.sourceDate)){fout.push(nr+": ongeldige werkdatum");return;}
+    const ids=Array.isArray(x.sourceRuleIds)?x.sourceRuleIds.filter(id=>typeof id==="string"&&id).slice(0,500):[];
+    if(!ids.length){fout.push(nr+": bronregels ontbreken");return;}
+    gezien[x.id]=1;
+    const snap=Array.isArray(x.sourceSnapshot)?x.sourceSnapshot.slice(0,500).filter(s=>s&&ids.indexOf(s.id)>=0).map(s=>({
+      id:str(s.id,120),datum:isDatum(s.datum)?s.datum:x.sourceDate,start:str(s.start,5),eind:s.eind?str(s.eind,5):null,
+      dossierId:s.dossierId?str(s.dossierId,120):null,code:s.code?str(s.code,60):null,
+      omschrijving:str(s.omschrijving,2000),uren:Math.max(0,+s.uren||0),gewijzigd:+s.gewijzigd||0})):[];
+    const lines=Array.isArray(x.targetLines)?x.targetLines.slice(0,500).filter(l=>l&&typeof l==="object").map(l=>({
+      werkcode:str(l.werkcode,120),omschrijving:str(l.omschrijving,2000),uren:Math.max(0,+l.uren||0)})):[];
+    const audit=Array.isArray(x.audit)?x.audit.slice(-50).filter(a=>a&&typeof a==="object").map(a=>({
+      type:str(a.type,60)||"audit",t:str(a.t,40)||new Date().toISOString(),
+      boekdatum:a.boekdatum&&isDatum(a.boekdatum)?a.boekdatum:null})):[];
+    goed.push({id:x.id,status:x.status,targetDossierId:str(x.targetDossierId,120),
+      targetNumberSnapshot:str(x.targetNumberSnapshot,60),targetNameSnapshot:str(x.targetNameSnapshot,200),
+      sourceDate:x.sourceDate,sourceRuleIds:ids,sourceFingerprint:str(x.sourceFingerprint,4000),sourceSnapshot:snap,
+      targetLines:lines,description:str(x.description,2000),hours:Math.max(0,+x.hours||0),
+      i7DossierId:x.i7DossierId?str(x.i7DossierId,120):null,i7NumberSnapshot:str(x.i7NumberSnapshot,60),
+      i7Code:str(x.i7Code,60),temporaryDescription:str(x.temporaryDescription,2000),
+      parkedAt:str(x.parkedAt,40),targetBookedAt:x.targetBookedAt?str(x.targetBookedAt,40):null,
+      targetBookedDate:x.targetBookedDate&&isDatum(x.targetBookedDate)?x.targetBookedDate:null,
+      doneAt:x.doneAt?str(x.doneAt,40):null,finalI7At:x.finalI7At?str(x.finalI7At,40):null,
+      finalI7Fingerprints:Array.isArray(x.finalI7Fingerprints)?x.finalI7Fingerprints
+        .filter(fp=>typeof fp==="string").slice(0,500):[],
+      updatedAt:str(x.updatedAt,40)||str(x.parkedAt,40)||new Date().toISOString(),audit});});
+  return{goed,fout};}
 function keurTemplates(arr){
   const goed=[],fout=[],gezien={};
   (Array.isArray(arr)?arr:[]).forEach((x,i)=>{
@@ -165,6 +204,7 @@ async function importFile(file){
         toast("Deze back-up komt uit een nieuwere versie van hourhound");return;}
       const D=keurDossiers(d.dossiers),R=keurRegels(d.regels);
       const T=keurTemplates(d.templates),C=keurCodes(d.codes);
+      const O=keurOverboekingen(d.overboekingen);
       const M=(d.meta&&typeof d.meta==="object")?d.meta:{};
       const let_op=[];
 
@@ -176,6 +216,12 @@ async function importFile(file){
       if(losgekoppeld)let_op.push("• "+losgekoppeld+
         " regel(s) verwijzen naar een dossier dat niet in het bestand staat; die "+
         "komen binnen zonder dossier en worden als blokkerende fout gemeld");
+      const bronBekend={};R.goed.forEach(r=>{bronBekend[r.id]=1;});
+      const overLos=O.goed.filter(o=>!bekend[o.targetDossierId]||
+        o.sourceRuleIds.some(id=>!bronBekend[id]));
+      if(overLos.length)let_op.push("• "+overLos.length+
+        " overboeking(en) verwijzen naar gewijzigde of ontbrekende brongegevens; "+
+        "die verschijnen na import als Gewijzigd — controleren");
 
       /* dagtotalen */
       const perDag={};
@@ -191,6 +237,7 @@ async function importFile(file){
       const ruwR=Array.isArray(d.regels)?d.regels:[];
       const ruwT=Array.isArray(d.templates)?d.templates:[];
       const ruwC=Array.isArray(d.codes)?d.codes:[];
+      const ruwO=Array.isArray(d.overboekingen)?d.overboekingen:[];
       if(!man)let_op.push("• geen integriteitsmanifest in dit bestand");
       else{
         const mis=[];
@@ -200,10 +247,12 @@ async function importFile(file){
         if(man.templates!==ruwT.length)mis.push("sjablonen "+man.templates+
           " ≠ "+ruwT.length);
         if(man.codes!==ruwC.length)mis.push("werkcodes "+man.codes+" ≠ "+ruwC.length);
+        if(sv>=9&&man.overboekingen!==ruwO.length)mis.push("overboekingen "+
+          man.overboekingen+" ≠ "+ruwO.length);
         if(mis.length)let_op.push("• het manifest komt niet overeen met de inhoud: "+
           mis.join(", "));
         if(man.checksum){
-          const eigen=checksumVan(ruwD,ruwR,ruwT,ruwC);
+          const eigen=checksumVan(ruwD,ruwR,ruwT,ruwC,sv>=9?ruwO:undefined);
           if(eigen!==man.checksum)
             let_op.push("• de checksum klopt niet ("+man.checksum+" ≠ "+eigen+
               ") — het bestand is na de export gewijzigd");}
@@ -212,7 +261,7 @@ async function importFile(file){
       if(!D.goed.some(x=>x.isI7))
         let_op.push("• geen i7-dossier — hourhound maakt er zelf een aan");
       [["dossier",D.fout],["tijdregel",R.fout],["sjabloon",T.fout],
-       ["werkcode",C.fout]].forEach(([naam,f])=>{
+       ["werkcode",C.fout],["overboeking",O.fout]].forEach(([naam,f])=>{
         if(f.length)let_op.push("• "+f.length+" "+naam+"(s) worden overgeslagen:\n    "+
           f.slice(0,4).join("\n    ")+(f.length>4?"\n    …":""));});
 
@@ -220,7 +269,8 @@ async function importFile(file){
       const kop="Back-up van "+(str(d.exported,40)||"onbekende datum")+
         "  ·  versie "+(sv||"onbekend")+"\n\n"+
         D.goed.length+" dossiers · "+R.goed.length+" tijdregels · "+
-        T.goed.length+" sjablonen · "+C.goed.length+" werkcodes\n"+
+        T.goed.length+" sjablonen · "+C.goed.length+" werkcodes · "+
+        O.goed.length+" overboekingen\n"+
         (let_op.length?"\n"+let_op.join("\n")+"\n":"");
       const herstel=confirm(kop+
         "\nOK = terugzetten: alles wordt vervangen door dit bestand."+
@@ -267,11 +317,12 @@ async function importFile(file){
           confirm("Het bestand bevat een terugkeerstapel met "+mStack.length+
             " geparkeerde taak(en).\n\nOK = ook terugzetten\nAnnuleren = leeg beginnen"):
           false;
-        await tx(["dossiers","regels","templates","codes","meta"],"readwrite",o=>{
+        await tx(["dossiers","regels","templates","codes","overboekingen","meta"],"readwrite",o=>{
           o.dossiers.clear();D.goed.forEach(x=>o.dossiers.put(x));
           o.regels.clear();R.goed.forEach(x=>o.regels.put(x));
           o.templates.clear();T.goed.forEach(x=>o.templates.put(x));
           o.codes.clear();C.goed.forEach(x=>o.codes.put(x));
+          o.overboekingen.clear();O.goed.forEach(x=>o.overboekingen.put(x));
           o.meta.delete("pending");
           if(hervatId)o.meta.put(hervatId,"running");else o.meta.delete("running");
           o.meta.put(neemStack?mStack:[],"stack");
@@ -286,24 +337,29 @@ async function importFile(file){
           (hervatId?" · lopende timer hervat":"")+
           (neemStack?" · stapel meegenomen":""));
       }else{
-        const hR={},hD={};
+        const hR={},hD={},hO={};
         alle.forEach(r=>{hR[r.id]=r;});
         dossiers.forEach(x=>{hD[x.id]=x;});
+        overboekingen.forEach(x=>{hO[x.id]=x;});
         const nR=R.goed.filter(r=>!hR[r.id]||(r.gewijzigd||0)>(hR[r.id].gewijzigd||0));
         const nD=D.goed.filter(x=>!hD[x.id]||(x.gewijzigd||0)>(hD[x.id].gewijzigd||0));
+        const nO=O.goed.filter(x=>!hO[x.id]||(x.updatedAt||"")>(hO[x.id].updatedAt||""));
         const overR=R.goed.length-nR.length,overD=D.goed.length-nD.length;
         if(!confirm("Samenvoegen:\n\n"+
           nR.length+" tijdregel(s) toevoegen of bijwerken ("+overR+
           " blijven ongewijzigd omdat de huidige versie nieuwer is)\n"+
           nD.length+" dossier(s) toevoegen of bijwerken ("+overD+" ongewijzigd)\n"+
+          nO.length+" overboeking(en) toevoegen of bijwerken\n"+
           T.goed.length+" sjablonen en "+C.goed.length+
           " werkcodes worden overschreven door het bestand\n\n"+
           "Instellingen, dagafsluitingen en boekstatus blijven zoals ze nu zijn."+
           "\n\nDoorgaan?"))return;
-        await tx(["dossiers","regels","templates","codes"],"readwrite",o=>{
+        await tx(["dossiers","regels","templates","codes","overboekingen"],"readwrite",o=>{
           nD.forEach(x=>o.dossiers.put(x));nR.forEach(x=>o.regels.put(x));
+          nO.forEach(x=>o.overboekingen.put(x));
           T.goed.forEach(x=>o.templates.put(x));C.goed.forEach(x=>o.codes.put(x));});
-        toast("Samengevoegd: "+nD.length+" dossiers, "+nR.length+" regels");}
+        toast("Samengevoegd: "+nD.length+" dossiers, "+nR.length+" regels, "+
+          nO.length+" overboekingen");}
       /* De ongedaan-stapel hoort bij de vorige dataset en mag daar niet overheen. */
       undoStack=[];
       await zorgVoorI7();await laadInstellingen();
@@ -319,6 +375,7 @@ $("b-export").onclick=async()=>{
     exported:new Date().toISOString(),
     dossiers:await getAll("dossiers"),regels:await getAll("regels"),
     templates:await getAll("templates"),codes:await getAll("codes"),
+    overboekingen:await getAll("overboekingen"),
     meta:{dagEinde:(await get("meta","dagEinde"))||{},
       dagAudit:(await get("meta","dagAudit"))||{},
       stack:(await get("meta","stack"))||[],
@@ -333,9 +390,10 @@ $("b-export").onclick=async()=>{
      Het logboek gaat bewust niet mee in de back-up.                             */
   dump.manifest={dossiers:dump.dossiers.length,regels:dump.regels.length,
     templates:dump.templates.length,codes:dump.codes.length,
+    overboekingen:dump.overboekingen.length,
     uren:Math.round(dump.regels.reduce((s,r)=>s+(+r.uren||0),0)*10)/10,
     open:dump.regels.filter(r=>!r.eind).length,
-    checksum:checksumVan(dump.dossiers,dump.regels,dump.templates,dump.codes)};
+    checksum:checksumVan(dump.dossiers,dump.regels,dump.templates,dump.codes,dump.overboekingen)};
   const url=URL.createObjectURL(new Blob([JSON.stringify(dump,null,2)],
     {type:"application/json"}));
   const a=document.createElement("a");a.href=url;a.download="hourhound-"+today()+".json";

@@ -58,6 +58,10 @@
        het ontbrekende aantal uren als i7/Diversen toegevoegd, onafhankelijk van gaten
        in de kloktijdlijn. Bij 8,0 uur of meer wordt niets toegevoegd. De automatische
        regel wordt ingetrokken als de dag heropent.
+   B6. Een gewone dossierregel die tijdelijk niet in Intapp kan worden geboekt, mag
+       na handmatige boeking op i7 · Commercieel in een aparte overboekingswachtrij.
+       Dat is geen DVN en geen echte dossierboeking. De latere boeking op het doel-
+       dossier maakt alleen de wachtrijregel af; de eerdere i7-boeking blijft staan.
 
    LOGBOEK
    L1. Standaard komen er uitsluitend technische gegevens in het logboek. Vrije tekst,
@@ -90,6 +94,7 @@ const NORM=8.0, VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 const autoAanvulTekort=totaalUren=>Math.max(0,Math.round((NORM-(+totaalUren||0))*10)/10);
 
 let db=null,dossiers=[],templates=[],i7codes=[],alle=[],regels=[],running=null,stack=[];
+let overboekingen=[];
 let viewDate=today(),weekAnchor=today(),tab="nu",liveId=null;
 let hiddenAt=null,rondMode="groep",dagEinde={},dagAudit={},snoozeTot=0,openDagenSnooze=0,oldRunSnooze=0;
 /* Centrale waarheid voor de actuele dagafsluitstatus. UI-code leest niet meer
@@ -108,7 +113,7 @@ const bc=("BroadcastChannel" in window)?new BroadcastChannel("hourhound"):null;
 
 /* ---------- opslag ---------- */
 function openDB(){return new Promise((res,rej)=>{
-  const r=indexedDB.open("hourhound",3);
+  const r=indexedDB.open("hourhound",4);
   r.onupgradeneeded=()=>{const d=r.result;
     if(!d.objectStoreNames.contains("days"))d.createObjectStore("days",{keyPath:"date"});
     if(!d.objectStoreNames.contains("matters"))d.createObjectStore("matters",{keyPath:"id"});
@@ -116,6 +121,8 @@ function openDB(){return new Promise((res,rej)=>{
     if(!d.objectStoreNames.contains("templates"))d.createObjectStore("templates",{keyPath:"id"});
     if(!d.objectStoreNames.contains("codes"))d.createObjectStore("codes",{keyPath:"code"});
     if(!d.objectStoreNames.contains("dossiers"))d.createObjectStore("dossiers",{keyPath:"id"});
+    if(!d.objectStoreNames.contains("overboekingen"))
+      d.createObjectStore("overboekingen",{keyPath:"id"});
     if(!d.objectStoreNames.contains("regels")){
       const s=d.createObjectStore("regels",{keyPath:"id"});s.createIndex("datum","datum");}};
   r.onsuccess=()=>{r.result.onversionchange=()=>{r.result.close();
@@ -136,7 +143,7 @@ const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 /* Eén transactie over regels, meta en dossiers. Elke toestandsovergang van de timer
    wordt hierin volledig geschreven of helemaal niet, en het geheugen wordt pas
    bijgewerkt nadat de transactie is geslaagd.                                    */
-const TXALL=["regels","meta","dossiers"];
+const TXALL=["regels","meta","dossiers","overboekingen"];
 function txAll(fn){return tx(TXALL,"readwrite",fn);}
 
 /* ---------- één wachtrij voor alle timerovergangen ----------
@@ -341,6 +348,43 @@ const isDvn=d=>!!d&&(d.voorlopig||d.dvn);
 const dvnDefinitiefI7=d=>!!d&&d.dvnDisposition==="final_i7";
 const isIndirect=d=>!!d&&(d.isI7||d.voorlopig||dvnDefinitiefI7(d));
 const dosVeld=d=>d?(d.nummer||d.naam):"";
+const overboekingOpen=o=>!!o&&o.status==="waiting";
+const bronIdsVan=o=>(o&&Array.isArray(o.sourceRuleIds)?o.sourceRuleIds:[])
+  .filter(Boolean).slice().sort();
+function overboekingVoorRow(row,datum){
+  const ids=(row&&Array.isArray(row.bron)?row.bron.map(b=>b.id):[]).filter(Boolean).sort();
+  if(!ids.length)return null;
+  return overboekingen.find(o=>{const bron=bronIdsVan(o);return overboekingOpen(o)&&
+    o.sourceDate===(datum||viewDate)&&ids.every(id=>bron.indexOf(id)>=0);})||null;}
+function overboekingWijzigingen(o){
+  if(!overboekingOpen(o))return[];
+  const uit=[],snap=Array.isArray(o.sourceSnapshot)?o.sourceSnapshot:[];
+  const act={};alle.forEach(r=>{act[r.id]=r;});
+  snap.forEach(s=>{
+    const r=act[s.id];
+    if(!r){uit.push("tijdregel verwijderd");return;}
+    if((r.gewijzigd||0)!==(s.gewijzigd||0))uit.push("tijdregel gewijzigd");
+    if(r.dossierId!==o.targetDossierId)uit.push("doeldossier van tijdregel gewijzigd");
+  });
+  if(snap.length!==bronIdsVan(o).length)uit.push("bronselectie gewijzigd");
+  const d=dosOf(o.targetDossierId);
+  if(!d)uit.push("doeldossier ontbreekt");
+  else{
+    if((d.nummer||"")!==(o.targetNumberSnapshot||""))uit.push("dossiernummer gewijzigd");
+    if((d.naam||"")!==(o.targetNameSnapshot||""))uit.push("dossiernaam gewijzigd");
+  }
+  return[...new Set(uit)];}
+function overboekingState(o){
+  if(!o)return"";
+  if(o.status==="done"||o.status==="final_i7")return o.status;
+  return overboekingWijzigingen(o).length?"needs_check":"waiting";}
+function overboekingStatusTekst(o){
+  const st=overboekingState(o);
+  if(st==="waiting")return"Wacht op dossierboeking";
+  if(st==="needs_check")return"Gewijzigd — controleren";
+  if(st==="done")return"Afgehandeld";
+  if(st==="final_i7")return"Definitief i7";
+  return"";}
 function dvnRegels(d){return d?alle.filter(r=>r.dossierId===d.id&&r.soort!=="pauze"):[];}
 function dvnResolvedDoel(d){return d&&d.dvnTo?dosOf(d.dvnTo):null;}
 function dvnResolvedNummer(d){

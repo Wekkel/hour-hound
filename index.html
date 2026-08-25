@@ -194,6 +194,11 @@
     <div id="dvn-intapp"></div>
   </section>
   <section>
+    <h2>Nog over te boeken naar dossier</h2>
+    <div class="hint" style="margin-bottom:.55rem">Gewone dossierregels die tijdelijk als i7 · Commercieel zijn geboekt. Boek ze later op het echte dossier op de actuele Intapp-datum. De eerdere i7-boeking blijft bewust staan. Als er geen dossierboeking meer komt, kies je Naar definitief i7.</div>
+    <div id="overboek-intapp"></div>
+  </section>
+  <section>
     <h2>Dossiers</h2>
     <div id="b-list"></div>
     <div style="display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.9rem">
@@ -429,9 +434,55 @@
       <button class="sm" id="bk-prev" title="Vorige regel">&#9664;</button>
       <button class="sm" id="bk-next" title="Volgende regel">&#9654;</button>
       <button class="go" id="bk-copy">Kopieer omschrijving <kbd>C</kbd></button>
+      <button class="sm ghost warn" id="bk-park">Tijdelijk niet boekbaar</button>
       <div class="spacer"></div>
       <button class="sm ghost" id="bk-tab">Hele tabel</button>
       <button id="bk-done">Geboekt &#183; volgende <kbd>&#9166;</kbd></button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="parkboek" aria-hidden="true">
+  <div class="mbox editbox" role="dialog" aria-modal="true" aria-labelledby="pb-title">
+    <div class="mtop">
+      <strong id="pb-title">Tijdelijk boeken op i7</strong>
+      <span class="pill wait">Wacht op dossierboeking</span>
+      <div class="spacer"></div>
+      <button class="sm ghost" id="pb-x" title="Sluiten">&#10005;</button>
+    </div>
+    <div class="mbody">
+      <div class="editmeta"><span class="cap">Echt doeldossier</span><strong id="pb-target">—</strong></div>
+      <div class="editmeta"><span class="cap">Nu invoeren in Intapp</span><strong id="pb-i7">—</strong><strong id="pb-hours">—</strong></div>
+      <span class="cap">Tijdelijke omschrijving in Intapp</span>
+      <div class="oms" id="pb-oms"></div>
+      <button class="sm" id="pb-copy" style="margin-top:.45rem">Kopieer tijdelijke omschrijving</button>
+      <div class="tw" style="margin-top:.7rem"><table><thead><tr><th>Tijd</th><th>Bronomschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody id="pb-source"></tbody></table></div>
+      <div class="closewarn on">Voer deze regel eerst handmatig in Intapp in op i7 met werkcode Commercieel. Bevestig daarna pas het parkeren. Hour Hound bewaart het echte doeldossier voor later.</div>
+    </div>
+    <div class="mfoot">
+      <button class="go" id="pb-save">Op i7 geboekt · parkeren</button>
+      <button class="sm ghost" id="pb-cancel">Annuleren</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="overboekpost" aria-hidden="true">
+  <div class="mbox editbox" role="dialog" aria-modal="true" aria-labelledby="op-title">
+    <div class="mtop">
+      <strong id="op-title">Boeken op dossier</strong>
+      <span class="pill" id="op-status">—</span>
+      <div class="spacer"></div>
+      <button class="sm ghost" id="op-x" title="Sluiten">&#10005;</button>
+    </div>
+    <div class="mbody">
+      <div class="editmeta" id="op-meta"></div>
+      <div class="tw" style="margin-top:.7rem"><table><thead><tr><th>Werkdatum</th><th>Werkcode</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody id="op-lines"></tbody></table></div>
+      <div class="editmeta" id="op-total"></div>
+      <div class="closewarn on">Boek de regels hierboven handmatig op het echte dossier met de actuele Intapp-datum. De oorspronkelijke werkdatum is alleen ter herkenning. Er wordt geen nieuwe Hour Hound-tijdregel gemaakt en de eerdere i7-boeking blijft staan.</div>
+    </div>
+    <div class="mfoot">
+      <button class="go" id="op-save">Op dossier geboekt · afhandelen</button>
+      <button class="sm ghost" id="op-cancel">Annuleren</button>
     </div>
   </div>
 </div>

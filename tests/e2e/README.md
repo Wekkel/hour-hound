@@ -36,6 +36,12 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
    recente taken onmiddellijk tonen. De gebruiker hoeft niet eerst `N` te drukken; een verborgen
    render mag geen `max-height: 0px` achterlaten.
 
+9. **Tijdelijk niet boekbaar dossier**
+   Een gewone dossierregel kan in de Intapp-wizard na bevestigde invoer op `i7 · Commercieel`
+   worden geparkeerd. Dag toont hem apart als geparkeerd; Beheer groepeert hem onder het echte
+   doeldossier. De latere bevestiging handelt alleen de wachtrij af, laat de HH-bronregel op het
+   gewone dossier staan en vraagt geen correctie van de eerdere i7-boeking.
+
 Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 
 ## Uitvoeren

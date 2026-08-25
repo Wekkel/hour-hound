@@ -76,9 +76,9 @@ function evaluateCorePure(){
   };
   vm.createContext(context);
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
-    `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{};\n`+
+    `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{};\n`+
     `return true;\n};\n`+
-    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp };`;
+    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp, overboekingState, overboekingStatusTekst, overboekingWijzigingen };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
   return { api: context.__hhPure, setState: context.__hhSetState, context };
 }
@@ -86,7 +86,7 @@ function evaluateCorePure(){
 function evaluateIoPure(){
   const { context } = evaluateCorePure();
   vm.runInContext(src.io+
-    '\n;globalThis.__hhIoPure = { keurDossiers, backupVersie: BACKUPVERSIE };',
+    '\n;globalThis.__hhIoPure = { keurDossiers, keurOverboekingen, backupVersie: BACKUPVERSIE };',
     context,{filename:'js/io.js'});
   return context.__hhIoPure;
 }
@@ -424,6 +424,41 @@ test('DVN kan bewust en traceerbaar naar definitief i7', () => {
   assertIncludes(src.core, '!dvnDefinitiefI7(d)', 'Definitief i7 mag niet in het DVN-deel van Nu blijven');
 });
 
+test('Patch H houdt gewone blokkade los van DVN en echte boekstatus', () => {
+  assertIncludes(src.core, 'd.createObjectStore("overboekingen"', 'Aparte IndexedDB-wachtrij ontbreekt');
+  assertIncludes(src.core, 'indexedDB.open("hourhound",4)', 'Databaseversie moet de wachtrij-store aanmaken');
+  assertIncludes(src.html, 'Nog over te boeken naar dossier', 'Beheer mist de overboekingswerkvoorraad');
+  assertIncludes(src.html, 'Tijdelijk niet boekbaar', 'Dagwizard mist de parkeeractie');
+  assertIncludes(src.html, 'Op i7 geboekt · parkeren', 'Expliciete tijdelijke i7-bevestiging ontbreekt');
+  assertIncludes(src.booking, 'put("overboekingen",o)', 'Parkeren moet apart van geboekt worden opgeslagen');
+  assertNotIncludes(src.booking, 'zetGeboekt(p.row.fp,true)', 'Parkeren mag niet als echte dossierboeking gelden');
+  assertIncludes(src.booking, 'geboekt · "+p+" geparkeerd · "+open+" open', 'Dagstatus moet drie aantallen tonen');
+  assertIncludes(src.html, 'Op dossier geboekt · afhandelen', 'Latere dossierbevestiging ontbreekt');
+  assertIncludes(src.views, 'targetBookedDate:today()', 'Latere boeking moet de actuele Intapp-datum vastleggen');
+  assertNotIncludes(src.views, 'Tijdelijke i7-boeking gecorrigeerd', 'Patch H mag geen i7-correctie eisen');
+});
+
+test('Patch H detecteert wijzigingen en heeft twee terminale routes', () => {
+  const { api, setState } = evaluateCorePure();
+  const doel={id:'d-doel',nummer:'304000010',naam:'Doeldossier'};
+  const regel={id:'r-over',datum:'2026-08-25',start:'09:00',eind:'10:00',
+    dossierId:doel.id,code:null,omschrijving:'werk',gewijzigd:10};
+  const wacht={id:'o-1',status:'waiting',targetDossierId:doel.id,
+    targetNumberSnapshot:doel.nummer,targetNameSnapshot:doel.naam,sourceDate:regel.datum,
+    sourceRuleIds:[regel.id],sourceSnapshot:[{id:regel.id,gewijzigd:10}]};
+  setState({dossiers:[doel],alle:[regel],overboekingen:[wacht]});
+  assertEq(api.overboekingState(wacht),'waiting','Ongewijzigde parkeerregel moet wachten');
+  regel.gewijzigd=11;
+  assertEq(api.overboekingState(wacht),'needs_check','Gewijzigde bronregel moet controle nodig maken');
+  assertEq(api.overboekingStatusTekst(wacht),'Gewijzigd — controleren','Gebruikerstekst moet wijziging benoemen');
+  assertEq(api.overboekingState({...wacht,status:'done'}),'done','Dossierboeking is terminale route één');
+  assertEq(api.overboekingState({...wacht,status:'final_i7'}),'final_i7','Definitief i7 is terminale route twee');
+  assertIncludes(src.views, 'async function maakOverboekingDefinitiefI7', 'Definitief-i7-overgang ontbreekt');
+  assertIncludes(src.views, 'dossierId:ind.id,code:com', 'Definitief i7 moet bronregels echt herclassificeren');
+  assertIncludes(src.views, 'rustig(rs.map(r=>r.id))', 'Lopende bronwrites moeten voor omzetting klaar zijn');
+  assertIncludes(src.views, 's.overboekingen.put(klaar)', 'Bronregels en terminale status moeten transactioneel schrijven');
+});
+
 test('hervatten van een recente taak start exact één nieuwe timerwissel', () => {
   const m = src.views.match(/async function hervat\(k\)\{[\s\S]*?\n\}/);
   assert(m, 'hervat() ontbreekt');
@@ -445,9 +480,9 @@ test('oude timer en editor volgen timerOp-contract', () => {
 });
 
 
-test('backup/import bewaart nieuwe dag- en DVN-metadata', () => {
+test('backup/import bewaart dag-, DVN- en overboekingsmetadata', () => {
   const io = evaluateIoPure();
-  assertEq(io.backupVersie, 8, 'Backupversie moet Patch G.1-metadata dekken');
+  assertEq(io.backupVersie, 9, 'Backupversie moet Patch H-wachtrij dekken');
   for (const key of ['dagAudit', 'dvnResolvedNr', 'dvnTo', 'dvnDisposition', 'dvnFinalI7At', 'dvnFinalI7RuleIds', 'dvnIntappStatus', 'dvnIntappAudit', 'dvnIntappPostedRuleIds', 'hersteld', 'herstelOrigineel']) {
     assertIncludes(src.io, key, `Backup/import mist ${key}`);
   }
@@ -469,6 +504,18 @@ test('backup/import bewaart nieuwe dag- en DVN-metadata', () => {
   }]).goed[0];
   assertEq(finalI7.dvnDisposition,'final_i7','Restore moet de terminale DVN-dispositie bewaren');
   assertEq(finalI7.dvnFinalI7RuleIds.join(','),'r-c','Restore moet de betrokken regel-id’s bewaren');
+  const over=io.keurOverboekingen([{id:'o-backup',status:'waiting',targetDossierId:'d-doel',
+    targetNumberSnapshot:'304000010',targetNameSnapshot:'Doel',sourceDate:'2026-08-25',
+    sourceRuleIds:['r-a'],sourceSnapshot:[{id:'r-a',datum:'2026-08-25',start:'09:00',
+      eind:'10:00',dossierId:'d-doel',omschrijving:'werk',uren:1,gewijzigd:12}],
+    targetLines:[{omschrijving:'werk',uren:1}],hours:1,i7DossierId:'d-i7',i7Code:'COM',
+    parkedAt:'2026-08-25T10:00:00.000Z',updatedAt:'2026-08-25T10:00:00.000Z',
+    audit:[{type:'op-i7-geboekt-geparkeerd',t:'2026-08-25T10:00:00.000Z'}]}]).goed[0];
+  assertEq(over.status,'waiting','Restore moet open overboekingsstatus bewaren');
+  assertEq(over.sourceRuleIds.join(','),'r-a','Restore moet gekoppelde bronregels bewaren');
+  assertEq(over.targetLines[0].uren,1,'Restore moet latere dossierboekingsregels bewaren');
+  assertIncludes(src.io, 'o.overboekingen.clear()', 'Volledig terugzetten moet de wachtrij vervangen');
+  assertIncludes(src.io, 'nO.forEach', 'Samenvoegen moet overboekingen meenemen');
 });
 
 test('service worker cacheert geen testbestanden', () => {

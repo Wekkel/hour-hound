@@ -143,6 +143,7 @@ $("h-ok").onclick=async()=>{
 async function herlaad(){
   dossiers=await getAll("dossiers");templates=await getAll("templates");
   i7codes=await getAll("codes");alle=await getAll("regels");
+  overboekingen=await getAll("overboekingen");
   stack=(await get("meta","stack"))||[];
   dagEinde=(await get("meta","dagEinde"))||{};
   dagAudit=(await get("meta","dagAudit"))||{};
@@ -209,6 +210,7 @@ async function boot(){
   setTimeout(controleerOudeLopendeTaak,0);
   L("app-start","dossiers "+dossiers.length+" · regels "+alle.length+
     " · sjablonen "+templates.length+" · i7-codes "+i7codes.length+
+    " · overboekingen "+overboekingen.filter(overboekingOpen).length+
     " · lopend "+(running?running.start:"nee"));
   if(tick)clearInterval(tick);
   tick=setInterval(()=>{middernachtCheck();checkWake();

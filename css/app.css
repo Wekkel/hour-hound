@@ -278,6 +278,11 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
 .pill{font:500 11px/1 var(--mono);border-radius:20px;padding:.28rem .55rem;
   border:1px solid var(--line);color:var(--soft)}
 .pill.ok{border-color:var(--moss);color:var(--moss)}
+.pill.wait{border-color:var(--amber);color:var(--amber)}
+.overcard{padding:.75rem 0;border-top:1px solid var(--line)}
+.overhead{display:flex;gap:.55rem;align-items:center;flex-wrap:wrap}
+.overhead strong{font-size:16px}
+.overactions{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;margin-top:.5rem}
 .probs div.pb.blok{color:var(--rust);font-weight:500}
 .hrow{display:grid;grid-template-columns:70px 1fr 92px 78px;gap:.5rem;
   align-items:center;padding:.5rem .35rem;border-top:1px solid var(--line);font-size:14px}

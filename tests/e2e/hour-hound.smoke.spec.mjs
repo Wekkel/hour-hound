@@ -17,7 +17,7 @@
 import { test, expect } from '@playwright/test';
 
 const DB_NAME = 'hourhound';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 function pad(n) { return String(n).padStart(2, '0'); }
 function ymd(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
@@ -53,6 +53,7 @@ async function openAndSeed(page, seed) {
         if (!d.objectStoreNames.contains('templates')) d.createObjectStore('templates', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('codes')) d.createObjectStore('codes', { keyPath: 'code' });
         if (!d.objectStoreNames.contains('dossiers')) d.createObjectStore('dossiers', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('overboekingen')) d.createObjectStore('overboekingen', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('regels')) {
           const s = d.createObjectStore('regels', { keyPath: 'id' });
           s.createIndex('datum', 'datum');
@@ -62,10 +63,11 @@ async function openAndSeed(page, seed) {
       req.onerror = () => reject(req.error);
     });
     await new Promise((resolve, reject) => {
-      const tx = db.transaction(['dossiers', 'regels', 'codes', 'meta'], 'readwrite');
+      const tx = db.transaction(['dossiers', 'regels', 'codes', 'overboekingen', 'meta'], 'readwrite');
       seedData.dossiers.forEach(row => tx.objectStore('dossiers').put(row));
       seedData.regels.forEach(row => tx.objectStore('regels').put(row));
       seedData.codes.forEach(row => tx.objectStore('codes').put(row));
+      (seedData.overboekingen || []).forEach(row => tx.objectStore('overboekingen').put(row));
       for (const [key, value] of Object.entries(seedData.meta || {})) {
         if (value === undefined || value === null) tx.objectStore('meta').delete(key);
         else tx.objectStore('meta').put(value, key);
@@ -489,4 +491,46 @@ test('DVN-nummer en Beheer-mutaties laten recente taken direct zichtbaar', async
   for (let i = 1; i <= 4; i++) await expect(page.locator('#recent')).toContainText(`recente taak ${i}`);
   const maxHeight = await page.locator('#recent').evaluate(el => parseFloat(el.style.maxHeight) || 0);
   expect(maxHeight).toBeGreaterThan(0);
+});
+
+test('parkeert geblokkeerd dossier en handelt later af zonder i7-correctie', async ({ page }) => {
+  const today = todayLocal(),stamp=Date.now();
+  await openAndSeed(page, {
+    dossiers: [i7Dossier,
+      { id:'d-target',nummer:'304000011',naam:'Tijdelijk geblokkeerd dossier',lang:'nl',codes:[],c:1 }],
+    regels: [{id:'r-park',datum:today,start:'09:00',eind:'10:00',dossierId:'d-target',
+      code:null,omschrijving:'advieswerk',soort:'werk',gemaakt:stamp,gewijzigd:stamp}],
+    codes:baseCodes,meta:{}
+  });
+
+  await page.locator('#tabs [data-v="dag"]').click();
+  await page.locator('#d-boek').click();
+  await expect(page.locator('#bk-park')).toBeVisible();
+  await page.locator('#bk-park').click();
+  await expect(page.locator('#parkboek')).toContainText('i7');
+  await expect(page.locator('#parkboek')).toContainText('Commercieel');
+  await expect(page.locator('#parkboek')).toContainText('304000011');
+  await page.locator('#pb-save').click();
+  await expect(page.locator('#d-boekstat')).toContainText('0 geboekt · 1 geparkeerd · 0 open');
+  await page.locator('#bk-close').click();
+
+  await page.locator('#tabs [data-v="beheer"]').click();
+  await expect(page.locator('#overboek-intapp')).toContainText('Tijdelijk geblokkeerd dossier');
+  await expect(page.locator('#overboek-intapp')).toContainText('Wacht op dossierboeking');
+  await page.locator('#overboek-intapp').getByRole('button',{name:'Boeken op dossier'}).click();
+  await expect(page.locator('#overboekpost')).toContainText('actuele Intapp-datum');
+  await expect(page.locator('#overboekpost')).toContainText('advieswerk');
+  await page.locator('#op-save').click();
+  await expect(page.locator('#overboek-intapp')).toContainText('Geen regels die nog naar een dossier moeten');
+
+  const state=await page.evaluate(async()=>{
+    const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('hourhound',4);
+      q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+    const read=store=>new Promise((resolve,reject)=>{const q=db.transaction(store).objectStore(store).getAll();
+      q.onsuccess=()=>resolve(q.result);q.onerror=()=>reject(q.error);});
+    const over=await read('overboekingen'),regels=await read('regels');db.close();return{over,regels};
+  });
+  expect(state.over[0].status).toBe('done');
+  expect(state.regels[0].dossierId).toBe('d-target');
+  expect(state.regels[0].code).toBeNull();
 });

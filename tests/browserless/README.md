@@ -85,3 +85,12 @@ dispositie bewaart auditgegevens en regel-id’s, houdt alle regels op de vaste 
 Commercieel en presenteert ze voortaan via het gewone i7-dossier. De DVN verdwijnt uit open
 DVN-acties en uit `(DVN Z)`, maar de uren blijven in het i7-totaal. Backupversie 8 bewaart
 deze beslissing en voorkomt dat een oudere importeur haar stilzwijgend verliest.
+
+### Patch H-contract
+
+Een gewone dossierregel die tijdelijk niet boekbaar is, wordt na handmatige invoer op
+`i7 · Commercieel` apart geparkeerd. Hij wordt niet DVN en niet als geboekt op het doeldossier
+gemarkeerd. De suite bewaakt de aparte IndexedDB-store, de drie dagstatusaantallen, terugval naar
+`Gewijzigd — controleren`, de latere dossierboeking zonder i7-correctie en de alternatieve
+terminale omzetting van de HH-bronregels naar definitief i7. Backupversie 9 neemt deze wachtrij
+mee bij export, terugzetten en samenvoegen.
