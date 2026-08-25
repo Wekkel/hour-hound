@@ -38,6 +38,7 @@ const src = {
   overbookingDomain: read('js/domain/overbooking.js'),
   storage: read('js/storage/indexeddb.js'),
   admin: read('js/services/admin.js'),
+  dayRules: read('js/services/day-rules.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
@@ -94,6 +95,7 @@ function evaluateCorePure(){
   vm.runInContext(src.overbookingDomain, context, { filename: 'js/domain/overbooking.js' });
   vm.runInContext(src.storage, context, { filename: 'js/storage/indexeddb.js' });
   vm.runInContext(src.admin, context, { filename: 'js/services/admin.js' });
+  vm.runInContext(src.dayRules, context, { filename: 'js/services/day-rules.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
     `return true;\n};\n`+
@@ -124,6 +126,17 @@ function evaluateAdmin(){
   for(const [name,code] of [['hh',src.hh],['time',src.time],
     ['booking',src.bookingDomain],['dvn',src.dvnDomain],
     ['overbooking',src.overbookingDomain],['storage',src.storage],['admin',src.admin]])
+    vm.runInContext(code,context,{filename:`js/${name}.js`});
+  return context.HH;
+}
+
+function evaluateDayRules(){
+  const context={console,setTimeout,clearTimeout,queueMicrotask};
+  vm.createContext(context);
+  for(const [name,code] of [['hh',src.hh],['domain/time',src.time],
+    ['domain/booking',src.bookingDomain],['domain/dvn',src.dvnDomain],
+    ['domain/overbooking',src.overbookingDomain],['storage/indexeddb',src.storage],
+    ['services/day-rules',src.dayRules]])
     vm.runInContext(code,context,{filename:`js/${name}.js`});
   return context.HH;
 }
@@ -180,6 +193,7 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/domain/overbooking.js',
     'js/storage/indexeddb.js',
     'js/services/admin.js',
+    'js/services/day-rules.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
@@ -460,6 +474,115 @@ test('administratieve UI-adapters schrijven niet meer rechtstreeks naar opslag',
   }
 });
 
+test('dagregelservice bewaart waarschuwingen, DVN-terugval en undo-soort atomair', async() => {
+  const HH=evaluateDayRules(),service=HH.services.dayRules,gateway=HH.storage.indexedDB;
+  const db=fakeDatabase();gateway.use(db);
+  const dossier={id:'dvn',nummer:'304000001',naam:'DVN',dvn:true,
+    dvnIntappStatus:'posted',dvnIntappAudit:[]};
+  const rule={id:'r1',datum:'2026-08-25',start:'09:00',eind:'10:00',dossierId:'dvn',
+    code:'COM',omschrijving:'Werk',uren:1,urenHand:false,soort:'werk',gewijzigd:1};
+  const changed={...rule,eind:'10:30',uren:1.5};
+  const common={before:rule,rule:changed,rules:[rule],dossiers:[dossier],overbookings:[],
+    runningId:null,isBooked:true,bookingContext:{runningId:null,today:'2026-08-25',nowHM:'11:00'},
+    waitForRules:()=>Promise.resolve(),nowTime:'11:00',nowMs:2,nowIso:'nu'};
+  const blocked=await service.editRule(common);
+  assertEq(blocked.error,'confirmation_required',
+    'Een geboekte of posted regel mag niet zonder bewuste bevestiging wijzigen');
+  assert(blocked.warnings.includes('dvn_posted')&&blocked.warnings.includes('booked'),
+    'Administratieve waarschuwingen moeten centraal uit de service komen');
+  assertEq(db.calls.filter(call=>call.op==='transaction').length,0,
+    'Een onbevestigde mutatie mag IndexedDB niet openen');
+  const edited=await service.editRule({...common,confirmedWarnings:true});
+  assertEq(edited.dossiers[0].dvnIntappStatus,'needs_check',
+    'Wijzigen moet een posted DVN in dezelfde transactie terugzetten');
+  assertEq(edited.undo.kind,'data','Een gewone regelbewerking blijft gegevens-undo');
+  const runningEdit=await service.editRule({...common,rules:[rule],runningId:rule.id,
+    rule:{...changed,eind:'10:30'},confirmedWarnings:true,nowMs:3});
+  assertEq(runningEdit.undo.kind,'timer',
+    'Een editoractie die de lopende timer stopt moet timer-undo opleveren');
+
+  const parked={id:'o1',status:'waiting',sourceRuleIds:[rule.id]};
+  const before=db.calls.filter(call=>call.op==='transaction').length;
+  const refused=await service.deleteRule({rule,rules:[rule],dossiers:[dossier],
+    overbookings:[parked],runningId:null,nowMs:4,nowIso:'later'});
+  assertEq(refused.error,'parked_rule','Een geparkeerde bronregel mag niet worden verwijderd');
+  assertEq(db.calls.filter(call=>call.op==='transaction').length,before,
+    'Bescherming van een geparkeerde bronregel moet vóór IndexedDB gelden');
+
+  const failed=fakeDatabase({}, {fail:true});gateway.use(failed);
+  const sourceBefore=JSON.stringify({rule,dossier});let rejected=false;
+  try{await service.editRule({...common,confirmedWarnings:true,nowMs:5});}
+  catch(error){rejected=true;}
+  assert(rejected,'Een geïnjecteerde dagregel-writefout moet afwijzen');
+  assertEq(JSON.stringify({rule,dossier}),sourceBefore,
+    'Een databasefout mag regel en DVN niet vooraf in het geheugen muteren');
+});
+
+test('dagservice sluit, vult exact aan en heropent vanuit één opgeslagen dagstaat', async() => {
+  const HH=evaluateDayRules(),service=HH.services.dayRules,gateway=HH.storage.indexedDB;
+  const db=fakeDatabase();gateway.use(db);
+  const date='2026-08-25',rule={id:'r1',datum:date,start:'09:00',eind:'14:54',
+    dossierId:'d1',omschrijving:'Werk',uren:5.9,urenHand:true,soort:'werk'};
+  const closed=await service.closeDay({date,end:'17:00',rules:[rule],dossiers:[{id:'d1'}],
+    overbookings:[],runningId:null,dayEnds:{},dayAudit:{},stack:[],totalBefore:5.9,
+    bookingContext:{runningId:null,today:date,nowHM:'17:00'},nowMs:1,nowIso:'sluit'});
+  assertEq(closed.dayEnds[date],'17:00','Afsluiten moet de centrale dageindtijd schrijven');
+  assertEq(closed.dayAudit[date].events[0].type,'gesloten','Afsluiten moet dagaudit schrijven');
+
+  const i7={id:'i7',isI7:true,naam:'Indirect'};
+  const fillInput={date,isWorkday:true,dayEnds:closed.dayEnds,dayAudit:closed.dayAudit,
+    dayEnd:'17:00',rules:[rule],dossiers:[{id:'d1'},i7],overbookings:[],runningId:null,
+    i7Dossier:i7,code:'ADM',currentTotal:5.9,
+    bookingContext:{runningId:null,today:date,nowHM:'17:00'},id:'fill',batchId:'batch',
+    nowMs:2,nowIso:'vul',waitForRules:()=>Promise.resolve()};
+  const filled=await service.autoFillDay(fillInput);
+  assertEq(filled.rule.uren,2.1,'5,9 uur moet exact 2,1 uur Diversen toevoegen');
+  assertEq(filled.rule.start,filled.rule.eind,
+    'Administratieve aanvulling mag geen fictief tijdvak suggereren');
+  assertEq(filled.finalTotal,8,'De opgeslagen aanvulactie moet exact op 8,0 uur uitkomen');
+  assertEq(filled.undo.kind,'data','Auto-aanvullen blijft gegevens-undo');
+
+  const reopened=await service.reopenDay({date,removeAutomatic:true,
+    rules:[rule,filled.rule],dossiers:[{id:'d1'},i7],overbookings:[],runningId:null,
+    dayEnds:closed.dayEnds,dayAudit:filled.dayAudit,nowMs:3,nowIso:'heropen'});
+  assert(!Object.prototype.hasOwnProperty.call(reopened.dayEnds,date),
+    'Heropenen moet dezelfde centrale dageindtijd verwijderen');
+  assertEq(reopened.removedRules[0].id,'fill',
+    'Heropenen met keuze 1 moet de automatische regel verwijderen');
+  assertEq(reopened.dayAudit[date].events.at(-1).type,'heropend',
+    'Open-dagenbanner, Dag-status en audit moeten dezelfde heropenstatus lezen');
+
+  const transactions=db.calls.filter(call=>call.op==='transaction').length;
+  const weekend=service.planAutoFill({...fillInput,date:'2026-08-23',isWorkday:false});
+  assertEq(weekend.error,'weekend','Weekend mag geen 8-uursaanvulling plannen');
+  assertEq(db.calls.filter(call=>call.op==='transaction').length,transactions,
+    'Een geblokkeerde weekendaanvulling mag niets schrijven');
+});
+
+test('Dag-UI is alleen adapter voor dag- en regelmutaties', () => {
+  const slice=(start,end)=>{const a=src.views.indexOf(start),b=src.views.indexOf(end,a+1);
+    assert(a>=0&&b>a,`Workflowgrens ontbreekt: ${start}`);return src.views.slice(a,b);};
+  const workflows=[
+    [slice('async function sluitWerkdag','/* ---------- bewuste regelbewerking'),'dayRuleServices.closeDay'],
+    [slice('function openRegelEditor','function controleerOudeLopendeTaak'),'dayRuleServices.editRule'],
+    [slice('async function vulAanTot8','async function heropenWerkdag'),'dayRuleServices.autoFillDay'],
+    [slice('async function heropenWerkdag','$("d-fill").onclick'),'dayRuleServices.reopenDay'],
+    [slice('async function maakLopend','$("d-prev").onclick'),'dayRuleServices.reopenRule'],
+    [slice('$("d-table").addEventListener','/* De enige manier'),'dayRuleServices.deleteRule']
+  ];
+  for(const [body,serviceCall] of workflows){
+    assertIncludes(body,serviceCall,`${serviceCall} ontbreekt in de UI-adapter`);
+    for(const forbidden of ['await txAll(','await tx(','o.regels.put','o.regels.delete',
+      'o.meta.put','o.meta.delete'])assertNotIncludes(body,forbidden,
+        `${serviceCall} mag niet rechtstreeks regels of dagmetadata schrijven`);
+  }
+  assertIncludes(src.views,'dayRuleServices.addRule','Handmatig toevoegen moet ook via de service');
+  assertNotIncludes(src.dayRules,'document','De dagservice mag de DOM niet lezen');
+  assertNotIncludes(src.dayRules,'confirm(','Bevestigingen blijven eigendom van de UI');
+  assertNotIncludes(src.dayRules,'toast(','Meldingen blijven eigendom van de UI');
+  assertNotIncludes(src.dayRules,'Date.now','Klokken moeten expliciet worden geïnjecteerd');
+});
+
 test('DVN-domein houdt classificatie, resolutie en audit puur', () => {
   const context={};vm.createContext(context);
   vm.runInContext(src.hh,context,{filename:'js/hh.js'});
@@ -662,8 +785,8 @@ test('weekenddagen vallen centraal buiten afsluitplicht en 8-uursaanvulling', ()
     'Open-dagdetectie moet de centrale werkdagdefinitie gebruiken');
   assertIncludes(src.views, 'function dagTekort(datum){return werkdag(datum)?',
     'Dagtekort moet voor weekenddagen centraal nul zijn');
-  assertIncludes(src.views, 'if(!werkdag(viewDate))return{fout:"Weekenddagen hebben geen 8-uursaanvulling"}',
-    'Het aanvulplan moet weekendaanvulling blokkeren');
+  assertIncludes(src.dayRules, 'if(!input.isWorkday)return fail("weekend")',
+    'De mutatieservice moet weekendaanvulling blokkeren');
   assertIncludes(src.views, 'if(!gesloten){\n    if(isWerkdag)',
     'De Dag-weergave mag voor een open weekenddag geen afsluitactie tonen');
   assertIncludes(src.views, 'const isWerkdag=werkdag(ds),tekort=isWerkdag?',
@@ -871,7 +994,10 @@ test('modal/sheet staat globale sneltoetsen niet toe', () => {
 test('dagafsluiting gebruikt expliciete sheet en auditvelden', () => {
   assertIncludes(src.html, 'id="dayclose"', 'Dagafsluitsheet ontbreekt');
   assertIncludes(src.views, 'function dagAfsluitKeuze', 'Dagafsluitkeuze moet via sheet lopen');
-  assertIncludes(src.views, 'auditDag(datum,"gesloten"', 'Dagafsluiting moet audit schrijven');
+  assertIncludes(src.dayRules, 'dayAuditAfter(input.dayAudit,input.date,"gesloten"',
+    'Dagafsluitservice moet audit schrijven');
+  assertIncludes(src.views, 'dayRuleServices.closeDay',
+    'De afsluitsheet moet de dagservice aanroepen');
   assertIncludes(src.views, 'function heropenWerkdag', 'Heropenfunctie ontbreekt');
   assertIncludes(src.views, 'autoAanvulRegels', 'Heropenen moet automatische aanvulregels kennen');
 });
@@ -907,14 +1033,14 @@ test('dagafsluitstatus heeft één centrale bron voor open en gesloten dagen', (
 test('auto-aanvullen is administratief en niet afhankelijk van tijdvakken', () => {
   assertIncludes(src.core, 'administratieve totaalaanvulling',
     'Productcontract voor administratieve aanvulling ontbreekt');
-  assertIncludes(src.views, 'urenHand:true',
+  assertIncludes(src.dayRules, 'uren:shortfall,urenHand:true',
     'Automatische Diversen-regel moet exact handmatig aantal uren dragen');
-  assertIncludes(src.views, 'const tekort=autoAanvulTekort(nu)',
+  assertIncludes(src.dayRules, 'const shortfall=booking.autoFillShortfall(current)',
     'Aanvulling moet rechtstreeks uit het tekort tot 8,0 worden berekend');
   for (const forbidden of ['aanvulGaten', 'grootsteBlokTotNorm', 'Welke gaten wil je vullen?', 'vrije tijd om tot']) {
     assertNotIncludes(src.views, forbidden, `Auto-aanvullen mag niet meer afhankelijk zijn van tijdvakken: ${forbidden}`);
   }
-  assertIncludes(src.views, 'Er was al "+uu(plan.nu)+" uur verantwoord. Er is daarom geen Diversen toegevoegd.',
+  assertIncludes(src.views, 'Er was al "+uu(plan.currentTotal)+" uur verantwoord. Er is daarom geen Diversen toegevoegd.',
     'Scenario 8,0 uur of meer moet expliciet melden dat niets is toegevoegd');
   assertIncludes(src.views, 'Hour Hound heeft "+uu(extra)+',
     'Scenario onder 8,0 uur moet expliciet melden hoeveel Diversen is toegevoegd');
@@ -976,9 +1102,9 @@ test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', ()
   assertIncludes(src.core, 'function dvnPutIfPosted', 'Gedeelde posted-DVN-terugval ontbreekt');
   assertIncludes(src.core, '"posted"', 'DVN posted-status ontbreekt');
   assertIncludes(src.core, '"needs_check"', 'DVN controle-nodig status ontbreekt');
-  assertIncludes(src.views, 'tijdregel gewijzigd', 'Bewerken van posted DVN-regel moet controle nodig maken');
-  assertIncludes(src.views, 'tijdregel verwijderd', 'Verwijderen van posted DVN-regel moet controle nodig maken');
-  assertIncludes(src.views, 'tijdregel opnieuw lopend gemaakt', 'Opnieuw lopend maken moet controle nodig maken');
+  assertIncludes(src.dayRules, '"tijdregel gewijzigd"', 'Bewerken van posted DVN-regel moet controle nodig maken');
+  assertIncludes(src.dayRules, '"tijdregel verwijderd"', 'Verwijderen van posted DVN-regel moet controle nodig maken');
+  assertIncludes(src.dayRules, '"tijdregel opnieuw lopend gemaakt"', 'Opnieuw lopend maken moet controle nodig maken');
   assertIncludes(src.admin, 'dossiernummer aangepast',
     'Dossiernummerwijziging na posted moet controle nodig maken');
   assertIncludes(src.timer, 'dvnPutIfPosted', 'Timerpaden moeten posted DVN via de gedeelde helper terugzetten');

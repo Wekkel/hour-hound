@@ -137,3 +137,21 @@ invoerobjecten niet vooraf worden gemuteerd. `done` en `final_i7` blijven termin
 bronregels blokkeren dossierafhandeling totdat de opgeslagen gegevens zijn ververst. Afhandelen op
 het dossier schrijft uitsluitend wachtrijstatus en boekfingerprints: de eerdere i7-boeking en de
 oorspronkelijke Hour Hound-regels blijven daarbij onaangeroerd.
+
+### Patch O-contract
+
+`js/services/day-rules.js` bezit de Dag-mutaties: tijdregel toevoegen, bewerken, verwijderen en
+opnieuw laten lopen, plus werkdag afsluiten, administratief aanvullen en heropenen. `views.js`
+verzamelt alleen invoer en bevestiging en past na een geslaagde servicecall de geretourneerde
+geheugeneffecten toe. De service ontvangt klok, dagstatus, regels, dossiers en wachtrij expliciet;
+zij kent geen DOM, meldingen of impliciete `Date.now()`.
+
+De regressiesuite bewaakt dat een gewone bewerking gegevens-undo blijft en dat verwijderen of
+stoppen van de lopende regel timer-undo gebruikt. Posted DVN-regels vallen binnen dezelfde
+transactie terug naar `needs_check`. Geparkeerde bronregels kunnen niet worden verwijderd;
+bewust bewerken of opnieuw laten lopen levert eerst administratieve waarschuwingsmetadata.
+
+Dagafsluiting, open-dagenbanner, Dag-status en audit blijven één combinatie van `dagEinde` en
+`dagAudit` lezen. Auto-aanvullen blijft beperkt tot afgesloten werkdagen, maakt geen fictief
+tijdvak en vult 5,9 uur exact met 2,1 uur aan. Heropenen kan automatische regels volgens de
+bestaande keuze verwijderen of laten staan; een weekend krijgt nooit een 8-uursaanvulling.

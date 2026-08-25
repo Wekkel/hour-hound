@@ -259,3 +259,25 @@ Geef services geen DOM, `confirm`, `toast` of Nederlandse validatiemeldingen. La
 foutcodes retourneren en houd de vertaling naar gebruikerstekst in de presentatieadapter. Dat maakt
 foutinjectie mogelijk zonder de UI na te bouwen en voorkomt dat opslagfouten al zichtbare
 geheugenmutaties achterlaten.
+
+## 22. Dagmetadata en tijdregels vormen samen één mutatiegrens
+
+Een Dag-actie schrijft vaak meer dan de zichtbare regel. Afsluiten kan tegelijk een lopende regel
+stoppen en `running`, `stack`, `dagEinde` en `dagAudit` wijzigen. Heropenen kan dageinde en audit
+wijzigen én automatische regels verwijderen. Auto-aanvullen schrijft een herkenbare regel en een
+audit-event. Deze writes mogen niet over losse UI-handlers of transacties worden verdeeld.
+
+Laat daarom de dag-/regelservice de actuele toestand opnieuw valideren en één volledige transactie
+bezitten. De UI mag een regelkopie voorbereiden en een keuze bevestigen, maar werkt geheugen pas bij
+na succes. Geef de service tijd, datum, ids en timestamps expliciet; een service die zelf de DOM,
+`Date.now()` of een globale timer leest is niet betrouwbaar browserloos te testen.
+
+Administratieve gevolgen horen bij dezelfde mutatie. Bepaal in de service of een regel automatisch,
+geboekt, posted-DVN of geparkeerd is. Een posted DVN gaat atomair naar `needs_check`; een open
+geparkeerde bronregel blijft tegen verwijderen beschermd. Houd undo semantisch gescheiden: zuivere
+recordwijzigingen leveren gegevens-undo, maar een actie die `meta.running` verandert levert
+timer-undo of maakt oudere timer-undo bewust ongeldig.
+
+Gebruik voor dagstatus steeds hetzelfde paar `dagEinde` en `dagAudit`. Als afsluiten, heropenen,
+banner, Dag-tab en audit ieder een eigen afleiding maken, kan het scherm na één succesvolle write
+zichzelf tegenspreken. Een service-resultaat retourneert daarom beide nieuwe metadataobjecten samen.

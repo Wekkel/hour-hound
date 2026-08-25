@@ -80,7 +80,7 @@ const {pad,uu,ymd,today,nowHM,hm2m,m2hm,dmy,parseD,addD,dagLabel,kortDag,
   weekend,werkdag,schoon}=HH.domain.time;
 const bookingDomain=HH.domain.booking;
 const dvnDomain=HH.domain.dvn,overbookingDomain=HH.domain.overbooking;
-const adminServices=HH.services.admin;
+const adminServices=HH.services.admin,dayRuleServices=HH.services.dayRules;
 const adminFoutTekst={invalid_dvn:"Deze DVN is niet meer beschikbaar",
   number_required:"Vul eerst een dossiernummer in",
   target_is_dvn:"Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.",
@@ -97,6 +97,34 @@ function meldAdminFout(result,fallback){
   if(result&&result.ok)return false;
   toast(adminFoutTekst[result&&result.error]||fallback||"Administratieve actie niet uitgevoerd");
   return true;}
+const dagRegelFoutTekst={rule_missing:"De tijdregel ontbreekt",
+  rule_changed:"De tijdregel is intussen gewijzigd — open hem opnieuw",
+  invalid_start:"Ongeldige starttijd",invalid_end:"Ongeldige eindtijd",
+  end_before_start:"De eindtijd ligt vóór de starttijd",
+  stored_rule_requires_end:"Een opgeslagen regel moet een eindtijd hebben",
+  running_start_future:"De starttijd van een lopende regel kan niet in de toekomst liggen",
+  start_future:"De starttijd ligt in de toekomst",not_today:"Alleen een regel van vandaag kan lopen",
+  day_limit:"Dat zou meer dan 24,0 uur op één dag maken",
+  confirmation_required:"Bevestig eerst de administratieve gevolgen",
+  parked_rule:"Deze regel wacht nog op dossierboeking — rond de overboeking eerst af onder Beheer",
+  day_closed:"Deze werkdag is al afgesloten",day_empty:"Deze dag heeft geen tijdregels",
+  weekend:"Weekenddagen hebben geen 8-uursaanvulling",
+  day_open:"Sluit deze werkdag eerst af met E",day_open_already:"Deze dag is al open",
+  timer_running:"Sluit eerst de lopende regel af met E",
+  i7_missing:"Geen i7-dossier — maak er eerst een aan onder Beheer",
+  admin_code_missing:"Werkcode Praktijkorganisatie/administratie ontbreekt — herstel werkcodes.json eerst",
+  unreliable_total:"Aanvullen kon het dagtotaal niet betrouwbaar op 8,0 uur zetten"};
+function meldDagRegelFout(result,fallback){
+  if(result&&result.ok)return false;
+  toast(dagRegelFoutTekst[result&&result.error]||fallback||"Dagactie niet uitgevoerd");
+  return true;}
+function pasMutatieUndoToe(undo){
+  if(!undo)return;
+  if(undo.kind==="timer")undoTimer(undo.label,undo.rules,{weg:undo.remove,
+    herstelRunning:undo.restoreRunning,verwachtRunning:undo.expectedRunning,
+    verwacht:(undo.expected||[]).map(item=>({id:item.id,gewijzigd:item.modified}))});
+  else undoData(undo.label,undo.rules,{weg:undo.remove});
+}
 function vervangOverboekingenGeheugen(updated){
   const map=new Map((updated||[]).map(record=>[record.id,record]));
   overboekingen=overboekingen.map(record=>map.get(record.id)||record);

@@ -59,6 +59,12 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
     bestaande dossiers of regels te vervangen. Een DVN met alleen de oude marker
     `voorlopig: true` blijft in de DVN-werkvoorraad staan en behoudt zijn gekoppelde uren.
 
+13. **Dag- en regelmutaties via één servicelaag**
+    De bestaande browserflows voor bewerken, verwijderen, opnieuw laten lopen, afsluiten,
+    auto-aanvullen en heropenen blijven uiterlijk gelijk. Zij bewaken daarmee dat de nieuwe
+    servicelaag na een echte IndexedDB-transactie dezelfde Dag-status, audit, DVN-terugval,
+    overboekingsbescherming en undo-categorie aan de UI teruggeeft.
+
 Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 
 ## Uitvoeren
