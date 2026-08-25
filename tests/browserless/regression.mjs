@@ -33,6 +33,7 @@ const src = {
   css: read('css/app.css'),
   hh: read('js/hh.js'),
   time: read('js/domain/time.js'),
+  bookingDomain: read('js/domain/booking.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
@@ -84,31 +85,17 @@ function evaluateCorePure(){
   vm.createContext(context);
   vm.runInContext(src.hh, context, { filename: 'js/hh.js' });
   vm.runInContext(src.time, context, { filename: 'js/domain/time.js' });
+  vm.runInContext(src.bookingDomain, context, { filename: 'js/domain/booking.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
     `return true;\n};\n`+
-    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp, overboekingOpenVoorRegel, overboekingVoorBronId, overboekingVoorRow, overboekingFingerprints, overboekingAfgerondVoorRow, overboekingState, overboekingStatusTekst, overboekingWijzigingen };`;
+    `globalThis.__hhPure = { hm2m, m2hm, uu, ymd, dmy, parseD, addD, weekend, werkdag, schoon, urenOf, ruweMin, eindOf, totaal, nuBreakdown, gapsFor, gapHours, takenVandaag, taakLabel, autoAanvulTekort, dagSluitStatus, isDvn, dvnDefinitiefI7, isIndirect, dvnRegels, dvnResolvedNummer, dvnIntappState, dvnStatusTekst, dvnSummaryStatus, dvnAuditAdd, markDvnControleNodig, dvnPutIfPosted, intappDossierInfo, codesFor, defaultCode, codeVoor, i7CodeOp, codeFout, sumVan, overboekingOpenVoorRegel, overboekingVoorBronId, overboekingVoorRow, overboekingFingerprints, overboekingAfgerondVoorRow, overboekingState, overboekingStatusTekst, overboekingWijzigingen };`;
   vm.runInContext(src.core + exportCode, context, { filename: 'js/core.js' });
-  /* sumVan() is pure maar staat zolang de app nog klassieke scripts gebruikt in
-     views.js. Laad alleen dat afgebakende productiefragment; zo testen we echte
-     aggregatie/fingerprints zonder alle DOM-eventhandlers te simuleren. */
-  const sumStart=src.views.indexOf('const normOms=');
-  const sumEnd=src.views.indexOf('\nfunction sumRows()',sumStart);
-  assert(sumStart>=0&&sumEnd>sumStart,'Pure sumVan-productiecode niet gevonden');
-  vm.runInContext(src.views.slice(sumStart,sumEnd)+
-    '\n;globalThis.__hhPure.sumVan=sumVan;',context,{filename:'js/views.sumVan.js'});
-  const foutStart=src.views.indexOf('function codeFout(');
-  const foutEnd=src.views.indexOf('\n/* Blokkerende fouten',foutStart);
-  assert(foutStart>=0&&foutEnd>foutStart,'Pure codeFout-productiecode niet gevonden');
-  vm.runInContext(src.views.slice(foutStart,foutEnd),context,{filename:'js/views.codeFout.js'});
   return { api: context.__hhPure, setState: context.__hhSetState, context };
 }
 
 function evaluateIoPure(){
   const { context } = evaluateCorePure();
-  const dagMax=(src.views.match(/const DAGMAX\s*=\s*[\d.]+;/)||[])[0];
-  assert(dagMax,'DAGMAX-productieconstante niet gevonden');
-  vm.runInContext(dagMax,context,{filename:'js/views.DAGMAX.js'});
   vm.runInContext(src.io+
     '\n;globalThis.__hhIoPure = { keurRegels, keurDossiers, keurOverboekingen, keurDagAudit, checksumVan, backupVersie: BACKUPVERSIE };',
     context,{filename:'js/io.js'});
@@ -117,8 +104,14 @@ function evaluateIoPure(){
 
 // 1. Algemene bronkwaliteit --------------------------------------------------
 test('alle klassieke JavaScriptbestanden blijven syntaxgeldig', () => {
-  for (const name of readdirSync(join(root, 'js')).filter(x => x.endsWith('.js')).sort()) {
-    const code = read(`js/${name}`);
+  const bestanden=[];
+  const bezoek=dir=>readdirSync(join(root,dir),{withFileTypes:true}).forEach(item=>{
+    const rel=`${dir}/${item.name}`;
+    if(item.isDirectory())bezoek(rel);else if(item.name.endsWith('.js'))bestanden.push(rel);
+  });
+  bezoek('js');
+  for (const name of bestanden.sort()) {
+    const code = read(name);
     new Function(code);
   }
 });
@@ -127,6 +120,7 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
   assertEq(scriptOrderFromHtml().join('\n'), [
     'js/hh.js',
     'js/domain/time.js',
+    'js/domain/booking.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
@@ -136,6 +130,77 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/booking.js',
     'js/app.js'
   ].join('\n'), 'Scriptvolgorde gewijzigd. Bij klassieke globals kan dat runtime breken.');
+});
+
+test('boekingsmodule berekent zonder globale runtime-state', () => {
+  const context={};vm.createContext(context);
+  vm.runInContext(src.hh,context,{filename:'js/hh.js'});
+  vm.runInContext(src.time,context,{filename:'js/domain/time.js'});
+  vm.runInContext(src.bookingDomain,context,{filename:'js/domain/booking.js'});
+  const api=context.HH.domain.booking;
+  assert(api&&Object.isFrozen(api),'HH.domain.booking moet bestaan en bevroren zijn');
+  assertEq(api.NORM,8,'Werkdagnorm moet in de domeinlaag staan');
+  assertEq(api.DAGMAX,24,'Maximaal dagtotaal moet in de domeinlaag staan');
+  const open={id:'open',datum:'2026-08-25',start:'09:00',eind:null,soort:'werk'};
+  assertEq(api.hoursOf(open,{runningId:'open',today:'2026-08-25',nowHM:'10:01'}),1.1,
+    'Lopende uren moeten alleen uit expliciete klokcontext volgen');
+  const dossier={id:'d1',nummer:'304000001',naam:'Dossier'};
+  const rows=api.aggregateIntapp([{...open,eind:'09:01',omschrijving:' Werk  ',gewijzigd:2}],{
+    roundingMode:'groep',getDossier:()=>dossier,
+    getIntappInfo:d=>({nummer:d.nummer,naam:d.naam,status:''}),
+    getCodeName:()=>'',hasCodeError:()=>false,getBoundaryId:()=>''
+  });
+  assertEq(rows.length,1,'Pure Intapp-aggregatie moet één groep maken');
+  assertEq(rows[0].u,0.1,'Pure Intapp-aggregatie moet per groep afronden');
+  assertIncludes(rows[0].fp,'|werk|0,1|groep|open:2',
+    'Vingerafdruk moet normalisatie, uren, modus en bronversie bevatten');
+  assertNotIncludes(src.bookingDomain,'document','Boekingsdomein mag de DOM niet lezen');
+  assertNotIncludes(src.bookingDomain,'indexedDB','Boekingsdomein mag geen opslag lezen');
+});
+
+test('boekingsmodule bewaart afronding, grenzen en dagvalidatie', () => {
+  const context={};vm.createContext(context);
+  vm.runInContext(src.hh,context,{filename:'js/hh.js'});
+  vm.runInContext(src.time,context,{filename:'js/domain/time.js'});
+  vm.runInContext(src.bookingDomain,context,{filename:'js/domain/booking.js'});
+  const api=context.HH.domain.booking,dossier={id:'d1',nummer:'304000001',naam:'Dossier'};
+  const regel=(id,start,eind,extra={})=>Object.assign({id,datum:'2026-08-25',start,eind,
+    dossierId:dossier.id,code:null,omschrijving:'zelfde werk',soort:'werk',gewijzigd:1},extra);
+  const regels=[regel('a','09:00','09:01'),regel('b','09:02','09:03')];
+  const opties=mode=>({roundingMode:mode,getDossier:()=>dossier,
+    getIntappInfo:d=>({nummer:d.nummer,naam:d.naam,status:''}),getCodeName:()=>'',
+    hasCodeError:()=>false,getBoundaryId:()=>''});
+  assertEq(api.aggregateIntapp(regels,opties('groep'))[0].u,0.1,
+    'Groepsafronding moet twee korte bronregels samen op 0,1 zetten');
+  assertEq(api.aggregateIntapp(regels,opties('regel'))[0].u,0.2,
+    'Regelafronding moet iedere korte bronregel afzonderlijk afronden');
+  const gesplitst=api.aggregateIntapp(regels,{...opties('groep'),getBoundaryId:r=>r.id});
+  assertEq(gesplitst.length,2,'Een expliciete lifecyclegrens moet aggregatie splitsen');
+  const problemen=api.validateDay([
+    regel('over-a','09:00','10:00'),regel('over-b','09:30','10:30'),
+    regel('hand','11:00','12:00',{urenHand:true,uren:0.2})
+  ],{today:'2026-08-25',nowHM:'17:00',getDossier:()=>dossier,isIndirect:()=>false,
+    hasCodeError:()=>false,isFixedCode:()=>false});
+  assert(problemen.some(p=>/overlapt/.test(p.tekst)),'Overlapwaarschuwing moet behouden blijven');
+  assert(problemen.some(p=>/handmatige uren wijken af/.test(p.tekst)),
+    'Afwijkende handmatige uren moeten waarschuwing blijven');
+  const vol=api.validateDay([regel('vol','00:00','23:59',{urenHand:true,uren:24.1})],{
+    today:'2026-08-25',nowHM:'23:59',getDossier:()=>dossier,isIndirect:()=>false,
+    hasCodeError:()=>false,isFixedCode:()=>false});
+  assert(vol.some(p=>p.blok&&/meer dan 24,0 uur/.test(p.tekst)),
+    'Meer dan 24,0 uur moet blokkerend blijven');
+});
+
+test('core en io zijn niet langer afhankelijk van berekeningen uit views', () => {
+  assertNotIncludes(src.views,'function sumVan(','Intapp-aggregatie mag niet meer in views.js staan');
+  assertNotIncludes(src.views,'const DAGMAX','Dagmaximum mag niet meer in views.js staan');
+  assertIncludes(src.core,'function sumVan(lijst)','Core moet via een dunne aggregatieadapter werken');
+  assertIncludes(src.views,'return bookingDomain.validateDay(regels,',
+    'Dagvalidatie moet via de pure boekingslaag lopen');
+  assertIncludes(src.core,'const {NORM,DAGMAX}=bookingDomain',
+    'Core en io moeten constanten uit de boekingslaag beschikbaar krijgen');
+  assertNotIncludes(src.core,'typeof sumVan===',
+    'Core mag geen later geladen views-helper meer optioneel proberen te vinden');
 });
 
 test('HH-bootstrap en tijdmodule vormen een expliciete pure grens', () => {
@@ -455,9 +520,9 @@ test('auto-aanvullen is administratief en niet afhankelijk van tijdvakken', () =
     'Scenario 8,0 uur of meer moet expliciet melden dat niets is toegevoegd');
   assertIncludes(src.views, 'Hour Hound heeft "+uu(extra)+',
     'Scenario onder 8,0 uur moet expliciet melden hoeveel Diversen is toegevoegd');
-  assertIncludes(src.views, '!r.autoAanvul&&r.urenHand',
+  assertIncludes(src.bookingDomain, '!r.autoAanvul&&r.urenHand',
     'Administratieve aanvulregel mag geen misleidende handmatige-urenwaarschuwing krijgen');
-  assertIncludes(src.views, 'regels.filter(r=>!r.autoAanvul&&hm2m(r.start)!=null)',
+  assertIncludes(src.bookingDomain, 'filter(r=>!r.autoAanvul&&time.hm2m(r.start)!=null)',
     'Administratieve aanvulregel mag geen overlapwaarschuwing veroorzaken');
 });
 test('oude lopende taak over datumgrens krijgt expliciete keuzes', () => {
@@ -645,7 +710,7 @@ test('brede H-regressie bewaakt modal, verwijdering, groepering en atomaire afha
     'Een bronregel in de open overboekingswachtrij mag niet verwijderbaar zijn');
   assertIncludes(src.views, 'rond de overboeking eerst af onder Beheer',
     'De verwijderblokkade moet de gebruiker naar de herstelplek verwijzen');
-  assertIncludes(src.views, 'const over=overboekingVoorBronId(r.id)',
+  assertIncludes(src.core, 'const over=overboekingVoorBronId(r.id)',
     'Aggregatie moet een overboekingslifecycle als eigen groeperingsgrens gebruiken');
   assertIncludes(src.views, 'tx(["overboekingen","meta"],"readwrite"',
     'Afhandelen en duurzame boekstatus moeten in één transactie worden opgeslagen');

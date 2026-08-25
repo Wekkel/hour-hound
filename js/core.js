@@ -78,8 +78,9 @@ const esc=s=>String(s==null?"":s).replace(/[&<>"']/g,c=>
    exact de functies uit de nieuwe pure domeinlaag; er is geen tweede implementatie. */
 const {pad,uu,ymd,today,nowHM,hm2m,m2hm,dmy,parseD,addD,dagLabel,kortDag,
   weekend,werkdag,schoon}=HH.domain.time;
-const NORM=8.0, VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
-const autoAanvulTekort=totaalUren=>Math.max(0,Math.round((NORM-(+totaalUren||0))*10)/10);
+const bookingDomain=HH.domain.booking;
+const {NORM,DAGMAX}=bookingDomain,VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
+const autoAanvulTekort=bookingDomain.autoFillShortfall;
 
 let db=null,dossiers=[],templates=[],i7codes=[],alle=[],regels=[],running=null,stack=[];
 let overboekingen=[];
@@ -370,7 +371,7 @@ function overboekingWijzigingen(o){
   });
   if(snap.length!==bronIdsVan(o).length)uit.push("bronselectie gewijzigd");
   const bron=bronIdsVan(o).map(id=>act[id]).filter(Boolean);
-  if(bron.length===bronIdsVan(o).length&&typeof sumVan==="function"){
+  if(bron.length===bronIdsVan(o).length){
     const oud=overboekingFingerprints(o).slice().sort();
     const huidig=sumVan(bron).map(x=>x.fp).sort();
     if(oud.length&&oud.join("\n")!==huidig.join("\n"))
@@ -456,6 +457,21 @@ function codesFor(d){
   if(isIndirect(d))return i7codes.map(c=>({code:c.code,naam:c.naam,fav:c.favoriet}));
   return (d.codes||[]).map(c=>({code:c.code,naam:c.naam}));}
 const codeNaam=(d,c)=>{if(!c)return"";const x=codesFor(d).find(k=>k.code===c);return x?x.naam:c;};
+function codeFout(d,r){
+  if(!d||!isIndirect(d))return false;
+  if(!r.code)return true;
+  if(!codesFor(d).some(c=>c.code===r.code))return true;
+  if(d.voorlopig||dvnDefinitiefI7(d)){const vast=defaultCode(d);return !vast||r.code!==vast;}
+  return false;}
+/* Adapter naar de pure Intapp-aggregatie. Alle runtimecontext wordt hier expliciet
+   verzameld; core.js is daardoor niet meer afhankelijk van views.js. */
+function sumVan(lijst){
+  return bookingDomain.aggregateIntapp(lijst,{
+    roundingMode:rondMode,runningId:running?running.id:null,today:today(),nowHM:nowHM(),
+    getDossier:dosOf,getIntappInfo:intappDossierInfo,getCodeName:codeNaam,
+    hasCodeError:codeFout,
+    getBoundaryId:r=>{const over=overboekingVoorBronId(r.id);return over?over.id:"";}
+  });}
 /* Een regel op i7 of op een dossier waarvan het nummer nog volgt móét een werkcode
    hebben; dat is geen vrije keuze van de gebruiker. Voor "dossier volgt nog" ligt de
    code bovendien vast op Commercieel. codeVoor() is de enige plek waar dat wordt
@@ -514,18 +530,12 @@ function naStart(){
   setTimeout(()=>$("l-omschr").focus(),30);}
 const geenCodes=()=>{
   toast("Er zijn nog geen i7-werkcodes — importeer werkcodes.json onder Beheer");};
-function eindOf(r){return r.eind||(running&&r.id===running.id?(r.datum===today()?nowHM():"23:59"):r.start);}
-function ruweMin(r){const a=hm2m(r.start),b=hm2m(eindOf(r));
-  if(a==null||b==null)return 1;return Math.max(1,b-a);}
-function urenOf(r){
-  if(r.soort==="pauze")return 0;
-  /* Een lopende regel telt altijd live door: handmatige uren zouden de teller
-     bevriezen en worden daarom genegeerd zolang de timer loopt.                */
-  if(r.urenHand&&r.uren&&!(running&&running.id===r.id))return r.uren;
-  return Math.ceil(ruweMin(r)/6)/10;}
-const pauzeUren=l=>l.filter(r=>r.soort==="pauze")
-  .reduce((s,r)=>s+Math.ceil(ruweMin(r)/6)/10,0);
-const totaal=l=>l.reduce((s,r)=>s+urenOf(r),0);
+const boekRekenContext=()=>({runningId:running?running.id:null,today:today(),nowHM:nowHM()});
+const eindOf=r=>bookingDomain.endOf(r,boekRekenContext());
+const ruweMin=r=>bookingDomain.rawMinutes(r,boekRekenContext());
+const urenOf=r=>bookingDomain.hoursOf(r,boekRekenContext());
+const pauzeUren=l=>bookingDomain.pauseHours(l,boekRekenContext());
+const totaal=l=>bookingDomain.totalHours(l,boekRekenContext());
 const vandaagRegels=()=>alle.filter(r=>r.datum===today());
 function nuBreakdown(lijst){
   const out={declarabel:0,i7:0,dvn:0};
@@ -538,22 +548,9 @@ function nuBreakdown(lijst){
   return out;
 }
 
-function gapsFor(list,datum){
-  const iv=list.filter(r=>hm2m(r.start)!=null)
-    .map(r=>[hm2m(r.start),Math.max(hm2m(r.start),hm2m(eindOf(r))||hm2m(r.start))])
-    .sort((a,b)=>a[0]-b[0]);
-  if(!iv.length)return[];
-  const mg=[iv[0].slice()];
-  for(let i=1;i<iv.length;i++){const l=mg[mg.length-1];
-    if(iv[i][0]<=l[1])l[1]=Math.max(l[1],iv[i][1]);else mg.push(iv[i].slice());}
-  const de=dagEinde[datum]!=null?hm2m(dagEinde[datum]):null;
-  const end=de!=null?Math.max(de,mg[mg.length-1][1])
-    :(datum===today()?hm2m(nowHM()):mg[mg.length-1][1]);
-  const out=[];
-  for(let i=0;i<mg.length-1;i++)if(mg[i+1][0]>mg[i][1])out.push([mg[i][1],mg[i+1][0]]);
-  const last=mg[mg.length-1][1];if(end>last)out.push([last,end]);
-  return out.filter(g=>g[1]-g[0]>=6);}
-const gapHours=g=>g.reduce((s,x)=>s+Math.ceil((x[1]-x[0])/6)/10,0);
+function gapsFor(list,datum){return bookingDomain.gapsFor(list,Object.assign(
+  boekRekenContext(),{date:datum,dayEnd:dagEinde[datum]!=null?dagEinde[datum]:null}));}
+const gapHours=bookingDomain.gapHours;
 
 function takenVandaag(){
   const map=new Map();

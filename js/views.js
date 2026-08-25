@@ -479,92 +479,17 @@ function verversDag(){
     "Beschikbaar nadat deze werkdag met E is afgesloten");
   bouwSum();boekStat();}
 
-const normOms=s=>String(s==null?"":s).replace(/\s+/g," ").trim().toLowerCase();
-function sumVan(lijst){
-  const map={};
-  lijst.filter(r=>r.soort!=="pauze").forEach(r=>{
-    const d=dosOf(r.dossierId),info=intappDossierInfo(d);
-    const nummer=info.nummer,naam=info.naam;
-    /* Een regel uit de overboekingslifecycle blijft een eigen Intapp-eenheid. Zo
-       kan later toegevoegde identieke tijd niet samensmelten met reeds geparkeerde
-       of afgehandelde uren en daardoor opnieuw dubbel geboekt lijken. */
-    const over=overboekingVoorBronId(r.id);
-    const k=nummer+"|"+(r.code||"")+"|"+(r.omschrijving||"")+"|"+(over?over.id:"");
-    if(!map[k])map[k]={k,nummer,naam,code:codeNaam(d,r.code),oms:r.omschrijving||"",
-      min:0,hand:0,los:0,dosIds:[],bron:[],dvnStatus:info.status,
-      mist:(!d)||codeFout(d,r)||!(r.omschrijving||"").trim()};
-    const g=map[k];
-    if(info.status&&!g.dvnStatus)g.dvnStatus=info.status;
-    if(r.urenHand&&r.uren)g.hand+=r.uren;else g.min+=ruweMin(r);
-    g.los+=urenOf(r);
-    if(g.dosIds.indexOf(r.dossierId||"-")<0)g.dosIds.push(r.dossierId||"-");
-    g.bron.push({id:r.id,gewijzigd:r.gewijzigd||0});});
-  /* De vingerafdruk bepaalt of een geboekte regel nog dezelfde regel is. Verandert er
-     iets aan de uren, de bronregels of de afrondingsmodus, dan verandert de
-     vingerafdruk en staat de regel automatisch weer als niet geboekt.          */
-  return Object.values(map).map(g=>{
-    const u=rondMode==="groep"?
-      g.hand+(g.min>0?Math.max(0.1,Math.ceil(g.min/6)/10):0):g.los;
-    const fp=[g.dosIds.slice().sort().join("+"),g.code||"",normOms(g.oms),
-      uu(u),rondMode,
-      g.bron.map(b=>b.id+":"+b.gewijzigd).sort().join(",")].join("|");
-    return Object.assign({},g,{u,fp});}).sort((a,b)=>b.u-a.u);}
 function sumRows(){return sumVan(regels);}
 
-function codeFout(d,r){
-  if(!d||!isIndirect(d))return false;
-  if(!r.code)return true;
-  if(!codesFor(d).some(c=>c.code===r.code))return true;
-  if(d.voorlopig||dvnDefinitiefI7(d)){const vast=defaultCode(d);return !vast||r.code!==vast;}
-  return false;}
 /* Blokkerende fouten maken de dag onboekbaar: die kunnen niet met "toch boeken"
    worden gepasseerd. Waarschuwingen mogen wel bevestigd worden.                */
 function controleer(){
-  const p=[],add=(r,tekst,blok)=>p.push({id:r.id,blok:!!blok,
-    tekst:r.start+"–"+(r.eind||"loopt")+" — "+tekst});
-  regels.forEach(r=>{
-    if(r.hersteld)
-      add(r,"automatisch afgesloten na een onderbreking — controleer de tijden",false);
-    if(!r.eind)add(r,running&&running.id===r.id?
-      "de timer loopt nog op deze regel":"open regel zonder lopende timer",true);
-    if(r.soort==="pauze")return;
-    const d=dosOf(r.dossierId);
-    if(!d)add(r,"geen dossier gekozen",true);
-    else if(isIndirect(d)&&!r.code)add(r,"i7-regel zonder werkcode",true);
-    else if(codeFout(d,r)){
-      const vast=(d.voorlopig||dvnDefinitiefI7(d))?defaultCode(d):null;
-      add(r,(d.voorlopig||dvnDefinitiefI7(d))?(vast?
-        "een DVN- of definitief-i7-regel moet op "+codeNaam(d,vast)+" staan":
-        "werkcode Commercieel ontbreekt in de i7-werklijst"):
-        "werkcode staat niet in de i7-werklijst",true);}
-    if(!(r.omschrijving||"").trim())add(r,"lege omschrijving",true);
-    if(hm2m(r.start)==null)add(r,"ongeldige starttijd",true);
-    if(r.eind&&hm2m(r.eind)==null)add(r,"ongeldige eindtijd",true);
-    if(r.eind&&hm2m(r.eind)!=null&&hm2m(r.start)!=null&&hm2m(r.eind)<hm2m(r.start))
-      add(r,"eindtijd ligt vóór de starttijd",true);
-    if(r.datum===today()&&hm2m(r.start)!=null&&hm2m(r.start)>hm2m(nowHM()))
-      add(r,"starttijd ligt in de toekomst",true);
-    if(r.datum===today()&&r.eind&&hm2m(r.eind)!=null&&hm2m(r.eind)>hm2m(nowHM()))
-      add(r,"eindtijd ligt in de toekomst",true);
-    if(!r.autoAanvul&&r.urenHand&&r.eind&&Math.abs(urenOf(r)-Math.ceil(ruweMin(r)/6)/10)>0.05)
-      add(r,"handmatige uren wijken af van de ingevulde tijden",false);});
-  /* Pauze telt niet als declarabele tijd, maar hoort wél in de tijdlijncontrole:
-     een werkregel die over een pauze heen loopt moet zichtbaar worden.          */
-  const iv=regels.filter(r=>!r.autoAanvul&&hm2m(r.start)!=null)
-    .map(r=>({a:hm2m(r.start),b:Math.max(hm2m(r.start),hm2m(eindOf(r))||hm2m(r.start)),r}))
-    .sort((x,y)=>x.a-y.a);
-  let tot=null;
-  iv.forEach(x=>{
-    if(tot&&x.a<tot.b)
-      p.push({id:x.r.id,tekst:tot.r.start+"–"+(tot.r.eind||"loopt")+" overlapt met "+
-        x.r.start+"–"+(x.r.eind||"loopt")+
-        (x.r.soort==="pauze"||tot.r.soort==="pauze"?" (pauze)":"")});
-    if(!tot||x.b>tot.b)tot=x;});
-  const dag=Math.round(totaal(regels)*10)/10;
-  if(dag>DAGMAX&&regels.length)
-    p.push({id:regels[0].id,blok:true,tekst:"deze dag telt "+uu(dag)+" uur — meer dan "+
-      uu(DAGMAX)+" uur op één datum kan niet"});
-  return p;}
+  return bookingDomain.validateDay(regels,{
+    runningId:running?running.id:null,today:today(),nowHM:nowHM(),getDossier:dosOf,
+    isIndirect,hasCodeError:codeFout,
+    isFixedCode:d=>!!d&&(d.voorlopig||dvnDefinitiefI7(d)),getFixedCode:defaultCode,
+    getCodeName:codeNaam
+  });}
 const blokFouten=()=>controleer().filter(x=>x.blok);
 const waarschuwingen=()=>controleer().filter(x=>!x.blok);
 function toonBlokkade(probs,wat){
@@ -620,13 +545,11 @@ const intappTotaal=()=>sumRows().reduce((s,x)=>s+x.u,0);
 /* Dagbudget. hourhound is een voorportaal voor Intapp: wat telt zijn de uren. De
    kloktijden hoeven alleen plausibel te zijn en binnen dezelfde datum te vallen.
    Meer dan 24 uur op één datum wordt nergens weggeschreven.                     */
-const DAGMAX=24.0;
-const dagUren=(datum,exclId)=>alle.filter(r=>r.datum===datum&&r.id!==exclId)
-  .reduce((s,r)=>s+urenOf(r),0);
+const dagUren=(datum,exclId)=>bookingDomain.dayHours(alle,datum,exclId,boekRekenContext());
 function dagRuimte(datum,extra,exclId){
-  const na=Math.round((dagUren(datum,exclId)+extra)*10)/10;
-  if(na<=DAGMAX)return true;
-  toast("Dat zou "+uu(na)+" uur op één dag maken — meer dan "+uu(DAGMAX)+
+  const ruimte=bookingDomain.dayCapacity(alle,datum,extra,exclId,boekRekenContext());
+  if(ruimte.allowed)return true;
+  toast("Dat zou "+uu(ruimte.hours)+" uur op één dag maken — meer dan "+uu(DAGMAX)+
     " uur kan niet");
   return false;}
 function nieuweRegel(o){

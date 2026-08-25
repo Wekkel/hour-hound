@@ -164,3 +164,23 @@ installaties blijft dezelfde IndexedDB-database openen en voegt stores alleen co
 Oude DVN-dossiers met `voorlopig: true` blijven zonder recordconversie DVN en hun tijdregels
 blijven via hetzelfde `dossierId` gekoppeld. Nieuwe runtimebestanden vereisen wel exacte extra
 cachepaden in `sw.js`; de eigenaar voegt die toe en verhoogt zelf de cacheversie.
+
+## 18. Boekingsberekeningen krijgen alle context expliciet
+
+Uren, dagtotalen, tijdgaten, dagvalidatie en Intapp-aggregatie mogen niet afhankelijk zijn van
+verborgen globals of van een helper die pas in een later UI-script wordt geladen. De pure
+boekingslaag ontvangt daarom lopende timer-id, huidige datum en tijd, dagafsluiting,
+afrondingsmodus, dossierresolutie en overboekingsgrens als invoer. `core.js` en `views.js` houden
+alleen dunne adapters die de actuele runtimecontext verzamelen.
+
+Deze scheiding is gedragsneutraal. Bewaak bij iedere vervolgstap in het bijzonder:
+
+- groepsafronding versus afronding per losse regel;
+- handmatige uren en een werkelijk lopende timer;
+- exacte normalisatie en sorteervolgorde van Intapp-vingerafdrukken;
+- de lifecycle-id die geparkeerde of afgehandelde bronuren van nieuw identiek werk scheidt;
+- overlap-, toekomst-, code- en 24-uursvalidatie;
+- oude regels met `gewijzigd: 0` en lange groepen bron-id's.
+
+Vaste voorbeelden alleen zijn onvoldoende voor deze kern. Vergelijk bij een refactor ook veel
+deterministisch gegenereerde regelsets rechtstreeks tussen de oude en nieuwe implementatie.
