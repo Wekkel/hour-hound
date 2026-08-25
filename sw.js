@@ -34,7 +34,25 @@ const ASSETS = [
   "./js/services/admin.js",
   "./js/services/day-rules.js",
   "./js/services/timer.js",
-  "./js/state.js"
+  "./js/state.js",
+  "./js/services/settings.js",
+  "./js/ui/modal.js",
+  "./js/ui/now-live-view.js",
+  "./js/ui/day-status-view.js",
+  "./js/ui/day-close-controller.js",
+  "./js/ui/day-editor-controller.js",
+  "./js/ui/now-recent-view.js",
+  "./js/ui/day-view.js",
+  "./js/ui/day-controller.js",
+  "./js/ui/week-view.js",
+  "./js/ui/week-controller.js",
+  "./js/ui/dvn-view.js",
+  "./js/ui/overbooking-view.js",
+  "./js/ui/overbooking-controller.js",
+  "./js/ui/manage-view.js",
+  "./js/ui/manage-controller.js",
+  "./js/ui/live-controller.js",
+  "./js/ui/day-table-controller.js",
 ];
 
 self.addEventListener("install", (e) => {
