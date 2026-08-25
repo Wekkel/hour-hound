@@ -20,7 +20,6 @@ const ASSETS = [
   "./js/core.js",
   "./js/timer.js",
   "./js/wizard.js",
-  "./js/views.js",
   "./js/controls.js",
   "./js/io.js",
   "./js/booking.js",
