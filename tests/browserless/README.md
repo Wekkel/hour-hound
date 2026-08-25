@@ -56,3 +56,9 @@ door deze test losser te maken.
 `werkdag(datum)` is de centrale kalenderdefinitie. Vrijdag blijft afsluitplichtig; zaterdag en
 zondag mogen regels bevatten, maar tellen niet als eerdere open werkdagen en krijgen geen
 8,0-uursaanvulling. UI-code mag hiervoor geen eigen, afwijkende weekendtest introduceren.
+
+### Patch E-contract
+
+De recente-takenlijst meet maximaal vier zichtbare regels. Een render tijdens de verborgen
+Beheer-tab mag geen nulhoogte opslaan. Bij terugkeer naar Nu moet `showTab("nu")` daarom
+`renderRecent()` aanroepen nadat de view zichtbaar is gemaakt.

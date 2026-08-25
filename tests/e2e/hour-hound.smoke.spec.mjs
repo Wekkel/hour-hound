@@ -361,3 +361,50 @@ test('recente takenlijst toont alle taken maar alleen sneltoetsen 1-4', async ({
   await expect(page.locator('#recent kbd')).toHaveCount(4);
   await expect(page.locator('#recent')).toHaveClass(/recent-scroll/);
 });
+
+test('DVN-nummer en Beheer-mutaties laten recente taken direct zichtbaar', async ({ page }) => {
+  const today = todayLocal();
+  const stamp = Date.now();
+  const gewoneRegels = Array.from({ length: 4 }, (_, i) => ({
+    id: `r-recent-${i}`, datum: today, start: `${pad(i + 8)}:00`, eind: `${pad(i + 8)}:20`,
+    dossierId: 'd-normal', code: null, omschrijving: `recente taak ${i + 1}`, soort: 'werk',
+    gemaakt: stamp, gewijzigd: stamp
+  }));
+  await openAndSeed(page, {
+    dossiers: [
+      i7Dossier,
+      { id: 'd-normal', nummer: '304000009', naam: 'Gewoon recent dossier', lang: 'nl', codes: [], c: 1 },
+      { id: 'd-dvn-recent', nummer: null, naam: 'Recente DVN', lang: 'nl', codes: [], c: 2,
+        voorlopig: true, isI7: false, dvn: true }
+    ],
+    regels: gewoneRegels.concat([{
+      id: 'r-recent-dvn', datum: today, start: '12:00', eind: '12:20', dossierId: 'd-dvn-recent',
+      code: 'COM', omschrijving: `${today.split('-').reverse().join('.')} · Recente DVN · dvn-taak`,
+      soort: 'werk', gemaakt: stamp, gewijzigd: stamp
+    }]),
+    codes: baseCodes,
+    meta: {}
+  });
+
+  await expect(page.locator('#recent button.taak')).toHaveCount(5);
+  await page.locator('#tabs [data-v="beheer"]').click();
+  await page.locator('#dvn-intapp').getByRole('button', { name: 'Dossiernummer toekennen' }).click();
+  await page.locator('#dn-num').fill('304999996');
+  await page.locator('#dn-name').fill('Recente DVN definitief');
+  await page.locator('#dn-save').click();
+  await expect(page.locator('#dvnnum')).not.toHaveClass(/on/);
+
+  const naamveld = page.locator('#b-list [data-dnm="d-normal"]');
+  await naamveld.fill('Gewoon recent dossier hernoemd');
+  await naamveld.press('Tab');
+  await expect(page.locator('#b-list [data-dnm="d-normal"]')).toHaveValue('Gewoon recent dossier hernoemd');
+
+  await page.locator('#tabs [data-v="nu"]').click();
+  await expect(page.locator('#v-nu')).toBeVisible();
+  await expect(page.locator('#recent button.taak')).toHaveCount(5);
+  await expect(page.locator('#recent')).toContainText('304999996');
+  await expect(page.locator('#recent')).toContainText('dvn-taak');
+  for (let i = 1; i <= 4; i++) await expect(page.locator('#recent')).toContainText(`recente taak ${i}`);
+  const maxHeight = await page.locator('#recent').evaluate(el => parseFloat(el.style.maxHeight) || 0);
+  expect(maxHeight).toBeGreaterThan(0);
+});

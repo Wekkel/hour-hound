@@ -23,6 +23,11 @@ Deze map bevat de browsertests voor de belangrijkste Hour Hound-flows. Ze vullen
    Een open vrijdag blijft in de herinnering staan. Regels op zaterdag en zondag blijven zichtbaar
    en bewerkbaar, maar veroorzaken geen open-dagmelding, 8-uursnorm of aanvulactie.
 
+7. **Recente taken na Beheer-mutaties**
+   Na het toekennen van een dossiernummer aan een DVN en een andere Beheer-mutatie moet Nu alle
+   recente taken onmiddellijk tonen. De gebruiker hoeft niet eerst `N` te drukken; een verborgen
+   render mag geen `max-height: 0px` achterlaten.
+
 Playwright blokkeert service workers (`serviceWorkers: 'block'`), zodat SW-claim/reload de smoketests niet flaky maakt. Dat is testharnas, geen productwijziging.
 
 ## Uitvoeren

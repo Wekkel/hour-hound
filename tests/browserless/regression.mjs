@@ -214,6 +214,15 @@ test('recente-takenlijst toont alle taken maar alleen sneltoetsen 1-4', () => {
   assertIncludes(src.css, '#recent.recent-scroll', 'CSS voor scrollbare recente-takenlijst ontbreekt');
 });
 
+test('recente taken worden pas gemeten wanneer Nu zichtbaar is', () => {
+  assertIncludes(src.views, 'const meetbaar=$("v-nu").classList.contains("on")',
+    'renderRecent moet weten of de Nu-tab zichtbaar en meetbaar is');
+  assertIncludes(src.views, 'if(tk.length>4&&meetbaar)',
+    'Een verborgen recente-takenlijst mag geen nulhoogte opslaan');
+  assertIncludes(src.app, 'if(v==="nu")renderRecent()',
+    'Terugkeren naar Nu moet de recente-takenhoogte opnieuw berekenen');
+});
+
 test('modal/sheet staat globale sneltoetsen niet toe', () => {
   for (const id of ['dayclose', 'oldrun', 'editregel', 'dvnnum', 'dvnpost', 'boek', 'herstel']) {
     assertIncludes(src.views, `"${id}"`, `isModalOpen mist ${id}`);

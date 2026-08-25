@@ -6,6 +6,9 @@ function renderAll(){
 function showTab(v){
   tab=v;["nu","dag","week","beheer"].forEach(x=>$("v-"+x).classList.toggle("on",x===v));
   [...$("tabs").children].forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===v));
+  /* renderRecent() meet de natuurlijke hoogte van vier taken. Doe dat opnieuw
+     nadat Nu zichtbaar is; metingen tijdens een verborgen Beheer-tab zijn nul. */
+  if(v==="nu")renderRecent();
   if(v==="dag")bouwDag();if(v==="week")renderWeek();if(v==="beheer")renderBeheer();}
 
 async function migrate(){

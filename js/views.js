@@ -356,14 +356,18 @@ function renderRecent(){
      zodat ook langere omschrijvingen volledig zichtbaar blijven. */
   recent.style.maxHeight="";
   recent.classList.toggle("recent-scroll",tk.length>4);
-  if(tk.length>4){
+  /* Een Beheer-mutatie rendert alle globale samenvattingen terwijl Nu verborgen kan
+     zijn. getBoundingClientRect() levert dan nul op; schrijf die nul nooit als
+     max-height weg. showTab("nu") meet opnieuw zodra de lijst zichtbaar is. */
+  const meetbaar=$("v-nu").classList.contains("on");
+  if(tk.length>4&&meetbaar){
     const vierde=recent.querySelectorAll("button.taak")[3];
     const onder=parseFloat(getComputedStyle(vierde).marginBottom)||0;
     const h=Math.ceil(vierde.getBoundingClientRect().bottom-
       recent.getBoundingClientRect().top+onder);
     recent.style.maxHeight=h+"px";
     recent.scrollTop=Math.max(0,Math.min(oudeScroll,recent.scrollHeight-recent.clientHeight));}
-  else recent.scrollTop=0;
+  else if(tk.length<=4)recent.scrollTop=0;
   $("i7row").innerHTML=favCodes().map((c,i)=>'<button data-i7="'+esc(c.code)+'">'+
     '<i style="background:var(--soft)"></i><span>'+esc(c.naam)+"</span>"+
     (i<5?"<kbd>"+(i+5)+"</kbd>":"")+"</button>").join("")||

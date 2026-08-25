@@ -75,3 +75,14 @@ open werkdag verschijnen of een Diversen-aanvulling aanbieden.
 De Playwright-test bewaakt zowel de vrijdagwaarschuwing als de zichtbaarheid en bewerkbaarheid
 van zaterdag- en zondagregels. Pas dit contract alleen aan als weekenddagen bewust verplichte
 werkdagen worden.
+
+## 11. Meet geen verborgen recente-takenlijst
+
+`renderAll()` werkt ook globale Nu-samenvattingen bij terwijl Beheer zichtbaar is. De Nu-view
+heeft dan `display:none`, waardoor `getBoundingClientRect()` voor de recente taken nul teruggeeft.
+Bij meer dan vier taken kan `max-height:0px` de lijst daardoor leeg laten lijken, hoewel alle
+IndexedDB-data en knoppen nog bestaan.
+
+`renderRecent()` mag de hoogte alleen vastleggen als Nu zichtbaar is. `showTab("nu")` rendert de
+lijst daarom opnieuw nadat de view actief is gemaakt. Dit is bewust zowel een meetguard als een
+render-invalidation: verwijder niet één van beide zonder de Beheer→Nu-Playwright-test aan te passen.
