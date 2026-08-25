@@ -123,3 +123,17 @@ Boot en herladen lezen dossiers, sjablonen, codes, regels, overboekingen en rele
 één readonly transactie via `loadSnapshot()`. De runtime-arrays worden pas vervangen nadat die
 hele transactie is geslaagd. Timer- en importworkflows houden hun bestaande transacties over
 meerdere stores; repositories mogen zo'n use-case nooit opdelen in losse schrijfacties.
+
+### Patch N-contract
+
+`js/services/admin.js` bezit de zeven administratieve mutaties: DVN-nummer toekennen,
+DVN-posted, DVN naar definitief i7, parkeren, gewijzigde parkeerdata verversen, later op dossier
+afhandelen en een overboeking naar definitief i7. Timer-, booking- en Beheer-code verzamelen alleen
+invoer en bevestiging, roepen de service aan en verwerken na succes de geretourneerde effecten.
+
+Services valideren vlak vóór schrijven opnieuw en ontvangen klok, regels, dossiers, fingerprints,
+afrondingsmodus en verplichte werkcode expliciet. De suite injecteert databasefouten en bewaakt dat
+invoerobjecten niet vooraf worden gemuteerd. `done` en `final_i7` blijven terminaal; gewijzigde
+bronregels blokkeren dossierafhandeling totdat de opgeslagen gegevens zijn ververst. Afhandelen op
+het dossier schrijft uitsluitend wachtrijstatus en boekfingerprints: de eerdere i7-boeking en de
+oorspronkelijke Hour Hound-regels blijven daarbij onaangeroerd.

@@ -80,6 +80,27 @@ const {pad,uu,ymd,today,nowHM,hm2m,m2hm,dmy,parseD,addD,dagLabel,kortDag,
   weekend,werkdag,schoon}=HH.domain.time;
 const bookingDomain=HH.domain.booking;
 const dvnDomain=HH.domain.dvn,overbookingDomain=HH.domain.overbooking;
+const adminServices=HH.services.admin;
+const adminFoutTekst={invalid_dvn:"Deze DVN is niet meer beschikbaar",
+  number_required:"Vul eerst een dossiernummer in",
+  target_is_dvn:"Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.",
+  number_exists:"Deze DVN heeft al een dossiernummer en kan niet naar definitief i7",
+  timer_running:"Stop eerst alle betrokken timers",
+  commercial_code_missing:"Werkcode Commercieel ontbreekt — herstel werkcodes.json onder Beheer",
+  invalid_target:"De bronregels moeten bij één gewoon dossier met nummer horen",
+  i7_missing:"Het i7-dossier ontbreekt",source_changed:"De bronregels zijn intussen gewijzigd",
+  source_missing:"Niet alle bronregels bestaan nog",already_parked:"Deze regels zijn al geparkeerd",
+  not_open:"Deze wachtrijregel is niet meer open",
+  multiple_targets:"De bronregels horen nu bij verschillende dossiers",
+  queue_changed:"De wachtrij is gewijzigd — open de boekingswizard opnieuw"};
+function meldAdminFout(result,fallback){
+  if(result&&result.ok)return false;
+  toast(adminFoutTekst[result&&result.error]||fallback||"Administratieve actie niet uitgevoerd");
+  return true;}
+function vervangOverboekingenGeheugen(updated){
+  const map=new Map((updated||[]).map(record=>[record.id,record]));
+  overboekingen=overboekingen.map(record=>map.get(record.id)||record);
+}
 const {NORM,DAGMAX}=bookingDomain,VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 const autoAanvulTekort=bookingDomain.autoFillShortfall;
 

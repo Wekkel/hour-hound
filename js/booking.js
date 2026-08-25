@@ -143,24 +143,15 @@ function openParkeer(row){
 function sluitParkeer(){parkBoek=null;$("parkboek").classList.remove("on");}
 async function bevestigParkeer(){
   const p=parkBoek;if(!p)return;
-  const ids=(p.row.bron||[]).map(b=>b.id),bron=ids.map(id=>alle.find(r=>r.id===id)).filter(Boolean);
-  if(bron.length!==ids.length||bron.some(r=>!r.eind||r.dossierId!==p.doel.id)){
-    toast("De bronregels zijn intussen gewijzigd — open de boekwizard opnieuw");sluitParkeer();return;}
-  await rustig(ids);
-  const nu=new Date().toISOString(),o={id:uid(),status:"waiting",targetDossierId:p.doel.id,
-    targetNumberSnapshot:p.doel.nummer||"",targetNameSnapshot:p.doel.naam||"",
-    sourceDate:boek.datum,sourceRuleIds:ids,sourceFingerprint:p.row.fp,
-    sourceFingerprints:[p.row.fp],rondModeSnapshot:rondMode,
-    sourceSnapshot:bron.map(r=>({id:r.id,datum:r.datum,start:r.start,eind:r.eind,
-      dossierId:r.dossierId,code:r.code||null,omschrijving:r.omschrijving||"",
-      uren:urenOf(r),gewijzigd:r.gewijzigd||0})),
-    targetLines:[{werkcode:p.row.code||"",omschrijving:p.row.oms||"",uren:p.row.u}],description:p.row.oms||"",
-    hours:p.row.u,i7DossierId:p.ind.id,i7NumberSnapshot:p.ind.nummer||"",i7Code:p.com,
-    temporaryDescription:tijdelijkI7Omschrijving(p.row),parkedAt:nu,updatedAt:nu,
-    audit:[{type:"op-i7-geboekt-geparkeerd",t:nu}]};
-  try{await put("overboekingen",o);overboekingen.push(o);}
+  const nowIso=new Date().toISOString();let uit;
+  try{uit=await adminServices.parkOverbooking({row:p.row,target:p.doel,i7Dossier:p.ind,
+    commercialCode:p.com,rules:alle,overbookings:overboekingen,sourceDate:boek.datum,
+    roundingMode:rondMode,id:uid(),nowIso,hoursOf,waitForRules:rustig});}
   catch(e){L("FOUT-overboeking-parkeren",String(e));toast("Parkeren mislukt — er is niets gewijzigd");return;}
-  L("overboeking-geparkeerd","regels "+ids.length+" · "+uu(o.hours)+" u");
+  if(meldAdminFout(uit,"Parkeren is niet uitgevoerd")){
+    if(uit&&uit.error==="source_changed")sluitParkeer();return;}
+  const o=uit.overbooking;overboekingen.push(o);
+  L("overboeking-geparkeerd","regels "+bronIdsVan(o).length+" · "+uu(o.hours)+" u");
   sluitParkeer();tekenBoek();boekStat();
   if(!volgendeOpen())toast("Alle regels zijn geboekt of geparkeerd");
 }

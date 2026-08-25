@@ -315,28 +315,18 @@ async function maakDvnDefinitiefI7(id){
   if(!confirm('Zet "'+d.naam+'" met '+rs.length+' regel(s) / '+uu(uren)+
     " uur definitief om naar i7 · Commercieel?\n\nEr wordt geen dossiernummer meer verwacht. "+
     "De regels verdwijnen uit de DVN-werkvoorraad en blijven als gewone i7-tijd bewaard."))return;
-  const nu=new Date().toISOString(),gewijzigd=Date.now();
-  const nwD=stempel(Object.assign({},d,{voorlopig:false,archief:true,dvn:true,
-    dvnOriginalName:d.dvnOriginalName||d.naam,dvnDisposition:"final_i7",
-    dvnFinalI7At:nu,dvnFinalI7RuleIds:rs.map(r=>r.id),dvnIntappStatus:null,
-    dvnIntappPostedAt:null,dvnIntappPostedCount:0,dvnIntappPostedHours:0,
-    dvnIntappPostedRuleIds:[],
-    dvnIntappNeedsCheckAt:null,dvnIntappNeedsCheckReason:null,
-    dvnIntappAudit:dvnAuditAdd(d,"definitief-i7",{regels:rs.length,uren})}));
-  delete nwD.dvnTo;delete nwD.dvnResolvedNr;delete nwD.dvnResolvedAt;
-  const nwRegels=rs.filter(r=>r.code!==commercieel).map(r=>Object.assign({},r,
-    {code:commercieel,gewijzigd}));
-  const stackRaakt=stack.some(it=>it.dossierId===d.id);
-  const nwStack=stack.filter(it=>it.dossierId!==d.id);
+  const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
   try{
-    await rustig(rs.map(r=>r.id));
-    await txAll(s=>{s.dossiers.put(nwD);nwRegels.forEach(r=>s.regels.put(r));
-      if(stackRaakt)s.meta.put(nwStack,"stack");});
+    uit=await adminServices.finalizeDvnI7({dossier:d,dossiers,rules:alle,stack,
+      runningId:running?running.id:null,commercialCode:commercieel,hoursOf,
+      waitForRules:rustig,nowMs,nowIso});
   }catch(e){L("FOUT-dvn-definitief-i7",String(e));
     toast("Omzetten naar definitief i7 mislukt — niets gewijzigd");return;}
-  memDossier(nwD);nwRegels.forEach(memRegel);if(stackRaakt)stack=nwStack;
+  if(meldAdminFout(uit,"Omzetten naar definitief i7 is niet uitgevoerd"))return;
+  memDossier(uit.dossier);uit.rules.forEach(memRegel);if(uit.stackChanged)stack=uit.stack;
   undoStack=[];liveId=null;refreshDay();renderAll();renderWeek();announce();
-  L("dvn-definitief-i7","dos"+idKort(d.id)+" · "+rs.length+" regel(s) · "+uu(uren)+" u");
+  L("dvn-definitief-i7","dos"+idKort(d.id)+" · "+uit.allRules.length+
+    " regel(s) · "+uu(uit.total)+" u");
   toast("DVN is definitief i7 · Commercieel");}
 /* ---------- DVN dossiernummer toekennen ---------- */
 function dvnDossierVoorNummer(nr,id){
@@ -374,32 +364,17 @@ async function slaDvnNummerOp(){
   if(bestaand)warn.push('Nummer '+nr+' hoort al bij "'+bestaand.naam+'". Deze DVN blijft eigen regels houden, maar Intapp gebruikt dat bestaande dossier.');
   warn.push(rs.length+' regel(s) blijven intern aan deze DVN gekoppeld. Het datum/werknaam-voorvoegsel verdwijnt en de i7-werkcode wordt gewist.');
   if(!confirm(warn.join("\n\n")+"\n\nDoorgaan?"))return;
-  const nu=Date.now();
-  const vorigNr=dvnResolvedNummer(d);
-  const nwD=stempel(Object.assign({},d,{
-    naam:bestaand?d.naam:naam,nummer:bestaand?null:nr,voorlopig:false,dvn:true,
-    dvnOriginalName:d.dvnOriginalName||d.naam,dvnResolvedAt:new Date().toISOString(),
-    dvnResolvedNr:nr,dvnTo:bestaand?bestaand.id:null,
-    dvnIntappStatus:(d.dvnIntappStatus==="posted"&&vorigNr&&vorigNr!==nr)?"needs_check":d.dvnIntappStatus,
-    dvnIntappNeedsCheckAt:(d.dvnIntappStatus==="posted"&&vorigNr&&vorigNr!==nr)?new Date().toISOString():d.dvnIntappNeedsCheckAt,
-    dvnIntappNeedsCheckReason:(d.dvnIntappStatus==="posted"&&vorigNr&&vorigNr!==nr)?"dossiernummer aangepast":d.dvnIntappNeedsCheckReason,
-    dvnIntappAudit:(d.dvnIntappStatus==="posted"&&vorigNr&&vorigNr!==nr)?
-      dvnAuditAdd(d,"controle-nodig",{reden:"dossiernummer aangepast",van:vorigNr,naar:nr}):d.dvnIntappAudit}));
-  if(!bestaand)delete nwD.dvnTo;
-  const nwRegels=rs.map(r=>Object.assign({},r,{code:null,
-    omschrijving:((r.omschrijving||"").replace(VOOR,"").trim())||d.naam,gewijzigd:nu}));
-  const stackRaakt=stack.some(it=>it.dossierId===d.id);
-  const nwStack=stack.map(it=>it.dossierId!==d.id?it:Object.assign({},it,{code:null,
-    omschrijving:((it.omschrijving||"").replace(VOOR,"").trim())||d.naam}));
+  const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
   try{
-    await rustig(nwRegels.map(r=>r.id));
-    await txAll(s=>{s.dossiers.put(nwD);nwRegels.forEach(r=>s.regels.put(r));
-      if(stackRaakt)s.meta.put(nwStack,"stack");});
+    uit=await adminServices.assignDvnNumber({dossier:d,number:nr,name:naam,dossiers,
+      rules:alle,stack,waitForRules:rustig,nowMs,nowIso});
   }catch(e){L("FOUT-dvn-nummer",String(e));toast("Dossiernummer opslaan mislukt — niets gewijzigd: "+e);return;}
-  memDossier(nwD);nwRegels.forEach(memRegel);if(stackRaakt)stack=nwStack;
+  if(meldAdminFout(uit,"Dossiernummer is niet opgeslagen"))return;
+  memDossier(uit.dossier);uit.rules.forEach(memRegel);if(uit.stackChanged)stack=uit.stack;
   if(running&&running.dossierId===d.id)running=alle.find(r=>r.id===running.id)||running;
   undoStack=[];liveId=null;refreshDay();renderAll();renderWeek();announce();
-  L("dvn-nummer","dos"+idKort(d.id)+" → "+nr+" · "+rs.length+" regel(s)"+(bestaand?" · koppeling":""));
+  L("dvn-nummer","dos"+idKort(d.id)+" → "+nr+" · "+uit.rules.length+
+    " regel(s)"+(uit.target?" · koppeling":""));
   toast("DVN gebruikt nu dossiernummer "+nr+" voor Intapp");sluitDvnNummerSheet(true);}
 
 /* ---------- DVN-regels begeleid boeken in Intapp ---------- */
@@ -438,17 +413,13 @@ async function markeerDvnIngevoerd(){
   const rs=dvnRegels(d),u=Math.round(rs.reduce((s,r)=>s+urenOf(r),0)*10)/10;
   if(!confirm("Bevestig dat alle "+rs.length+" regel(s) / "+uu(u)+
     " uur voor dossier "+nr+" in Intapp zijn ingevoerd."))return;
-  const nu=new Date().toISOString();
-  const nw=stempel(Object.assign({},d,{
-    dvnIntappStatus:"posted",dvnIntappPostedAt:nu,
-    dvnIntappPostedCount:rs.length,dvnIntappPostedHours:u,
-    dvnIntappPostedRuleIds:rs.map(r=>r.id),
-    dvnIntappNeedsCheckAt:null,dvnIntappNeedsCheckReason:null,
-    dvnIntappAudit:dvnAuditAdd(d,"ingevoerd",{regels:rs.length,uren:u,nummer:nr})}));
-  try{await put("dossiers",nw);}
+  const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
+  try{uit=await adminServices.markDvnPosted({dossier:d,dossiers,rules:alle,
+    hoursOf,nowMs,nowIso});}
   catch(e){L("FOUT-dvn-post",String(e));toast("Markeren mislukt — niets gewijzigd: "+e);return;}
-  memDossier(nw);renderAll();announce();
-  L("dvn-intapp",dosIdLog(id)+" · "+rs.length+" regel(s) · "+uu(u)+" u");
+  if(meldAdminFout(uit,"DVN is niet als afgehandeld gemarkeerd"))return;
+  memDossier(uit.dossier);renderAll();announce();
+  L("dvn-intapp",dosIdLog(id)+" · "+uit.rules.length+" regel(s) · "+uu(uit.total)+" u");
   toast("DVN afgehandeld — alles ingevoerd in Intapp");sluitDvnPostSheet(true);}
 
 

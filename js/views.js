@@ -819,38 +819,26 @@ async function handelOverboekingenAf(){
   const ids=overboekPostIds.slice(),os=ids.map(id=>overboekingen.find(o=>o.id===id)).filter(Boolean);
   if(!os.length||os.some(o=>overboekingState(o)!=="waiting")){
     toast("De wachtrij is gewijzigd — open de boekingswizard opnieuw");sluitOverboekPost();return;}
-  const nu=new Date().toISOString(),boekNieuw=JSON.parse(JSON.stringify(geboekt||{}));
-  const klaar=os.map(o=>{const cur=overboekingHuidig(o),fps=cur.rows.map(x=>x.fp);
-    boekNieuw[o.sourceDate]=[...new Set((boekNieuw[o.sourceDate]||[]).concat(fps))];
-    return Object.assign({},o,{status:"done",sourceFingerprints:fps,
-      sourceFingerprint:fps.length===1?fps[0]:(o.sourceFingerprint||""),rondModeSnapshot:rondMode,
-      targetBookedAt:nu,targetBookedDate:today(),doneAt:nu,updatedAt:nu,
-      audit:(o.audit||[]).slice(-49).concat([{type:"op-dossier-geboekt",t:nu,boekdatum:today()}])});});
-  const boekDagen=Object.keys(boekNieuw).sort();while(boekDagen.length>60)delete boekNieuw[boekDagen.shift()];
-  try{await tx(["overboekingen","meta"],"readwrite",s=>{klaar.forEach(o=>s.overboekingen.put(o));
-    s.meta.put(boekNieuw,"geboekt");});}
+  const nowIso=new Date().toISOString(),bookedDate=today();let uit;
+  try{uit=await adminServices.completeOverbookings({ids,overbookings:overboekingen,
+    rules:alle,dossiers,summarize:sumVan,roundingMode:rondMode,booked:geboekt,
+    nowIso,bookedDate});}
   catch(e){L("FOUT-overboeking-afhandelen",String(e));toast("Afhandelen mislukt — er is niets gewijzigd");return;}
-  geboekt=boekNieuw;overboekingen=await getAll("overboekingen");sluitOverboekPost();renderBeheer();boekStat();
-  L("overboeking-afgehandeld",os.length+" item(s)");toast("Afgehandeld — de eerdere i7-boeking blijft staan");}
+  if(meldAdminFout(uit,"Afhandelen is niet uitgevoerd")){sluitOverboekPost();return;}
+  geboekt=uit.booked;vervangOverboekingenGeheugen(uit.overbookings);
+  sluitOverboekPost();renderBeheer();boekStat();
+  L("overboeking-afgehandeld",uit.overbookings.length+" item(s)");
+  toast("Afgehandeld — de eerdere i7-boeking blijft staan");}
 async function verversOverboeking(id){
   const o=overboekingen.find(x=>x.id===id);if(!o||!overboekingOpen(o))return;
-  const cur=overboekingHuidig(o),rs=cur.regels;
-  if(rs.length!==bronIdsVan(o).length){toast("Niet alle bronregels bestaan nog — gegevens kunnen niet worden bijgewerkt");return;}
-  if(rs.some(r=>!r.eind||(running&&running.id===r.id))){toast("Stop eerst alle betrokken timers");return;}
-  const doelen=[...new Set(rs.map(r=>r.dossierId))];
-  if(doelen.length!==1){toast("De bronregels horen nu bij verschillende dossiers");return;}
-  const d=dosOf(doelen[0]);if(!d||isIndirect(d)||isDvn(d)||!d.nummer){
-    toast("De bijgewerkte bronregels moeten bij één gewoon dossier met nummer horen");return;}
-  const nu=new Date().toISOString(),nieuw=Object.assign({},o,{targetDossierId:d.id,
-    targetNumberSnapshot:d.nummer||"",targetNameSnapshot:d.naam||"",
-    sourceSnapshot:rs.map(r=>({id:r.id,datum:r.datum,start:r.start,eind:r.eind,
-      dossierId:r.dossierId,code:r.code||null,omschrijving:r.omschrijving||"",
-      uren:urenOf(r),gewijzigd:r.gewijzigd||0})),targetLines:cur.lijnen,
-    sourceFingerprints:cur.rows.map(x=>x.fp),
-    sourceFingerprint:cur.rows.length===1?cur.rows[0].fp:"",rondModeSnapshot:rondMode,
-    description:cur.lijnen.map(x=>x.omschrijving).join(" / "),hours:cur.uren,updatedAt:nu,
-    audit:(o.audit||[]).slice(-49).concat([{type:"bijgewerkte-gegevens-gebruikt",t:nu}])});
-  await put("overboekingen",nieuw);overboekingen=await getAll("overboekingen");renderBeheer();
+  const nowIso=new Date().toISOString();let uit;
+  try{uit=await adminServices.refreshOverbooking({overbooking:o,rules:alle,dossiers,
+    runningId:running?running.id:null,summarize:sumVan,hoursOf,roundingMode:rondMode,
+    waitForRules:rustig,nowIso});}
+  catch(e){L("FOUT-overboeking-verversen",String(e));
+    toast("Bijwerken mislukt — er is niets gewijzigd");return;}
+  if(meldAdminFout(uit,"Gegevens kunnen niet worden bijgewerkt"))return;
+  vervangOverboekingenGeheugen([uit.overbooking]);renderBeheer();
   toast("Bijgewerkte gegevens gecontroleerd en opgeslagen");}
 async function maakOverboekingDefinitiefI7(id){
   const o=overboekingen.find(x=>x.id===id);if(!o||!overboekingOpen(o))return;
@@ -862,19 +850,16 @@ async function maakOverboekingDefinitiefI7(id){
   if(rs.some(r=>!r.eind||(running&&running.id===r.id))){toast("Stop eerst alle betrokken timers");return;}
   if(!confirm("Deze "+rs.length+" bronregel(s) worden in Hour Hound definitief i7 · Commercieel. "+
     "Ze verdwijnen uit de overboekingswachtrij; de al ingevoerde i7-regel in Intapp blijft staan.\n\nDoorgaan?"))return;
-  await rustig(rs.map(r=>r.id));const nu=new Date().toISOString();
-  const nieuw=rs.map(r=>Object.assign({},r,{dossierId:ind.id,code:com,gewijzigd:Date.now()}));
-  const finalFps=sumVan(nieuw).map(x=>x.fp),boekNieuw=JSON.parse(JSON.stringify(geboekt||{}));
-  boekNieuw[o.sourceDate]=[...new Set((boekNieuw[o.sourceDate]||[]).concat(finalFps))];
-  const boekDagen=Object.keys(boekNieuw).sort();while(boekDagen.length>60)delete boekNieuw[boekDagen.shift()];
-  const klaar=Object.assign({},o,{status:"final_i7",finalI7At:nu,updatedAt:nu,
-    finalI7Fingerprints:finalFps,
-    audit:(o.audit||[]).slice(-49).concat([{type:"definitief-i7",t:nu}])});
-  try{await txAll(s=>{nieuw.forEach(r=>s.regels.put(r));s.overboekingen.put(klaar);
-    s.meta.put(boekNieuw,"geboekt");});}
+  const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
+  try{uit=await adminServices.finalizeOverbookingI7({overbooking:o,rules:alle,
+    i7Dossier:ind,commercialCode:com,runningId:running?running.id:null,
+    summarize:sumVan,booked:geboekt,waitForRules:rustig,nowMs,nowIso});}
   catch(e){L("FOUT-overboeking-definitief-i7",String(e));toast("Omzetten mislukt — er is niets gewijzigd");return;}
-  geboekt=boekNieuw;nieuw.forEach(memRegel);overboekingen=await getAll("overboekingen");refreshDay();renderAll();
-  L("overboeking-definitief-i7",nieuw.length+" regel(s)");toast("Definitief i7 · Commercieel");}
+  if(meldAdminFout(uit,"Omzetten is niet uitgevoerd"))return;
+  geboekt=uit.booked;uit.rules.forEach(memRegel);
+  vervangOverboekingenGeheugen([uit.overbooking]);refreshDay();renderAll();
+  L("overboeking-definitief-i7",uit.rules.length+" regel(s)");
+  toast("Definitief i7 · Commercieel");}
 
 /* ---------- beheer ---------- */
 function renderBeheer(){

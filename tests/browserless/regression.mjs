@@ -37,6 +37,7 @@ const src = {
   dvnDomain: read('js/domain/dvn.js'),
   overbookingDomain: read('js/domain/overbooking.js'),
   storage: read('js/storage/indexeddb.js'),
+  admin: read('js/services/admin.js'),
   core: read('js/core.js'),
   timer: read('js/timer.js'),
   wizard: read('js/wizard.js'),
@@ -92,6 +93,7 @@ function evaluateCorePure(){
   vm.runInContext(src.dvnDomain, context, { filename: 'js/domain/dvn.js' });
   vm.runInContext(src.overbookingDomain, context, { filename: 'js/domain/overbooking.js' });
   vm.runInContext(src.storage, context, { filename: 'js/storage/indexeddb.js' });
+  vm.runInContext(src.admin, context, { filename: 'js/services/admin.js' });
   const exportCode = `\n;globalThis.__hhSetState = function(s){\n`+
     `dossiers=s.dossiers||[]; templates=s.templates||[]; i7codes=s.i7codes||[]; alle=s.alle||[]; regels=s.regels||[]; overboekingen=s.overboekingen||[]; running=s.running||null; stack=s.stack||[]; viewDate=s.viewDate||today(); dagEinde=s.dagEinde||{}; dagAudit=s.dagAudit||{}; if(s.rondMode)rondMode=s.rondMode;\n`+
     `return true;\n};\n`+
@@ -114,6 +116,16 @@ function evaluateStorage(){
   vm.runInContext(src.hh,context,{filename:'js/hh.js'});
   vm.runInContext(src.storage,context,{filename:'js/storage/indexeddb.js'});
   return context.HH.storage;
+}
+
+function evaluateAdmin(){
+  const context={console,setTimeout,clearTimeout,queueMicrotask};
+  vm.createContext(context);
+  for(const [name,code] of [['hh',src.hh],['time',src.time],
+    ['booking',src.bookingDomain],['dvn',src.dvnDomain],
+    ['overbooking',src.overbookingDomain],['storage',src.storage],['admin',src.admin]])
+    vm.runInContext(code,context,{filename:`js/${name}.js`});
+  return context.HH;
 }
 
 function fakeDatabase(values={},options={}){
@@ -167,6 +179,7 @@ test('index.html laadt scripts in de afgesproken globale volgorde', () => {
     'js/domain/dvn.js',
     'js/domain/overbooking.js',
     'js/storage/indexeddb.js',
+    'js/services/admin.js',
     'js/core.js',
     'js/timer.js',
     'js/wizard.js',
@@ -281,6 +294,170 @@ test('compatibiliteitshelpers delegeren en use-case-transacties blijven heel', (
     'Volledige import moet één transactie over alle betrokken stores blijven');
   assertIncludes(src.io,'tx(["dossiers","regels","templates","codes","overboekingen"],"readwrite"',
     'Samenvoegen moet één transactie over alle betrokken stores blijven');
+});
+
+test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => {
+  const HH=evaluateAdmin(),service=HH.services.admin,gateway=HH.storage.indexedDB;
+  const db=fakeDatabase();gateway.use(db);
+  const dossier={id:'dvn-1',naam:'Voorlopig',voorlopig:true,dvn:true,
+    dvnIntappStatus:'posted',dvnResolvedNr:'304000000',dvnIntappAudit:[]};
+  const rule={id:'r1',datum:'2026-08-25',start:'09:00',eind:'10:00',
+    dossierId:dossier.id,code:'COM',omschrijving:'25.08.2026 · Voorlopig · Werk',
+    soort:'werk',gewijzigd:1};
+  const assigned=await service.assignDvnNumber({dossier,number:'304000001',name:'Nieuwe naam',
+    dossiers:[dossier],rules:[rule],stack:[{dossierId:dossier.id,omschrijving:rule.omschrijving}],
+    waitForRules:()=>Promise.resolve(),nowMs:10,nowIso:'2026-08-25T10:00:00.000Z'});
+  assert(assigned.ok,'DVN-nummer-service moet slagen');
+  assertEq(assigned.dossier.dvn,true,'DVN-identiteit moet na nummerbevestiging blijven');
+  assertEq(assigned.dossier.dvnIntappStatus,'needs_check',
+    'Nummerwijziging na posted moet controle nodig maken');
+  assertEq(assigned.rules[0].code,null,'Oude verplichte DVN-code moet worden gewist');
+  assertEq(assigned.rules[0].omschrijving,'Werk','DVN-voorvoegsel moet exact verdwijnen');
+  assertEq(assigned.dossier.dvnIntappAudit.at(-1).reden,'dossiernummer aangepast',
+    'Nummerwijziging moet traceerbaar blijven');
+
+  const posted=await service.markDvnPosted({dossier:assigned.dossier,
+    dossiers:[assigned.dossier],rules:assigned.rules,hoursOf:()=>1,
+    nowMs:11,nowIso:'2026-08-25T10:01:00.000Z'});
+  assertEq(posted.dossier.dvnIntappStatus,'posted','DVN moet expliciet posted worden');
+  assertEq(posted.dossier.dvnIntappPostedRuleIds.join(','),'r1',
+    'Posted moet de bronregel-id’s bewaren');
+  assertEq(posted.dossier.dvnIntappPostedHours,1,'Posted moet het urentotaal bewaren');
+
+  const open={id:'dvn-2',naam:'Geen nummer',voorlopig:true,dvn:true,dvnIntappAudit:[]};
+  const openRule={...rule,id:'r2',dossierId:open.id,code:'ANDERS',omschrijving:'Werk'};
+  const finalI7=await service.finalizeDvnI7({dossier:open,dossiers:[open],rules:[openRule],
+    stack:[{dossierId:open.id}],runningId:null,commercialCode:'COM',hoursOf:()=>1,
+    waitForRules:()=>Promise.resolve(),nowMs:12,nowIso:'2026-08-25T10:02:00.000Z'});
+  assertEq(finalI7.dossier.dvnDisposition,'final_i7','Definitief i7 moet terminaal zijn');
+  assertEq(finalI7.dossier.dvnFinalI7RuleIds.join(','),'r2',
+    'Definitief i7 moet betrokken regels bewaren');
+  assertEq(finalI7.rules[0].code,'COM','Definitief i7 moet Commercieel afdwingen');
+  assertEq(finalI7.stack.length,0,'DVN moet uit de terugkeerstapel verdwijnen');
+
+  const transactions=db.calls.filter(call=>call.op==='transaction');
+  assertEq(JSON.stringify(transactions.map(call=>[call.stores,call.mode])),JSON.stringify([
+    [['regels','meta','dossiers','overboekingen'],'readwrite'],
+    ['dossiers','readwrite'],
+    [['regels','meta','dossiers','overboekingen'],'readwrite']]),
+  'Iedere DVN-use-case moet één volledige transactie bezitten');
+
+  gateway.use(fakeDatabase({}, {fail:true}));
+  let rejected=false;
+  try{await service.markDvnPosted({dossier:assigned.dossier,dossiers:[assigned.dossier],
+    rules:assigned.rules,hoursOf:()=>1,nowMs:99,nowIso:'later'});}catch(error){rejected=true;}
+  assert(rejected,'Een geïnjecteerde DVN-writefout moet afwijzen');
+  assertEq(assigned.dossier.dvnIntappStatus,'needs_check',
+    'De invoerstate mag bij een databasefout niet vooraf worden gemuteerd');
+});
+
+test('overboekingsservices bewaren beide terminale routes en eerdere i7-boeking', async() => {
+  const HH=evaluateAdmin(),service=HH.services.admin,gateway=HH.storage.indexedDB;
+  const db=fakeDatabase();gateway.use(db);
+  const target={id:'d1',nummer:'304000001',naam:'Doel'},i7={id:'i7',isI7:true,
+    nummer:'I700000000',naam:'Indirect'};
+  const rule={id:'r1',datum:'2026-08-25',start:'09:00',eind:'10:00',dossierId:target.id,
+    code:null,omschrijving:'Werk',soort:'werk',gewijzigd:1};
+  const summarize=rules=>[{fp:'fp-'+rules.map(item=>item.id+':'+item.gewijzigd+':'+
+    item.dossierId).join(','),code:'',oms:'Werk',u:1,bron:rules.map(item=>({id:item.id}))}];
+  const row={fp:summarize([rule])[0].fp,dosIds:[target.id],nummer:target.nummer,
+    naam:target.naam,code:'',oms:'Werk',u:1,bron:[{id:rule.id}]};
+  const parked=await service.parkOverbooking({row,target,i7Dossier:i7,commercialCode:'COM',
+    rules:[rule],overbookings:[],sourceDate:rule.datum,roundingMode:'groep',id:'o1',
+    nowIso:'2026-08-25T10:00:00.000Z',hoursOf:()=>1,waitForRules:()=>Promise.resolve()});
+  assertEq(parked.overbooking.status,'waiting','Parkeren moet waiting opslaan');
+  assertEq(parked.overbooking.sourceFingerprint,row.fp,'Bronfingerprint moet gelijk blijven');
+  assertEq(parked.overbooking.temporaryDescription,
+    'Tijdelijk i7 voor 304000001 · Doel · Werk','Tijdelijke i7-omschrijving moet gelijk blijven');
+
+  const changed={...rule,gewijzigd:2};
+  const beforeTransactions=db.calls.filter(call=>call.op==='transaction').length;
+  const blocked=await service.completeOverbookings({ids:['o1'],
+    overbookings:[parked.overbooking],rules:[changed],dossiers:[target,i7],
+    summarize,roundingMode:'groep',booked:{},nowIso:'2026-08-25T11:00:00.000Z',
+    bookedDate:'2026-08-25'});
+  assertEq(blocked.error,'queue_changed','Gewijzigde bronregel moet afhandeling blokkeren');
+  assertEq(db.calls.filter(call=>call.op==='transaction').length,beforeTransactions,
+    'Geblokkeerde afhandeling mag geen transactie starten');
+
+  const refreshed=await service.refreshOverbooking({overbooking:parked.overbooking,
+    rules:[changed],dossiers:[target,i7],runningId:null,summarize,hoursOf:()=>1,
+    roundingMode:'groep',waitForRules:()=>Promise.resolve(),
+    nowIso:'2026-08-25T11:01:00.000Z'});
+  const completed=await service.completeOverbookings({ids:['o1'],
+    overbookings:[refreshed.overbooking],rules:[changed],dossiers:[target,i7],
+    summarize,roundingMode:'groep',booked:{oud:['bestaande-i7-boeking']},
+    nowIso:'2026-08-25T11:02:00.000Z',bookedDate:'2026-08-25'});
+  assertEq(completed.overbookings[0].status,'done','Dossierboeking moet done opslaan');
+  assertEq(completed.overbookings[0].targetBookedDate,'2026-08-25',
+    'Dossierboeking gebruikt de actuele Intapp-datum');
+  assertEq(completed.booked.oud[0],'bestaande-i7-boeking',
+    'Eerdere i7-boekstatus mag niet worden verwijderd');
+  const completeStart=src.admin.indexOf('async function completeOverbookings');
+  const completeEnd=src.admin.indexOf('\n  async function finalizeOverbookingI7',completeStart);
+  const completeSource=src.admin.slice(completeStart,completeEnd);
+  assertNotIncludes(completeSource,'stores.regels',
+    'Dossierafhandeling mag de Hour Hound-bronregels niet wijzigen');
+  assertNotIncludes(completeSource,'stores.dossiers',
+    'Dossierafhandeling mag ook het eerdere i7-dossier niet aanraken');
+
+  const finalRecord={...parked.overbooking,id:'o2',sourceRuleIds:['r2'],
+    sourceSnapshot:[{...parked.overbooking.sourceSnapshot[0],id:'r2'}]};
+  const finalRule={...rule,id:'r2'};
+  const finalI7=await service.finalizeOverbookingI7({overbooking:finalRecord,
+    rules:[finalRule],i7Dossier:i7,commercialCode:'COM',runningId:null,
+    summarize,booked:{oud:['bestaande-i7-boeking']},waitForRules:()=>Promise.resolve(),
+    nowMs:20,nowIso:'2026-08-25T11:03:00.000Z'});
+  assertEq(finalI7.overbooking.status,'final_i7','Tweede route moet terminale final_i7 zijn');
+  assertEq(finalI7.rules[0].dossierId,i7.id,'Bronregel moet werkelijk naar i7 gaan');
+  assertEq(finalI7.rules[0].code,'COM','Bronregel moet Commercieel krijgen');
+  assertEq(finalI7.booked.oud[0],'bestaande-i7-boeking',
+    'Ook definitief i7 mag eerdere Intapp-status niet wissen');
+  assertNotIncludes(src.admin,'document','Administratieve services mogen de DOM niet lezen');
+  assertNotIncludes(src.admin,'confirm(','Bevestigingen horen in de UI te blijven');
+  assertNotIncludes(src.admin,'toast(','Meldingen horen in de UI te blijven');
+});
+
+test('administratieve services blokkeren ongeldige transities vóór IndexedDB', async() => {
+  const HH=evaluateAdmin(),service=HH.services.admin,gateway=HH.storage.indexedDB;
+  const db=fakeDatabase();gateway.use(db);
+  const linked={id:'dvn',naam:'DVN',dvn:true,dvnResolvedNr:'304000001'},
+    otherDvn={id:'other',naam:'Andere DVN',nummer:'304000002',voorlopig:true};
+  const assign=await service.assignDvnNumber({dossier:linked,number:'304000002',
+    dossiers:[linked,otherDvn],rules:[],stack:[],nowMs:1,nowIso:'nu'});
+  assertEq(assign.error,'target_is_dvn','Een DVN mag niet aan een andere DVN worden gekoppeld');
+  const finalDvn=await service.finalizeDvnI7({dossier:linked,dossiers:[linked],rules:[],
+    stack:[],runningId:null,commercialCode:'COM',hoursOf:()=>0,nowMs:1,nowIso:'nu'});
+  assertEq(finalDvn.error,'number_exists','Een genummerde DVN mag niet naar definitief i7');
+  const invalidPark=await service.parkOverbooking({row:{dosIds:[linked.id],fp:'fp',bron:[]},
+    target:linked,i7Dossier:{id:'i7',isI7:true},commercialCode:'COM'});
+  assertEq(invalidPark.error,'invalid_target','Een DVN mag niet als gewone blokkade worden geparkeerd');
+  const done={id:'o',status:'done',sourceRuleIds:[]};
+  const finish=await service.finalizeOverbookingI7({overbooking:done,i7Dossier:{id:'i7'},
+    commercialCode:'COM'});
+  assertEq(finish.error,'not_open','Een terminale overboeking mag niet opnieuw overgaan');
+  assertEq(db.calls.filter(call=>call.op==='transaction').length,0,
+    'Ongeldige administratieve transities mogen IndexedDB niet openen');
+});
+
+test('administratieve UI-adapters schrijven niet meer rechtstreeks naar opslag', () => {
+  const slice=(source,start,end)=>{const a=source.indexOf(start),b=source.indexOf(end,a+1);
+    return a>=0&&b>a?source.slice(a,b):'';};
+  const workflows=[
+    [src.timer,'async function maakDvnDefinitiefI7','/* ---------- DVN dossiernummer'],
+    [src.timer,'async function slaDvnNummerOp','/* ---------- DVN-regels'],
+    [src.timer,'async function markeerDvnIngevoerd','/* ---------- langloopmelding'],
+    [src.booking,'async function bevestigParkeer','async function kopieerHuidig'],
+    [src.views,'async function handelOverboekingenAf','async function verversOverboeking'],
+    [src.views,'async function verversOverboeking','async function maakOverboekingDefinitiefI7'],
+    [src.views,'async function maakOverboekingDefinitiefI7','/* ---------- beheer']
+  ];
+  for(const [source,start,end] of workflows){
+    const body=slice(source,start,end);assert(body,`Workflow ontbreekt: ${start}`);
+    assertIncludes(body,'adminServices.',`${start} moet de administratieve service aanroepen`);
+    for(const forbidden of ['await put(','await tx(','await txAll(','getAll("overboekingen")'])
+      assertNotIncludes(body,forbidden,`${start} mag niet rechtstreeks naar opslag schrijven`);
+  }
 });
 
 test('DVN-domein houdt classificatie, resolutie en audit puur', () => {
@@ -777,9 +954,9 @@ test('bestaande tijdregels worden via bewerksheet gewijzigd, niet rauw inline', 
 test('DVN blijft intern herkenbaar na dossiernummer-toekenning', () => {
   assertIncludes(src.html, 'id="dvnnum"', 'DVN-nummer-sheet ontbreekt');
   assertIncludes(src.html, 'id="dvn-intapp"', 'Beheer-sectie DVN naar Intapp ontbreekt');
-  assertIncludes(src.timer, 'dvn:true', 'DVN mag niet plat naar gewoon dossier verdwijnen');
-  assertIncludes(src.timer, 'dvnOriginalName', 'Oorspronkelijke DVN-naam moet bewaard blijven');
-  assertIncludes(src.timer, 'dvnResolvedNr', 'Toegekend dossiernummer moet als DVN-metadata bestaan');
+  assertIncludes(src.admin, 'dvn:true', 'DVN mag niet plat naar gewoon dossier verdwijnen');
+  assertIncludes(src.admin, 'dvnOriginalName', 'Oorspronkelijke DVN-naam moet bewaard blijven');
+  assertIncludes(src.admin, 'dvnResolvedNr', 'Toegekend dossiernummer moet als DVN-metadata bestaan');
   assertIncludes(src.core, 'function intappDossierInfo', 'Intapp-output moet via dossierinfo-resolutie lopen');
   assertIncludes(src.views, 'tag dvn', 'Dag/Intapp-output moet DVN-badge kunnen tonen');
 });
@@ -792,7 +969,8 @@ test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', ()
   assertIncludes(src.timer, 'function openDvnPostSheet', 'DVN-post-sheet opener ontbreekt');
   assertIncludes(src.timer, 'async function markeerDvnIngevoerd', 'Markeer-als-ingevoerd functie ontbreekt');
   assertIncludes(src.timer, 'data-dvn-rule', 'Boekingssheet moet herkenbare bronregels tonen');
-  assertIncludes(src.timer, 'dvnIntappPostedRuleIds:rs.map', 'Afhandeling moet de betrokken regel-id’s vastleggen');
+  assertIncludes(src.admin, 'dvnIntappPostedRuleIds:rules.map',
+    'Afhandeling moet de betrokken regel-id’s vastleggen');
   assertIncludes(src.core, 'const dvnIntappState=d=>dvnDomain.intappState',
     'DVN-statusadapter ontbreekt');
   assertIncludes(src.core, 'function dvnPutIfPosted', 'Gedeelde posted-DVN-terugval ontbreekt');
@@ -801,7 +979,8 @@ test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', ()
   assertIncludes(src.views, 'tijdregel gewijzigd', 'Bewerken van posted DVN-regel moet controle nodig maken');
   assertIncludes(src.views, 'tijdregel verwijderd', 'Verwijderen van posted DVN-regel moet controle nodig maken');
   assertIncludes(src.views, 'tijdregel opnieuw lopend gemaakt', 'Opnieuw lopend maken moet controle nodig maken');
-  assertIncludes(src.timer, 'dossiernummer aangepast', 'Dossiernummerwijziging na posted moet controle nodig maken');
+  assertIncludes(src.admin, 'dossiernummer aangepast',
+    'Dossiernummerwijziging na posted moet controle nodig maken');
   assertIncludes(src.timer, 'dvnPutIfPosted', 'Timerpaden moeten posted DVN via de gedeelde helper terugzetten');
   assertIncludes(src.views, 'id="dvn-open"', 'Open DVN-acties moeten een eigen werkvoorraad hebben');
   assertIncludes(src.views, 'id="dvn-done"', 'Afgehandelde DVN’s moeten traceerbaar en inklapbaar blijven');
@@ -816,8 +995,10 @@ test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', ()
 test('DVN kan bewust en traceerbaar naar definitief i7', () => {
   assertIncludes(src.html, 'Naar definitief i7', 'Beheer moet de bewuste eindactie uitleggen');
   assertIncludes(src.timer, 'async function maakDvnDefinitiefI7', 'Definitief-i7-transactie ontbreekt');
-  assertIncludes(src.timer, 'dvnDisposition:"final_i7"', 'Terminale DVN-dispositie moet worden opgeslagen');
-  assertIncludes(src.timer, 'dvnFinalI7RuleIds:rs.map', 'Betrokken regel-id’s moeten traceerbaar blijven');
+  assertIncludes(src.admin, 'dvnDisposition:"final_i7"',
+    'Terminale DVN-dispositie moet worden opgeslagen');
+  assertIncludes(src.admin, 'dvnFinalI7RuleIds:rules.map',
+    'Betrokken regel-id’s moeten traceerbaar blijven');
   assertIncludes(src.timer, 'i7CodeOp(VAST_VOORLOPIG,"-704")', 'Commercieel moet verplicht blijven');
   assertIncludes(src.views, 'data-dvn-final-i7', 'Open DVN-kaart mist de definitief-i7-actie');
   assertIncludes(src.views, '!dvnDefinitiefI7(d)', 'Definitief i7 mag niet in de DVN-werkvoorraad blijven');
@@ -831,11 +1012,13 @@ test('Patch H houdt gewone blokkade los van DVN en echte boekstatus', () => {
   assertIncludes(src.html, 'Nog over te boeken naar dossier', 'Beheer mist de overboekingswerkvoorraad');
   assertIncludes(src.html, 'Tijdelijk niet boekbaar', 'Dagwizard mist de parkeeractie');
   assertIncludes(src.html, 'Op i7 geboekt · parkeren', 'Expliciete tijdelijke i7-bevestiging ontbreekt');
-  assertIncludes(src.booking, 'put("overboekingen",o)', 'Parkeren moet apart van geboekt worden opgeslagen');
+  assertIncludes(src.admin, 'gateway.tx("overboekingen","readwrite"',
+    'Parkeren moet apart van geboekt worden opgeslagen');
   assertNotIncludes(src.booking, 'zetGeboekt(p.row.fp,true)', 'Parkeren mag niet als echte dossierboeking gelden');
   assertIncludes(src.booking, 'geboekt · "+p+" geparkeerd · "+open+" open', 'Dagstatus moet drie aantallen tonen');
   assertIncludes(src.html, 'Op dossier geboekt · afhandelen', 'Latere dossierbevestiging ontbreekt');
-  assertIncludes(src.views, 'targetBookedDate:today()', 'Latere boeking moet de actuele Intapp-datum vastleggen');
+  assertIncludes(src.admin, 'targetBookedDate:input.bookedDate',
+    'Latere boeking moet de actuele Intapp-datum vastleggen');
   assertNotIncludes(src.views, 'Tijdelijke i7-boeking gecorrigeerd', 'Patch H mag geen i7-correctie eisen');
 });
 
@@ -855,9 +1038,14 @@ test('Patch H detecteert wijzigingen en heeft twee terminale routes', () => {
   assertEq(api.overboekingState({...wacht,status:'done'}),'done','Dossierboeking is terminale route één');
   assertEq(api.overboekingState({...wacht,status:'final_i7'}),'final_i7','Definitief i7 is terminale route twee');
   assertIncludes(src.views, 'async function maakOverboekingDefinitiefI7', 'Definitief-i7-overgang ontbreekt');
-  assertIncludes(src.views, 'dossierId:ind.id,code:com', 'Definitief i7 moet bronregels echt herclassificeren');
-  assertIncludes(src.views, 'rustig(rs.map(r=>r.id))', 'Lopende bronwrites moeten voor omzetting klaar zijn');
-  assertIncludes(src.views, 's.overboekingen.put(klaar)', 'Bronregels en terminale status moeten transactioneel schrijven');
+  assertIncludes(src.admin, 'dossierId:indirect.id',
+    'Definitief i7 moet bronregels echt herclassificeren');
+  assertIncludes(src.admin, 'code:input.commercialCode',
+    'Definitief i7 moet de verplichte code toepassen');
+  assertIncludes(src.admin, 'await waitFor(input,ids)',
+    'Lopende bronwrites moeten voor omzetting klaar zijn');
+  assertIncludes(src.admin, 'stores.overboekingen.put(updated)',
+    'Bronregels en terminale status moeten transactioneel schrijven');
 });
 
 test('afgeronde overboeking blijft geboekt totdat de broninhoud wijzigt', () => {
@@ -935,11 +1123,11 @@ test('brede H-regressie bewaakt modal, verwijdering, groepering en atomaire afha
     'De verwijderblokkade moet de gebruiker naar de herstelplek verwijzen');
   assertIncludes(src.core, 'const over=overboekingVoorBronId(r.id)',
     'Aggregatie moet een overboekingslifecycle als eigen groeperingsgrens gebruiken');
-  assertIncludes(src.views, 'tx(["overboekingen","meta"],"readwrite"',
+  assertIncludes(src.admin, 'gateway.tx(["overboekingen","meta"],"readwrite"',
     'Afhandelen en duurzame boekstatus moeten in één transactie worden opgeslagen');
-  assertIncludes(src.views, 'sourceFingerprints:fps',
+  assertIncludes(src.admin, 'sourceFingerprints:fingerprints',
     'Afhandelen moet de actuele inhoudsvingerafdrukken bewaren');
-  assertIncludes(src.views, 's.meta.put(boekNieuw,"geboekt")',
+  assertIncludes(src.admin, 'stores.meta.put(booked,"geboekt")',
     'Afhandelen moet ook de gewone boekstatus duurzaam bijwerken');
   assertIncludes(src.booking, 'overboekingAfgerondVoorRow(row,boek.datum)',
     'De Intapp-wizard moet terminale overboekingen als werkelijk geboekt herkennen');

@@ -229,3 +229,33 @@ daarom niet alleen de afwijzing te controleren, maar ook dat de oude geheugenwaa
 De oude globale helpers (`tx`, `getAll`, `get`, `put`, `putK`, `del` en `replaceAll`) zijn tijdens
 de gefaseerde refactor uitsluitend compatibiliteitsadapters. Voeg daar geen tweede schema- of
 transactie-implementatie aan toe; verwijder ze pas wanneer alle productieconsumenten zijn gemigreerd.
+
+## 21. Een administratieve service bezit validatie én transactie
+
+Een knop of sheet mag invoer verzamelen, bevestiging vragen en het resultaat presenteren, maar mag
+niet tegelijk de statusmachine en IndexedDB-transactie uitvoeren. DVN-nummer, posted, definitief i7
+en de vier overboekingsmutaties hebben daarom elk een expliciete servicefunctie. De UI verwerkt pas
+na een geslaagde servicecall de geretourneerde dossiers, regels, stack, boekstatus en wachtrijrecords.
+
+Valideer in de service opnieuw. Tussen het openen van een sheet en de bevestiging kunnen een andere
+tab, een uitgestelde regelwrite of een timeractie de brondata hebben veranderd. Controleer daarom
+de actuele bronregel-id’s, dossiercategorie, dossiernummer, lopende timer, verplichte code en
+afgeleide overboekingsstatus vlak vóór schrijven. Een UI-check blijft nuttig voor snelle feedback,
+maar is nooit de veiligheidsgrens.
+
+Houd deze lifecyclecontracten bijeen:
+
+- een DVN blijft intern DVN nadat een echt dossiernummer is toegekend;
+- een nummerwijziging na `posted` wordt `needs_check` met audit;
+- definitief i7 archiveert de DVN, bewaart betrokken regel-id’s en dwingt Commercieel af;
+- parkeren bewaart bronregels, bronversies, afrondingsmodus en inhoudsfingerprints;
+- gewijzigde brondata kan niet rechtstreeks naar `done`, maar moet eerst bewust worden ververst;
+- dossierafhandeling schrijft alleen `overboekingen` en `meta.geboekt`; zij raakt de regels en de
+  eerdere handmatige i7-boeking niet;
+- omzetting naar definitief i7 wijzigt regels, wachtrij en boekstatus in één transactie;
+- `done` en `final_i7` blijven terminaal.
+
+Geef services geen DOM, `confirm`, `toast` of Nederlandse validatiemeldingen. Laat ze stabiele
+foutcodes retourneren en houd de vertaling naar gebruikerstekst in de presentatieadapter. Dat maakt
+foutinjectie mogelijk zonder de UI na te bouwen en voorkomt dat opslagfouten al zichtbare
+geheugenmutaties achterlaten.
