@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.18"; // various patches to make code modular
+const VERSION = "0.1.19"; // Patch T
 
 const CACHE = "hourhound-" + VERSION;
 
