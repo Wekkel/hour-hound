@@ -89,6 +89,7 @@ function tekenBoek(){
     '<button class="sm ghost" id="bk-nrcopy" title="Dossiernummer kopiëren">kopieer</button>'+
     '<span class="uu">'+uu(x.u)+"</span></div>"+
     '<div class="rij"><span class="nm">'+esc(x.naam||"geen dossier")+"</span>"+
+    (x.dvnStatus?'<span class="tag dvn">DVN dossier</span>':"")+
     '<span class="cd">'+esc(x.code||"geen werkcode")+"</span>"+
     (g?'<span class="pill ok">geboekt</span>':(p?'<span class="pill wait">geparkeerd</span>':""))+"</div>"+
     '<span class="cap">Omschrijving — de enige tekst die je plakt</span>'+
@@ -101,6 +102,7 @@ function tekenBoek(){
     h+='<div class="bkrow'+(i===boek.i?" nu":"")+(rg||rp?" gedaan":"")+
       '" data-i="'+i+'">'+
       '<span class="bn">'+esc(r.nummer||"—")+"</span>"+
+      (r.dvnStatus?'<span class="tag dvn">DVN dossier</span>':"")+
       '<span class="bo">'+esc(r.oms||"(leeg)")+"</span>"+
       '<span class="bu">'+uu(r.u)+"</span>"+
       '<button class="sm ghost" data-copy="'+i+'">kopieer</button>'+
@@ -173,12 +175,6 @@ $("bk-done").onclick=async()=>{
     toast("Alles geboekt of geparkeerd — Enter of klik sluit het venster");
   }
   boekStat();};
-$("bk-tab").onclick=()=>{
-  const kop="Dag\tDossiernummer\tDossiernaam\tWerkcode\nOmschrijving\nUren";
-  const blok=boek.rows.map(x=>
-    [kortDag(boek.datum),schoon(x.nummer),schoon(x.naam),schoon(x.code)].join("\t")+"\n"+
-    schoon(x.oms)+"\n"+uu(x.u)).join("\n\n");
-  kopieer(kop+"\n\n"+blok+"\n",$("bk-tab"),"Hele tabel");};
 $("bk-lijst").addEventListener("click",async e=>{
   const c=e.target.closest("[data-copy]");
   if(c){const i=+c.dataset.copy;boek.i=i;

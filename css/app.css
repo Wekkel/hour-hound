@@ -254,6 +254,8 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
   border-bottom:1px solid var(--line);flex-wrap:wrap}
 .mfoot{display:flex;align-items:center;gap:.45rem;padding:.7rem .9rem;
   border-top:1px solid var(--line);flex-wrap:wrap}
+#boek .mfoot{justify-content:flex-end}
+#bk-done{white-space:nowrap;overflow-wrap:normal;word-break:keep-all}
 .mbody{padding:.9rem;overflow-y:auto}
 .kaart .rij{display:flex;gap:.6rem;align-items:baseline;flex-wrap:wrap;margin-bottom:.4rem}
 .kaart .nr{font:500 27px/1.1 var(--mono);letter-spacing:.01em}

@@ -852,6 +852,38 @@ test('Dag-UI is alleen adapter voor dag- en regelmutaties', () => {
   assertNotIncludes(src.dayRules,'Date.now','Klokken moeten expliciet worden geïnjecteerd');
 });
 
+test('sluitWerkdag voert aanvullen en niet-aanvullen echt uit met eindtijd en focusherstel', async() => {
+  const body=read('js/ui/day-close-controller.js');
+  const run=async fill=>{
+    const elements=new Map(),listeners=[];let active,ariaFocusAtClose=null,closeInput=null,autoCalls=0;
+    const make=id=>{const set=new Set();return {id,value:id==='dc-end'?'17:00':'',textContent:'',innerHTML:'',style:{},onclick:null,
+      classList:{add:c=>set.add(c),remove:c=>set.delete(c),toggle:(c,v)=>v?set.add(c):set.delete(c),contains:c=>set.has(c)},
+      setAttribute(n,v){this[n]=v;if(id==='dayclose'&&n==='aria-hidden'&&v==='true')ariaFocusAtClose=active;},focus(){active=this;}};};
+    for(const id of ['dayclose','dc-date','dc-status','dc-done','dc-miss','dc-missing-wrap','dc-end','dc-warn','dc-help','dc-fill','dc-nofill','dc-goday','dc-cancel','dc-x'])elements.set(id,make(id));
+    const opener=make('opener');active=opener;
+    const state={running:null,rules:[{id:'r1',datum:'2026-08-25',uren:5}],dossiers:[],overbookings:[],dayEnds:{},dayAudit:{},stack:[]};
+    const context={console,setTimeout:fn=>{fn();return 1;},clearTimeout,document:{get activeElement(){return active;},addEventListener:(t,f)=>listeners.push(f),removeEventListener:(t,f)=>{const i=listeners.indexOf(f);if(i>=0)listeners.splice(i,1);}},
+      $:id=>elements.get(id),today:()=> '2026-08-26',dagLabel:()=> '25-08-2026',dmy:()=> '25-08-2026',voorstelDagEinde:()=> '17:00',nowHM:()=> '17:00',werkdag:()=>true,
+      dagIntappTotaal:()=>5,dagTekort:()=>3,dagSluitStatus:()=>({gesloten:false}),dagAfsluitWaarschuwing:()=>[],uu:n=>String(n),NORM:8,esc:s=>s,
+      hm2m:s=>/^([01]\d|2[0-3]):[0-5]\d$/.test(s)?1:null,dagRegels:()=>state.rules,sluitObj:()=>null,boekRekenContext:()=>({}),rustig:()=>Promise.resolve(),
+      toast:()=>{},L:()=>{},announce:()=>{},meldTimerFout:()=>false,meldDagRegelFout:()=>false,mergeById:(a,b)=>(a||[]).concat((b||[]).filter(Boolean)),pending:null,liveId:null,vergeetTimerUndo:()=>{},vulAanTot8:()=>autoCalls++,
+      HH:{state:{read:()=>state,commit:d=>Object.assign(state,d)},app:{showTab:()=>{},render:()=>{}},renderCoordinator:{render:()=>{}},services:{timer:{isBlocked:()=>false,closeDay:async input=>{closeInput=input;return {dossiers:[],closedRule:null,dayEnds:{[input.date]:input.end},dayAudit:{}};}}}}};
+    vm.createContext(context);vm.runInContext(body,context,{filename:'js/ui/day-close-controller.js'});
+    const closing=context.sluitWerkdag('2026-08-25');
+    const button=elements.get(fill?'dc-fill':'dc-nofill');assert(typeof button.onclick==='function','Sluitactieknop is niet gekoppeld');
+    button.onclick();
+    assertEq(await closing,true,'sluitWerkdag moet zonder ReferenceError slagen');
+    assertEq(closeInput.end,'17:00','closeDay moet de gekozen eindtijd ontvangen');
+    assertEq(closeInput.date,'2026-08-25','closeDay moet de gekozen datum ontvangen');
+    assertEq(elements.get('dayclose')['aria-hidden'],'true','Modal moet na sluiten aria-hidden zijn');
+    assertEq(active,opener,'Focus moet teruggaan naar de opener');
+    assertEq(ariaFocusAtClose,opener,'aria-hidden=true mag pas worden gezet nadat focus naar de opener is teruggebracht');
+    if(fill)assertEq(autoCalls,1,'Aanvullen moet de aanvuladapter starten');
+    else assertEq(autoCalls,0,'Niet-aanvullen mag de aanvuladapter niet starten');
+  };
+  await run(true);await run(false);
+});
+
 test('TimerService knipt direct, serialiseert en houdt maximaal één regel open', async() => {
   const HH=evaluateTimerService(),service=HH.services.timer,gateway=HH.storage.indexedDB;
   const db=fakeDatabase();gateway.use(db);
@@ -1325,6 +1357,19 @@ test('recente taken worden pas gemeten wanneer Nu zichtbaar is', () => {
     'Een verborgen recente-takenlijst mag geen nulhoogte opslaan');
   assertIncludes(src.appRuntime, 'if(value==="nu")HH.renderCoordinator.render("recent")',
     'Terugkeren naar Nu moet de recente-takenhoogte opnieuw berekenen');
+});
+
+test('boekwizard toont DVN-labels, behoudt dagkopie en heeft stabiele footer', () => {
+  assertIncludes(src.booking, "x.dvnStatus?'<span class=\"tag dvn\">DVN dossier</span>'",
+    'Intapp-kaart moet DVN dossier tonen bij een DVN-samenvatting');
+  assertIncludes(src.booking, "r.dvnStatus?'<span class=\"tag dvn\">DVN dossier</span>'",
+    'Intapp-lijst moet DVN dossier tonen bij een DVN-samenvatting');
+  assertNotIncludes(src.html, 'id="bk-tab"', 'Hele tabel mag niet meer in de invoerwizard staan');
+  assertNotIncludes(src.booking, 'bk-tab', 'De verwijderde Hele-tabel-handler mag niet blijven bestaan');
+  assertIncludes(src.html, 'id="d-copy"', 'Dag-kopieeractie moet behouden blijven');
+  assertIncludes(src.booking, 'dvnStatus?', 'Gewone i7-rows krijgen geen DVN-label');
+  assertIncludes(src.css, '#boek .mfoot{justify-content:flex-end}', 'Boekfooter moet naar rechts uitlijnen');
+  assertIncludes(src.css, '#bk-done{white-space:nowrap', 'Gereed-knoptekst mag niet intern afbreken');
 });
 
 test('modal/sheet staat globale sneltoetsen niet toe', () => {

@@ -24,11 +24,14 @@ function dagAfsluitKeuze(datum){
   $("dc-fill").textContent=kanAanvullen?"Afsluiten + aanvullen":"Afsluiten";
   $("dc-fill").classList.toggle("strong",isWerkdag&&tekort>=7.95);
   $("dc-nofill").style.display=kanAanvullen?"":"none";
+  const returnFocus=document.activeElement;
   dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
   setTimeout(()=>$("dc-end").focus(),0);
   return new Promise(resolve=>{
-    const done=v=>{dlg.classList.remove("on");dlg.setAttribute("aria-hidden","true");
-      document.removeEventListener("keydown",key,true);resolve(v);};
+    const done=v=>{dlg.classList.remove("on");
+      document.removeEventListener("keydown",key,true);
+      if(returnFocus&&typeof returnFocus.focus==="function")returnFocus.focus();
+      dlg.setAttribute("aria-hidden","true");resolve(v);};
     const valid=actie=>{const eind=$("dc-end").value.trim();
       if(hm2m(eind)==null){toast("Ongeldige eindtijd");$("dc-end").focus();return;}
       done({actie,eind});};
@@ -55,7 +58,7 @@ async function sluitWerkdag(datum){
   if(hm2m(eind)==null){toast("Ongeldige eindtijd");return false;}
   const wasRunning=HH.state.read().running&&HH.state.read().running.datum===datum,dicht=wasRunning?sluitObj(HH.state.read().running,eind):null;
   const uit=await HH.services.timer.closeDay({currentTimer:HH.state.read().running,readCurrentTimer:()=>HH.state.read().running,
-      date:datum,end,closedRule:dicht,
+      date:datum,end:eind,closedRule:dicht,
       runningId:wasRunning?HH.state.read().running.id:null,rules:HH.state.read().rules,
       dossiers:HH.state.read().dossiers,overbookings:HH.state.read().overbookings,
       dayEnds:HH.state.read().dayEnds,dayAudit:HH.state.read().dayAudit,
@@ -82,4 +85,3 @@ async function sluitWerkdag(datum){
   else toast("Werkdag afgesloten. Er is "+uu(totaalNaSluit)+
     " uur verantwoord; er was geen Diversen-aanvulling nodig.");
   return true;}
-
