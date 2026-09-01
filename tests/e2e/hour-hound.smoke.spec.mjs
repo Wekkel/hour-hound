@@ -721,3 +721,34 @@ test('parkeert geblokkeerd dossier en handelt later af zonder i7-correctie', asy
   expect(state.regels[0].dossierId).toBe('d-target');
   expect(state.regels[0].code).toBeNull();
 });
+
+test('maakt de Intapp-knop inactief na volledige boeking van een gesloten dag', async ({ page }) => {
+  const today=todayLocal(),stamp=Date.now();
+  await openAndSeed(page, {
+    dossiers:[i7Dossier,
+      {id:'d-booked-day',nummer:'304000019',naam:'Volledig geboekte dag',lang:'nl',codes:[],c:1}],
+    regels:[{id:'r-booked-day',datum:today,start:'09:00',eind:'10:00',dossierId:'d-booked-day',
+      code:null,omschrijving:'volledig geboekt werk',soort:'werk',gemaakt:stamp,gewijzigd:stamp}],
+    codes:baseCodes,meta:{dagEinde:{[today]:'17:00'}}
+  });
+
+  await page.locator('#tabs [data-v="dag"]').click();
+  await page.locator('#d-boek').click();
+  await page.locator('#bk-done').click();
+  await expect(page.locator('#bk-done')).toContainText('Alles geboekt');
+  await page.locator('#bk-close').click();
+
+  await expect(page.locator('#d-boek')).toHaveClass(/is-disabled/);
+  await expect(page.locator('#d-boek')).toHaveAttribute('aria-disabled','true');
+  await expect(page.locator('#d-boekstat')).toContainText('Volledig geboekt in Intapp');
+  await page.locator('#d-boek').click();
+  await expect(page.locator('#toast')).toContainText('Deze dag is al geboekt in Intapp');
+  await expect(page.locator('#boek')).not.toHaveClass(/on/);
+
+  await page.locator('#d-table [data-edit="r-booked-day"]').click();
+  await page.locator('#er-oms').fill('inhoudelijk gewijzigd werk');
+  await page.locator('#er-save').click();
+  await expect(page.locator('#d-boek')).not.toHaveClass(/is-disabled/);
+  await expect(page.locator('#d-boek')).toHaveAttribute('aria-disabled','false');
+  await expect(page.locator('#d-boekstat')).toContainText('0 geboekt · 0 geparkeerd · 1 open');
+});

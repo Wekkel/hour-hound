@@ -1537,6 +1537,38 @@ test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', ()
   assertNotIncludes(week, 'kenNummerToe', 'Week mag de nummerworkflow niet aanroepen');
 });
 
+test('Patch T koppelt alle urenberekeningen expliciet aan de UI-adapters', () => {
+  const adapters=['js/timer.js','js/booking.js','js/ui/overbooking-controller.js'];
+  for(const file of adapters){
+    const hits=bareIdentifierReferences(read(file),['hoursOf']);
+    assertEq(hits.map(hit=>`${hit.word}@${hit.line}`).join(','),'',
+      `${file} gebruikt een niet-bestaande globale hoursOf in plaats van urenOf`);
+  }
+  assertEq((src.timer.match(/hoursOf:urenOf/g)||[]).length,2,
+    'Beide DVN-routes moeten urenOf expliciet injecteren');
+  assertIncludes(src.booking,'hoursOf:urenOf',
+    'Parkeren moet urenOf expliciet injecteren');
+  assertIncludes(read('js/ui/overbooking-controller.js'),'hoursOf:urenOf',
+    'Overboeking verversen moet urenOf expliciet injecteren');
+});
+
+test('Patch T maakt een afgesloten en verwerkte dag herkenbaar inactief', () => {
+  assertIncludes(src.booking,'function dagBoekStatus(rows,datum)',
+    'Dagboekstatus moet datum-expliciet en onafhankelijk van een oud wizardvenster zijn');
+  assertIncludes(src.booking,'status.klaar&&dagSluitStatus(datum).gesloten',
+    'Alleen een afgesloten én volledig verwerkte dag mag inactief worden');
+  assertIncludes(src.booking,'btn.classList.toggle("is-disabled",verwerkt)',
+    'De dagknop moet een zichtbare inactieve status krijgen');
+  assertIncludes(src.booking,'btn.setAttribute("aria-disabled",verwerkt?"true":"false")',
+    'De inactieve status moet ook toegankelijk worden gecommuniceerd');
+  assertNotIncludes(src.booking,'btn.disabled=verwerkt',
+    'De knop moet klikbaar blijven om uit te leggen waarom boeken niet nodig is');
+  assertIncludes(src.booking,'Deze dag is al geboekt in Intapp',
+    'Klikken op de inactieve knop moet een duidelijke melding geven');
+  assertIncludes(src.css,'button.is-disabled',
+    'De inactieve dagknop moet visueel grijs worden');
+});
+
 test('DVN kan bewust en traceerbaar naar definitief i7', () => {
   assertIncludes(src.html, 'Naar definitief i7', 'Beheer moet de bewuste eindactie uitleggen');
   assertIncludes(src.timer, 'async function maakDvnDefinitiefI7', 'Definitief-i7-transactie ontbreekt');
@@ -1560,7 +1592,8 @@ test('Patch H houdt gewone blokkade los van DVN en echte boekstatus', () => {
   assertIncludes(src.admin, 'gateway.tx("overboekingen","readwrite"',
     'Parkeren moet apart van geboekt worden opgeslagen');
   assertNotIncludes(src.booking, 'zetGeboekt(p.row.fp,true)', 'Parkeren mag niet als echte dossierboeking gelden');
-  assertIncludes(src.booking, 'geboekt · "+p+" geparkeerd · "+open+" open', 'Dagstatus moet drie aantallen tonen');
+  assertIncludes(src.booking, 'status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd · "+status.open+" open',
+    'Dagstatus moet drie aantallen tonen');
   assertIncludes(src.html, 'Op dossier geboekt · afhandelen', 'Latere dossierbevestiging ontbreekt');
   assertIncludes(src.admin, 'targetBookedDate:input.bookedDate',
     'Latere boeking moet de actuele Intapp-datum vastleggen');
@@ -1673,8 +1706,8 @@ test('brede H-regressie bewaakt modal, verwijdering, groepering en atomaire afha
     'Afhandelen moet de actuele inhoudsvingerafdrukken bewaren');
   assertIncludes(src.admin, 'stores.meta.put(booked,"geboekt")',
     'Afhandelen moet ook de gewone boekstatus duurzaam bijwerken');
-  assertIncludes(src.booking, 'overboekingAfgerondVoorRow(row,boek.datum)',
-    'De Intapp-wizard moet terminale overboekingen als werkelijk geboekt herkennen');
+  assertIncludes(src.booking, 'overboekingAfgerondVoorRow(row,datum)',
+    'De Intapp-wizard en dagstatus moeten terminale overboekingen datum-expliciet als geboekt herkennen');
 });
 
 test('hervatten van een recente taak start exact één nieuwe timerwissel', () => {

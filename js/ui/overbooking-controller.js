@@ -35,7 +35,7 @@ async function verversOverboeking(id){
   const nowIso=new Date().toISOString();let uit;
   try{uit=await HH.services.admin.refreshOverbooking({overbooking:o,rules:HH.state.read().rules,
     dossiers:HH.state.read().dossiers,
-    runningId:HH.state.read().running?HH.state.read().running.id:null,summarize:sumVan,hoursOf,roundingMode:HH.state.read().roundingMode,
+    runningId:HH.state.read().running?HH.state.read().running.id:null,summarize:sumVan,hoursOf:urenOf,roundingMode:HH.state.read().roundingMode,
     waitForRules:rustig,nowIso});}
   catch(e){L("FOUT-overboeking-verversen",String(e));
     toast("Bijwerken mislukt — er is niets gewijzigd");return;}

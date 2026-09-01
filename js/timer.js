@@ -278,7 +278,7 @@ async function maakDvnDefinitiefI7(id){
   try{
     uit=await HH.services.admin.finalizeDvnI7({dossier:d,dossiers:HH.state.read().dossiers,
       rules:HH.state.read().rules,stack:HH.state.read().stack,
-      runningId:HH.state.read().running?HH.state.read().running.id:null,commercialCode:commercieel,hoursOf,
+      runningId:HH.state.read().running?HH.state.read().running.id:null,commercialCode:commercieel,hoursOf:urenOf,
       waitForRules:rustig,nowMs,nowIso});
   }catch(e){L("FOUT-dvn-definitief-i7",String(e));
     toast("Omzetten naar definitief i7 mislukt — niets gewijzigd");return;}
@@ -382,7 +382,7 @@ async function markeerDvnIngevoerd(){
   const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
   try{uit=await HH.services.admin.markDvnPosted({dossier:d,dossiers:HH.state.read().dossiers,
     rules:HH.state.read().rules,
-    hoursOf,nowMs,nowIso});}
+    hoursOf:urenOf,nowMs,nowIso});}
   catch(e){L("FOUT-dvn-post",String(e));toast("Markeren mislukt — niets gewijzigd: "+e);return;}
   if(meldAdminFout(uit,"DVN is niet als afgehandeld gemarkeerd"))return;
   memDossier(uit.dossier);HH.app.render();announce();

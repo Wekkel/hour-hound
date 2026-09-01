@@ -29,6 +29,9 @@ button{font:inherit;background:var(--card);color:var(--ink);border:1px solid var
 button:hover{border-color:var(--soft)}
 button:focus-visible{outline:2px solid var(--moss);outline-offset:2px}
 button.go{background:var(--moss);border-color:var(--moss);color:#fff}
+button.is-disabled{background:var(--line);border-color:var(--line);color:var(--soft);
+  cursor:not-allowed;opacity:.78}
+button.is-disabled:hover{border-color:var(--line)}
 button.back{background:var(--rust);border-color:var(--rust);color:#fff}
 button.sm{font-size:14px;padding:.35rem .55rem}
 button.warn{color:var(--rust)}

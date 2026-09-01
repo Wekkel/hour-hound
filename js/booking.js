@@ -14,10 +14,21 @@ let parkBoek=null;
    plus gewijzigd-waarden van alle onderliggende tijdregels. Wijzigt er iets aan de
    uren, de bronregels of de afrondingsmodus, dan valt de regel automatisch terug op
    niet-geboekt.                                                                */
-const isGeboekt=fp=>(HH.state.read().booked[boek.datum]||[]).indexOf(fp)>=0;
-const isGeparkeerd=row=>!!overboekingVoorRow(row,boek.datum);
-const isDossierGeboekt=row=>isGeboekt(row.fp)||!!overboekingAfgerondVoorRow(row,boek.datum);
-const isAfgehandeld=row=>isDossierGeboekt(row)||isGeparkeerd(row);
+const isGeboektOp=(fp,datum)=>(HH.state.read().booked[datum]||[]).indexOf(fp)>=0;
+const isGeparkeerdOp=(row,datum)=>!!overboekingVoorRow(row,datum);
+const isDossierGeboektOp=(row,datum)=>isGeboektOp(row.fp,datum)||
+  !!overboekingAfgerondVoorRow(row,datum);
+const isAfgehandeldOp=(row,datum)=>isDossierGeboektOp(row,datum)||isGeparkeerdOp(row,datum);
+const isGeboekt=fp=>isGeboektOp(fp,boek.datum);
+const isGeparkeerd=row=>isGeparkeerdOp(row,boek.datum);
+const isDossierGeboekt=row=>isDossierGeboektOp(row,boek.datum);
+const isAfgehandeld=row=>isAfgehandeldOp(row,boek.datum);
+function dagBoekStatus(rows,datum){
+  const aantalGeboekt=rows.filter(row=>isDossierGeboektOp(row,datum)).length;
+  const aantalGeparkeerd=rows.filter(row=>isGeparkeerdOp(row,datum)).length;
+  return{geboekt:aantalGeboekt,geparkeerd:aantalGeparkeerd,
+    open:Math.max(0,rows.length-aantalGeboekt-aantalGeparkeerd),
+    klaar:rows.length>0&&rows.every(row=>isAfgehandeldOp(row,datum))};}
 function kanParkeren(row){
   if(!row||isAfgehandeld(row)||!Array.isArray(row.dosIds)||row.dosIds.length!==1)return false;
   const d=dosOf(row.dosIds[0]);
@@ -37,10 +48,17 @@ async function zetGeboekt(fp,aan){
     tekenBoek();boekStat();return false;}}
 function boekStat(){
   const el=$("d-boekstat");if(!el)return;
-  const rs=sumRows(),k=HH.state.read().booked[HH.state.read().viewDate]||[];
-  const n=rs.filter(x=>k.indexOf(x.fp)>=0||overboekingAfgerondVoorRow(x,HH.state.read().viewDate)).length;
-  const p=rs.filter(x=>overboekingVoorRow(x,HH.state.read().viewDate)).length,open=rs.length-n-p;
-  el.textContent=!rs.length?"":n+" geboekt · "+p+" geparkeerd · "+open+" open";}
+  const datum=HH.state.read().viewDate,rs=sumRows(),status=dagBoekStatus(rs,datum);
+  const verwerkt=status.klaar&&dagSluitStatus(datum).gesloten,btn=$("d-boek");
+  btn.classList.toggle("is-disabled",verwerkt);
+  btn.setAttribute("aria-disabled",verwerkt?"true":"false");
+  btn.title=verwerkt?(status.geparkeerd?
+    "Alle regels zijn al geboekt of geparkeerd in Intapp":
+    "Deze dag is al geboekt in Intapp"):"Boek deze dag handmatig in Intapp";
+  el.textContent=!rs.length?"":(verwerkt?(status.geparkeerd?
+    "Volledig verwerkt in Intapp · "+status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd":
+    "Volledig geboekt in Intapp · "+status.geboekt+" regels"):
+    status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd · "+status.open+" open");}
 async function kopieer(tekst,btn,label){
   try{await navigator.clipboard.writeText(tekst);
     if(btn){btn.textContent="Gekopieerd \u2713";clearTimeout(btn._h);
@@ -48,8 +66,11 @@ async function kopieer(tekst,btn,label){
     return true;}
   catch(e){toast("Kopiëren mislukt — het venster moet actief zijn");return false;}}
 function openBoek(){
-  const rs=sumRows();
+  const rs=sumRows(),datum=HH.state.read().viewDate,status=dagBoekStatus(rs,datum);
   if(!rs.length){toast("Niets te boeken op deze dag");return;}
+  if(status.klaar&&dagSluitStatus(datum).gesloten){
+    toast(status.geparkeerd?"Alle regels van deze dag zijn al geboekt of geparkeerd in Intapp":
+      "Deze dag is al geboekt in Intapp");return;}
   const probs=controleer(),blok=probs.filter(x=>x.blok);
   if(blok.length){toonBlokkade(blok,"boekvenster");return;}
   const waar=probs.filter(x=>!x.blok);
@@ -145,7 +166,7 @@ async function bevestigParkeer(){
   const nowIso=new Date().toISOString();let uit;
   try{uit=await HH.services.admin.parkOverbooking({row:p.row,target:p.doel,i7Dossier:p.ind,
     commercialCode:p.com,rules:HH.state.read().rules,overbookings:HH.state.read().overbookings,sourceDate:boek.datum,
-    roundingMode:HH.state.read().roundingMode,id:uid(),nowIso,hoursOf,waitForRules:rustig});}
+    roundingMode:HH.state.read().roundingMode,id:uid(),nowIso,hoursOf:urenOf,waitForRules:rustig});}
   catch(e){L("FOUT-overboeking-parkeren",String(e));toast("Parkeren mislukt — er is niets gewijzigd");return;}
   if(meldAdminFout(uit,"Parkeren is niet uitgevoerd")){
     if(uit&&uit.error==="source_changed")sluitParkeer();return;}
