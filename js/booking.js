@@ -145,6 +145,7 @@ function tijdelijkI7Omschrijving(row){
   return "Tijdelijk i7 voor "+schoon(row.nummer)+" · "+schoon(row.naam)+" · "+
     schoon(row.oms);
 }
+let parkboekFocus=null;
 function openParkeer(row){
   if(!kanParkeren(row)){toast("Alleen een open regel van een gewoon dossier kan worden geparkeerd");return;}
   const ind=i7(),com=i7CodeOp(VAST_VOORLOPIG,"-704");
@@ -158,16 +159,22 @@ function openParkeer(row){
   $("pb-source").innerHTML=(row.bron||[]).map(b=>{const r=HH.state.read().rules.find(x=>x.id===b.id);
     return r?'<tr><td class="mono">'+esc(r.start+'–'+(r.eind||'loopt'))+'</td><td>'+esc(r.omschrijving||'')+
       '</td><td class="mono" style="text-align:right">'+uu(urenOf(r))+'</td></tr>':"";}).join("");
-  $("parkboek").classList.add("on");
+  parkboekFocus=document.activeElement;$("parkboek").classList.add("on");
+  $("parkboek").setAttribute("aria-hidden","false");setTimeout(()=>$("pb-save").focus(),0);
 }
-function sluitParkeer(){parkBoek=null;$("parkboek").classList.remove("on");}
+function sluitParkeer(){parkBoek=null;$("parkboek").classList.remove("on");
+  $("parkboek").setAttribute("aria-hidden","true");
+  if(parkboekFocus&&parkboekFocus.focus){const f=parkboekFocus;parkboekFocus=null;setTimeout(()=>f.focus(),0);}}
 async function bevestigParkeer(){
+  if(bevestigParkeer.busy)return;
   const p=parkBoek;if(!p)return;
+  bevestigParkeer.busy=true;$('pb-save').disabled=true;
   const nowIso=new Date().toISOString();let uit;
   try{uit=await HH.services.admin.parkOverbooking({row:p.row,target:p.doel,i7Dossier:p.ind,
     commercialCode:p.com,rules:HH.state.read().rules,overbookings:HH.state.read().overbookings,sourceDate:boek.datum,
     roundingMode:HH.state.read().roundingMode,id:uid(),nowIso,hoursOf:urenOf,waitForRules:rustig});}
   catch(e){L("FOUT-overboeking-parkeren",String(e));toast("Parkeren mislukt — er is niets gewijzigd");return;}
+  finally{bevestigParkeer.busy=false;$('pb-save').disabled=false;}
   if(meldAdminFout(uit,"Parkeren is niet uitgevoerd")){
     if(uit&&uit.error==="source_changed")sluitParkeer();return;}
   const o=uit.overbooking;HH.state.upsert("overbookings",o);
@@ -229,4 +236,9 @@ $("pb-save").onclick=bevestigParkeer;
 $("pb-cancel").onclick=sluitParkeer;$("pb-x").onclick=sluitParkeer;
 $("parkboek").addEventListener("mousedown",e=>{if(e.target.id==="parkboek")sluitParkeer();});
 document.addEventListener("keydown",e=>{if($("parkboek").classList.contains("on")&&e.key==="Escape"){
-  e.preventDefault();sluitParkeer();}},true);
+  e.preventDefault();e.stopImmediatePropagation();sluitParkeer();}},true);
+document.addEventListener("keydown",e=>{if(!$('parkboek').classList.contains('on')||e.key!=='Tab')return;
+  const fs=[...$('parkboek').querySelectorAll('button,input,select,textarea,[tabindex]:not([tabindex="-1"])')]
+    .filter(x=>!x.disabled);if(!fs.length)return;const i=fs.indexOf(document.activeElement);
+  e.preventDefault();const next=i<0?(e.shiftKey?fs.length-1:0):
+    (i+(e.shiftKey?-1:1)+fs.length)%fs.length;fs[next].focus();},true);

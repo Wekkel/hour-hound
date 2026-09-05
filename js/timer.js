@@ -23,7 +23,8 @@ function prefixVoor(d,datum,tekst){
 function sluitObj(r,eindTijd){
   const k=Object.assign({},r);
   const oms=pakOmschr(r.id);
-  if(oms!=null)k.omschrijving=oms;
+  if(oms){k.omschrijving=oms.tekst;
+    Object.defineProperty(k,"_omsVersie",{value:oms.versie,enumerable:false});}
   let e=eindTijd;
   if(e==null||hm2m(e)==null)e=k.datum!==today()?"23:59":nowHM();
   if(hm2m(e)==null)e="23:59";
@@ -40,14 +41,20 @@ function timerBasis(nowMs){return{currentTimer:HH.state.read().running,readCurre
   waitForRules:rustig};}
 function timerStartInput(o){
   const spec=o||{},nowMs=Date.now(),created=spec.nieuwDossier?bouwDossier(spec.nieuwDossier):null;
-  const dossier=created||(spec.dossierId?dosOf(spec.dossierId):null),input=Object.assign(
+  const dossier=created||(spec.dossierId?dosOf(spec.dossierId):null);
+  const oms=HH.state.read().running?pakOmschr(HH.state.read().running.id):null,input=Object.assign(
     timerBasis(nowMs),{id:uid(),createdDossier:created,dossierId:dossier?dossier.id:null,
       code:codeVoor(dossier,spec.code),description:prefixVoor(dossier,today(),spec.omschrijving||""),
       kind:spec.soort||"werk",preserveStack:!!spec.bewaarStack,
-      pendingDescription:HH.state.read().running?pakOmschr(HH.state.read().running.id):null});
+      pendingDescription:oms?oms.tekst:null,
+      pendingDescriptionRevision:oms?oms.versie:null,
+      pendingDescriptionId:HH.state.read().running&&HH.state.read().running.id,
+      });
   if(Object.prototype.hasOwnProperty.call(spec,"stackNa"))input.stackAfter=spec.stackNa;
   return{input,dossier,created};}
 function pasTimerStartToe(uit,context){
+  if(context.input.pendingDescriptionId)bevestigOmschr(context.input.pendingDescriptionId,
+    context.input.pendingDescriptionRevision);
   pending=null;vergeetTimerUndo("nieuwe timerwissel");
   let nextRules=HH.state.read().rules;
   if(uit.autoRemoved.length){const ids=new Set(uit.autoRemoved.map(r=>r.id));
@@ -73,10 +80,13 @@ async function startViaService(o,method){
   if(await meldTimerFout(uit,"Starten is niet uitgevoerd"))return null;
   return pasTimerStartToe(uit,context);}
 async function stopRunning(eindTijd,label,method){
-  const before=HH.state.read().running?kopie1(HH.state.read().running):null,nowMs=Date.now(),input=Object.assign(timerBasis(nowMs),{
-    end:eindTijd,name:label||"stoppen",pendingDescription:HH.state.read().running?pakOmschr(HH.state.read().running.id):null});
+  const before=HH.state.read().running?kopie1(HH.state.read().running):null,nowMs=Date.now();
+  const oms=before?pakOmschr(before.id):null,input=Object.assign(timerBasis(nowMs),{
+    end:eindTijd,name:label||"stoppen",pendingDescription:oms?oms.tekst:null,
+    pendingDescriptionRevision:oms?oms.versie:null});
   const uit=await HH.services.timer[method||"stop"](input);
   if(await meldTimerFout(uit,"Stoppen is niet uitgevoerd")||uit.noChange)return null;
+  if(oms)bevestigOmschr(before.id,oms.versie);
   HH.state.commit({dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
     rules:mergeById(HH.state.read().rules,[uit.closedRule]),running:null});liveId=null;
   L("stop-regel",uit.closedRule.start+"-"+uit.closedRule.eind+" · "+
@@ -212,10 +222,12 @@ async function terug(){
   ntWizard=null;
   const st=HH.state.read().stack.slice(),back=st.pop();
   if(!back){
-    const nowMs=Date.now(),input=Object.assign(timerBasis(nowMs),{returnEmpty:true,
-      pendingDescription:HH.state.read().running?pakOmschr(HH.state.read().running.id):null});
+    const nowMs=Date.now(),current=HH.state.read().running;
+    const oms=current?pakOmschr(current.id):null,input=Object.assign(timerBasis(nowMs),{returnEmpty:true,
+      pendingDescription:oms?oms.tekst:null,pendingDescriptionRevision:oms?oms.versie:null});
     const uit=await HH.services.timer.returnToStack(input);
     if(await meldTimerFout(uit,"Terugkeren is niet uitgevoerd"))return;
+    if(oms)bevestigOmschr(input.currentTimer&&input.currentTimer.id,oms.versie);
     if(uit.closedRule)HH.state.commit({dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
       rules:mergeById(HH.state.read().rules,[uit.closedRule]),running:null});
     liveId=null;HH.app.render();announce();L("terug","stapel leeg");
@@ -396,7 +408,7 @@ async function markeerDvnIngevoerd(){
    groot dat er een taakwissel is gemist.                                        */
 const LANG=180;
 function hideWake(){$("l-wake").classList.remove("on");}
-document.addEventListener("visibilitychange",()=>{if(document.hidden)flushOmschr();});
+document.addEventListener("visibilitychange",()=>{if(document.hidden)flushOmschr().catch(()=>{});});
 function checkWake(){
   if(!HH.state.read().running||HH.state.read().running.soort!=="werk"){hideWake();return;}
   const mins=Math.max(0,(hm2m(nowHM())||0)-(hm2m(HH.state.read().running.start)||0));

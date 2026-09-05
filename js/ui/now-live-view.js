@@ -46,4 +46,4 @@ function renderLive(){
   $("l-code").title=d&&(d.voorlopig||dvnDefinitiefI7(d))?
     "Deze tijd boekt altijd op "+codeNaam(d,defaultCode(d)):
     (isIndirect(d)?"Een i7-regel moet een werkcode hebben":"");
-  hideWake();ntRender();}
+  checkWake();ntRender();}

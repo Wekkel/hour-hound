@@ -34,7 +34,11 @@ $("l-omschr").addEventListener("input",e=>{
     /* Een omschrijvingssuggestie mag nooit stilzwijgend een optionele dossiercode
        invullen. i7 heeft zijn code al expliciet gekozen vóór de omschrijving. */
     if(it.code&&!next.code&&isIndirect(d))next.code=it.code;
-    await saveRegel(next);liveId=null;
+    planOmschr(current.id,next.omschrijving);
+    const concept=pakOmschr(current.id);
+    try{await saveRegel(next);}catch(e){
+      toast("Opslaan omschrijving mislukt — probeer opnieuw");return;}
+    bevestigOmschr(current.id,concept.versie);liveId=null;
     $("l-omschr").value=HH.state.read().running.omschrijving;$("l-code").value=codeNaam(d,HH.state.read().running.code);
     const m=/\{[^}]+\}/.exec($("l-omschr").value);$("l-omschr").focus();
     if(m)$("l-omschr").setSelectionRange(m.index,m.index+m[0].length);
@@ -118,21 +122,20 @@ $("l-code").addEventListener("blur",()=>setTimeout(async()=>{closeAC();
   $("l-code").value=codeNaam(nd,HH.state.read().running.code);
   $("l-code").classList.toggle("miss",isIndirect(nd)&&!HH.state.read().running.code);
   verversDag();},160));
-$("l-omschr").addEventListener("blur",()=>setTimeout(()=>{closeAC();flushOmschr();},160));
+$("l-omschr").addEventListener("blur",()=>setTimeout(()=>{closeAC();flushOmschr().catch(()=>{});},160));
 /* Een asynchrone IndexedDB-write haalt het niet meer bij het sluiten van de pagina.
    De openstaande omschrijving wordt daarom synchroon in localStorage genoteerd en bij
    de volgende start teruggezet.                                                */
 window.addEventListener("beforeunload",()=>{
   if(!omsWacht)return;
-  try{localStorage.setItem("hh-oms",
-    JSON.stringify({id:omsWacht.id,tekst:omsWacht.tekst}));}catch(e){}});
+  bewaarOmschr(omsWacht);});
 async function herstelOmschr(){
   let n=null;
   try{n=JSON.parse(localStorage.getItem("hh-oms")||"null");}catch(e){}
   if(!n||!n.id)return;
-  try{localStorage.removeItem("hh-oms");}catch(e){}
-  const r=HH.state.read().rules.find(x=>x.id===n.id);
-  if(!r||r.omschrijving===n.tekst)return;
-  await saveRegel(Object.assign({},r,{omschrijving:n.tekst}));
+  const p=herstelOmschrConcept(n),r=HH.state.read().rules.find(x=>x.id===n.id);
+  if(!r||r.omschrijving===n.tekst){bevestigOmschr(p.id,p.versie);return;}
+  try{await flushOmschr(true);}
+  catch(e){toast("Herstel van omschrijving mislukt — probeer opnieuw");return;}
   L("omschrijving-hersteld","na afsluiten · "+omsLog(n.tekst));
   toast("Laatst getypte omschrijving is alsnog opgeslagen");}

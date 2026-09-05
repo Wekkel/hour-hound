@@ -207,31 +207,40 @@ function rustig(ids){
    De debouncecallback legt de concrete regel-ID en de bedoelde tekst vast en kijkt
    nooit later naar de globale running. pakOmschr() haalt een openstaande tekst op en
    annuleert de timer, zodat een taakwissel die tekst in dezelfde transactie meeneemt. */
-let omsWacht=null;
+let omsWacht=null,omsVersie=0;
+function bewaarOmschr(p){
+  try{localStorage.setItem("hh-oms",JSON.stringify({id:p.id,tekst:p.tekst,versie:p.versie}));}catch(e){}}
+function nieuwOmschr(id,tekst,versie){
+  const p={id,tekst,versie:versie||++omsVersie,t:null,poging:null};
+  omsVersie=Math.max(omsVersie,p.versie||0);omsWacht=p;bewaarOmschr(p);return p;}
 function planOmschr(id,tekst){
-  if(omsWacht&&omsWacht.id!==id)flushOmschr();
   if(omsWacht)clearTimeout(omsWacht.t);
-  const p={id,tekst,t:null};
-  p.t=setTimeout(()=>{if(omsWacht===p)omsWacht=null;schrijfOms(p);},400);
-  omsWacht=p;
-  try{localStorage.setItem("hh-oms",JSON.stringify({id,tekst}));}catch(e){}}
-function schrijfOms(p){
+  const p=nieuwOmschr(id,tekst);
+  p.t=setTimeout(()=>{p.t=null;schrijfOms(p).catch(()=>{});},400);return p;}
+function schrijfOms(p,stil){
+  if(p.poging)return p.poging;
   const r=HH.state.read().rules.find(x=>x.id===p.id);
-  if(!r)return Promise.resolve();
+  if(!r)return Promise.reject(new Error("Tijdregel voor omschrijving bestaat niet meer"));
   const gewijzigd=Object.assign({},r,{omschrijving:p.tekst});
-  const kl=()=>{try{const n=JSON.parse(localStorage.getItem("hh-oms")||"null");
-    if(n&&n.id===p.id&&n.tekst===p.tekst)localStorage.removeItem("hh-oms");}catch(e){}};
-  return saveRegel(gewijzigd).then(kl,kl);}
-function flushOmschr(){
-  if(!omsWacht)return Promise.resolve();
-  const p=omsWacht;omsWacht=null;clearTimeout(p.t);
-  return schrijfOms(p);}
+  const poging=saveRegel(gewijzigd).then(v=>{bevestigOmschr(p.id,p.versie);return v;},e=>{
+    if(!stil&&omsWacht===p)toast("Opslaan omschrijving mislukt — probeer opnieuw");throw e;});
+  p.poging=poging;
+  poging.then(()=>{if(p.poging===poging)p.poging=null;},()=>{if(p.poging===poging)p.poging=null;});
+  return poging;}
+function flushOmschr(stil){
+  const p=omsWacht;if(!p)return Promise.resolve();
+  clearTimeout(p.t);p.t=null;return schrijfOms(p,stil);}
 function pakOmschr(id){
-  if(omsWacht&&omsWacht.id===id){clearTimeout(omsWacht.t);
-    const t=omsWacht.tekst;omsWacht=null;
-    try{localStorage.removeItem("hh-oms");}catch(e){}
-    return t;}
+  const p=omsWacht&&omsWacht.id===id?omsWacht:null;
+  if(p){clearTimeout(p.t);p.t=null;return{tekst:p.tekst,versie:p.versie};}
   return null;}
+function bevestigOmschr(id,versie){
+  if(!omsWacht||omsWacht.id!==id||omsWacht.versie!==versie)return false;
+  const p=omsWacht;clearTimeout(p.t);omsWacht=null;
+  try{const n=JSON.parse(localStorage.getItem("hh-oms")||"null");
+    if(n&&n.id===id&&n.versie===versie)localStorage.removeItem("hh-oms");}catch(e){}
+  return true;}
+function herstelOmschrConcept(n){return nieuwOmschr(n.id,n.tekst,n.versie||++omsVersie);}
 function memRegel(r){HH.state.upsert("rules",r);}
 function memDossier(d){HH.state.upsert("dossiers",d);}
 let logboek=[],logOms=false,logT=null,appVer="?";

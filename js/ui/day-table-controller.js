@@ -78,6 +78,7 @@ async function maakLopend(id){
       nowMs:Date.now(),nowIso:new Date().toISOString()});
   if(await meldTimerFout(uit,"Regel opnieuw starten is niet uitgevoerd")||
     meldDagRegelFout(uit,"Regel opnieuw starten is niet uitgevoerd"))return;
+  if(dicht&&dicht._omsVersie)bevestigOmschr(dicht.id,dicht._omsVersie);
   pending=null;ntWizard=null;const nextRules=mergeById(HH.state.read().rules,[uit.closedRule,uit.rule]);
   HH.state.commit({dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),rules:nextRules,
     running:nextRules.find(x=>x.id===uit.rule.id)});

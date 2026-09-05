@@ -7,7 +7,7 @@
     "boek","parkboek","overboekpost","herstel"]);
   const element=id=>document.getElementById(id);
   const isOpen=id=>{const el=element(id);return !!(el&&el.classList.contains("on"));};
-  const active=()=>ids.find(isOpen)||null;
+  const active=()=>ids.slice().reverse().find(isOpen)||null;
   HH.ui.modals=Object.freeze({ids,isOpen,active,anyOpen:()=>active()!==null,
     blocksGlobalKeyboard:()=>active()});
 })(globalThis.HH);

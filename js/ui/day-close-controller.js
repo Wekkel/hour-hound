@@ -67,6 +67,7 @@ async function sluitWerkdag(datum){
       nowMs:Date.now(),nowIso:new Date().toISOString()});
   if(await meldTimerFout(uit,"Werkdag afsluiten is niet uitgevoerd")||
     meldDagRegelFout(uit,"Werkdag afsluiten is niet uitgevoerd"))return false;
+  if(dicht&&dicht._omsVersie)bevestigOmschr(dicht.id,dicht._omsVersie);
   const delta={dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
     rules:mergeById(HH.state.read().rules,[uit.closedRule]),dayEnds:uit.dayEnds,dayAudit:uit.dayAudit,
     viewDate:datum};

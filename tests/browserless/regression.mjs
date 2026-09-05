@@ -26,7 +26,8 @@ import { dirname, join, resolve } from 'node:path';
 import vm from 'node:vm';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const root = resolve(here, '..', '..');
+const rootArg=process.argv.find(arg=>arg.startsWith('--root='));
+const root = resolve(rootArg?rootArg.slice(7):(process.env.HH_TEST_ROOT||resolve(here,'..','..')));
 const read = rel => readFileSync(join(root, rel), 'utf8');
 const uiFiles=[
   'js/ui/modal.js','js/ui/now-live-view.js','js/ui/day-status-view.js',
@@ -1832,6 +1833,295 @@ test('service-worker-assets zijn compleet en cachevrij van tests', () => {
     const lokaal=asset==='.'||asset==='./'?root:join(root,asset.replace(/^\.\//,''));
     assert(existsSync(lokaal),`Service-workerasset bestaat niet: ${asset}`);
   }
+});
+
+test('Phase U modalguard kiest runtime de bovenste dialoog', () => {
+  const open=new Set(['boek','parkboek']);
+  const els={};
+  for(const id of ['boek','parkboek'])els[id]={classList:{contains:x=>x==='on'&&open.has(id)}};
+  const context={document:{getElementById:id=>els[id]||null},HH:{ui:{}}};
+  vm.runInNewContext(src.modal,context);
+  assertEq(context.HH.ui.modals.active(),'parkboek','Een bovenliggende parkeerdialoog moet voorrang krijgen');
+});
+
+class PhaseUElement {
+  constructor(id,document,tagName='DIV'){
+    this.id=id;this.ownerDocument=document;this.tagName=tagName;this.value='';this.defaultValue='';
+    this.textContent='';this.innerHTML='';this.disabled=false;this.style={};this.dataset={};this.attributes={};
+    this.listeners={};this.children=[];this.classSet=new Set();
+    this.classList={add:(...xs)=>xs.forEach(x=>this.classSet.add(x)),remove:(...xs)=>xs.forEach(x=>this.classSet.delete(x)),
+      contains:x=>this.classSet.has(x),toggle:(x,on)=>{const yes=on===undefined?!this.classSet.has(x):!!on;
+        if(yes)this.classSet.add(x);else this.classSet.delete(x);return yes;}};
+  }
+  addEventListener(type,fn){(this.listeners[type]||(this.listeners[type]=[])).push(fn);}
+  removeEventListener(type,fn){this.listeners[type]=(this.listeners[type]||[]).filter(x=>x!==fn);}
+  dispatch(type,extra={}){const event={type,target:this,preventDefault(){this.defaultPrevented=true;},...extra};
+    for(const fn of this.listeners[type]||[])fn(event);return event;}
+  click(){return this.onclick?this.onclick({target:this,preventDefault(){}}):undefined;}
+  focus(){this.ownerDocument.activeElement=this;this.focusCount=(this.focusCount||0)+1;}
+  blur(){if(this.ownerDocument.activeElement===this)this.ownerDocument.activeElement=null;}
+  setAttribute(k,v){this.attributes[k]=String(v);}
+  getAttribute(k){return this.attributes[k];}
+  querySelectorAll(){return this.children;}
+  querySelector(){return null;}
+  appendChild(x){this.children.push(x);return x;}
+  closest(){return null;}
+  setSelectionRange(){}
+  getBoundingClientRect(){return{top:0,bottom:0,height:0};}
+}
+
+function phaseUDocument(){
+  const elements=new Map(),listeners={};
+  const document={activeElement:null,hidden:false,body:null,documentElement:null,
+    getElementById(id){if(!elements.has(id))elements.set(id,new PhaseUElement(id,document,
+      /^(?:er-|l-|dc-|pb-|bk-)/.test(id)?'INPUT':'DIV'));return elements.get(id);},
+    createElement(){return new PhaseUElement('',document);},
+    addEventListener(type,fn,capture){(listeners[type]||(listeners[type]=[])).push({fn,capture:!!capture});},
+    removeEventListener(type,fn,capture){listeners[type]=(listeners[type]||[])
+      .filter(x=>x.fn!==fn||x.capture!==!!capture);},
+    hasFocus(){return true;},querySelectorAll(){return[];},
+    dispatchKey(key,target,extra={}){let stopped=false;
+      const e={key,target:target||document.body,ctrlKey:false,metaKey:false,altKey:false,shiftKey:false,repeat:false,
+        preventDefault(){this.defaultPrevented=true;},stopImmediatePropagation(){stopped=true;},...extra};
+      for(const capture of [true,false])for(const item of listeners.keydown||[]){
+        if(item.capture!==capture)continue;item.fn(e);if(stopped)return e;}return e;}};
+  document.body=document.getElementById('body');document.body.dataset={};
+  document.documentElement=document.getElementById('html');document.documentElement.dataset={};
+  return{document,elements,el:id=>document.getElementById(id)};
+}
+
+function evaluateEditorHandler(){
+  const dom=phaseUDocument(),calls=[],toasts=[];
+  const state={rules:[],dossiers:[],overbookings:[],booked:{},running:null};
+  const context={console,setTimeout,clearTimeout,document:dom.document,window:{},confirm:()=>true,
+    HH:{ui:{modals:{anyOpen:()=>false}},state:{read:()=>state,commit(delta){Object.assign(state,delta);},selectors:{day:()=>[]}},
+      services:{dayRules:{ruleWarnings:()=>[]},timer:{async editRule(input){calls.push(input);
+        return{ok:true,rule:{...input.rule,gewijzigd:999},dossiers:[],closedRunning:false};}}},
+      app:{render(){}}},
+    $:dom.el,hm2m:v=>/^\d\d:\d\d$/.test(v)?Number(v.slice(0,2))*60+Number(v.slice(3)):null,
+    m2hm:m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'),
+    uu:n=>Number(n).toFixed(1).replace('.',','),urenOf:r=>r.uren,dagLabel:x=>x,dosOf:()=>null,
+    dosVeld:()=>'',codeNaam:()=>'',sumVan:()=>[],overboekingAfgerondVoorRow:()=>false,
+    overboekingOpenVoorRegel:()=>false,isDvn:()=>false,dvnIntappState:()=>'',isIndirect:()=>false,
+    dvnDefinitiefI7:()=>false,actief:()=>[],splitsDossier:()=>null,nummerBezet:()=>false,
+    prefixVoor:(_d,_date,text)=>text,kopie1:x=>JSON.parse(JSON.stringify(x)),DAGMAX:24,
+    dagRuimte:()=>true,boekRekenContext:()=>({}),rustig:()=>Promise.resolve(),nowHM:()=>'12:00',
+    mergeById:(base,updates)=>base.map(x=>updates.find(y=>y.id===x.id)||x),
+    meldTimerFout:()=>false,meldDagRegelFout:()=>false,pasMutatieUndoToe(){},
+    vergeetTimerUndo(){},announce(){},L(){},dosIdLog:x=>x||'-',toast:x=>toasts.push(x),esc:x=>x,
+    today:()=>'2026-09-05',werkdag:()=>true,dagRuimte:()=>true,stempel:x=>x,
+    bouwDossier:x=>x,pending:null,liveId:null,oldRunSnooze:0,ntWizard:null,DAGMAX:24};
+  vm.createContext(context);
+  vm.runInContext(read('js/ui/day-editor-controller.js')+
+    '\n;globalThis.__editor={openRegelEditor};',context,{filename:'js/ui/day-editor-controller.js'});
+  return{...dom,context,state,calls,toasts,open:context.__editor.openRegelEditor};
+}
+
+test('Phase U editor bewaart automatische uren, handmatige keuze, wissen en echte no-op', async() => {
+  const h=evaluateEditorHandler();
+  const auto={id:'r1',datum:'2026-09-05',start:'09:00',eind:'10:00',dossierId:null,code:null,
+    omschrijving:'werk',uren:1,urenHand:false,gewijzigd:111};
+  h.state.rules=[auto];h.state.booked={'2026-09-05':['blijft-geboekt']};
+  let done=h.open('r1');h.el('er-eind').value='11:00';h.el('er-eind').dispatch('input');
+  assertEq(h.el('er-uren').value,'2,0','Tijdwijziging op automatische regel moet zichtbaar herberekenen');
+  await h.el('er-save').click();await done;
+  assertEq(h.calls[0].rule.urenHand,false,'Vooraf ingevulde automatische uren mogen niet handmatig worden');
+  assertEq(h.calls[0].rule.uren,2,'Automatische uren moeten de gewijzigde tijdspanne volgen');
+
+  h.state.rules=[auto];h.calls.length=0;
+  done=h.open('r1');h.el('er-eind').value='11:00';h.el('er-eind').dispatch('input');
+  h.el('er-uren').value='1,0';h.el('er-uren').dispatch('input');
+  await h.el('er-save').click();await done;
+  assertEq(h.calls[0].rule.urenHand,true,
+    'Expliciet terugtypen van de oorspronkelijke waarde na een tijdwijziging moet handmatig zijn');
+  assertEq(h.calls[0].rule.uren,1,
+    'Een expliciet teruggetypte oorspronkelijke waarde moet de automatische 2,0 uur overschrijven');
+
+  const manual={...auto,id:'r2',eind:'10:00',uren:1.5,urenHand:true};h.state.rules=[manual];h.calls.length=0;
+  done=h.open('r2');h.el('er-eind').value='11:00';h.el('er-eind').dispatch('input');
+  assertEq(h.el('er-uren').value,'1,5','Tijdwijziging moet een bewuste handmatige override behouden');
+  h.el('er-uren').value='';h.el('er-uren').dispatch('input');
+  assertEq(h.el('er-uren').value,'2,0','Wissen van de override moet direct terugschakelen naar tijdrekening');
+  await h.el('er-save').click();await done;
+  assertEq(h.calls[0].rule.urenHand,false,'Gewiste override moet automatisch worden opgeslagen');
+  assertEq(h.calls[0].rule.uren,2,'Gewiste override moet uit begin- en eindtijd rekenen');
+
+  h.state.rules=[auto];h.calls.length=0;const beforeBooked=JSON.stringify(h.state.booked);
+  done=h.open('r1');await h.el('er-save').click();await done;
+  assertEq(h.calls.length,0,'Opslaan zonder veldwijziging mag de editservice niet aanroepen');
+  assertEq(auto.gewijzigd,111,'Een no-op mag de wijzigingsstempel niet aanraken');
+  assertEq(JSON.stringify(h.state.booked),beforeBooked,'Een no-op moet de boekstatus behouden');
+});
+
+function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};}
+function evaluatePhaseURuntime(txImpl){
+  const dom=phaseUDocument(),toasts=[],storage=new Map();
+  const RealDate=Date;class FixedDate extends RealDate{constructor(...args){super(...(args.length?args:['2026-09-05T12:00:00Z']));}
+    static now(){return new RealDate('2026-09-05T12:00:00Z').getTime();}}
+  const context={console,setTimeout,clearTimeout,queueMicrotask,Date:FixedDate,document:dom.document,
+    window:{addEventListener(){},removeEventListener(){}},navigator:{},location:{reload(){}},
+    localStorage:{getItem:k=>storage.has(k)?storage.get(k):null,setItem:(k,v)=>storage.set(k,String(v)),removeItem:k=>storage.delete(k)},
+    indexedDB:{open(){return{};}},confirm:()=>true,prompt:()=>null,alert(){}};
+  vm.createContext(context);
+  for(const [name,code] of [['hh',src.hh],['domain/time',src.time],['domain/booking',src.bookingDomain],
+    ['domain/dvn',src.dvnDomain],['domain/overbooking',src.overbookingDomain],
+    ['storage/indexeddb',src.storage],['services/admin',src.admin],['services/day-rules',src.dayRules],
+    ['services/timer',src.timerService],['services/settings',src.settings],['state',src.state]])
+    vm.runInContext(code,context,{filename:`js/${name}.js`});
+  context.HH.storage.indexedDB.use({transaction(stores,mode){
+    const objectStore=()=>({put(){},delete(){},get(){return{result:null};},getAll(){return{result:[]};},clear(){}});
+    const transaction={error:null,objectStore,abort(){this.error=new Error('afgebroken');
+      queueMicrotask(()=>this.onabort&&this.onabort());}};
+    Promise.resolve().then(()=>txImpl(stores,mode)).then(
+      ()=>queueMicrotask(()=>transaction.oncomplete&&transaction.oncomplete()),
+      error=>{transaction.error=error;queueMicrotask(()=>transaction.onabort&&transaction.onabort());});
+    return transaction;}});
+  context.HH.app.render=()=>{};
+  vm.runInContext(src.core,context,{filename:'js/core.js'});
+  context.toast=x=>toasts.push(x);
+  vm.runInContext(src.timer+'\n;globalThis.__phaseU={planOmschr,flushOmschr,pakOmschr,'+
+    'bevestigOmschr:typeof bevestigOmschr==="function"?bevestigOmschr:null,'+
+    'herstelOmschrConcept:typeof herstelOmschrConcept==="function"?herstelOmschrConcept:null,'+
+    'startViaService,sluitObj,getDraft:()=>omsWacht};',context,{filename:'js/timer.js'});
+  return{...dom,context,state:context.HH.state,storage,toasts,api:context.__phaseU};
+}
+
+test('Phase U draft houdt nieuwste revisie na oudere fout en wist pas na succes', async() => {
+  const first=deferred();let txCount=0;
+  const h=evaluatePhaseURuntime(()=>{txCount++;return txCount===1?first.promise:Promise.resolve();});
+  const rule={id:'run',datum:'2026-09-05',start:'09:00',eind:null,dossierId:null,code:null,
+    omschrijving:'basis',uren:.1,urenHand:false,soort:'werk',gewijzigd:1};
+  h.state.commit({rules:[rule],running:rule,dossiers:[],stack:[],dayEnds:{},dayAudit:{},codeUsage:{}});
+  h.api.planOmschr('run','oud');const old=h.api.flushOmschr().catch(e=>e);
+  h.api.planOmschr('run','nieuw');const newer=h.api.flushOmschr();
+  first.reject(new Error('oude write faalt'));await old;await newer;await h.api.flushOmschr();
+  assertEq(h.state.read().running.omschrijving,'nieuw','Een oudere fout mag nieuwere succesvolle tekst niet terugzetten');
+  assertEq(txCount,2,'Flush na succesvolle nieuwste revisie mag geen oude draft opnieuw schrijven');
+  assertEq(h.storage.get('hh-oms'),undefined,'Alleen de geslaagde nieuwste revisie ruimt herstelopslag op');
+});
+
+test('Phase U mislukte gewone draftsave blijft zichtbaar en retrybaar', async() => {
+  let fail=true;const h=evaluatePhaseURuntime(()=>fail?Promise.reject(new Error('db stuk')):Promise.resolve());
+  const rule={id:'run',datum:'2026-09-05',start:'09:00',eind:null,dossierId:null,code:null,
+    omschrijving:'basis',uren:.1,urenHand:false,soort:'werk',gewijzigd:1};
+  h.state.commit({rules:[rule],running:rule,dossiers:[]});h.api.planOmschr('run','laatste invoer');
+  await h.api.flushOmschr().catch(()=>{});
+  assert(h.toasts.some(x=>x.includes('Opslaan omschrijving mislukt')),'Een gewone savefout moet zichtbaar zijn');
+  assertEq(h.api.getDraft().tekst,'laatste invoer','De nieuwste tekst moet na de fout in geheugen blijven');
+  assert(h.storage.get('hh-oms').includes('laatste invoer'),'De nieuwste tekst moet na de fout herstelbaar blijven');
+  fail=false;await h.api.flushOmschr();
+  assertEq(h.state.read().running.omschrijving,'laatste invoer','Retry in dezelfde sessie moet slagen');
+});
+
+test('Phase U draft toont savefout en timerwissel kan dezelfde draft opnieuw proberen', async() => {
+  const h=evaluatePhaseURuntime(()=>Promise.resolve());
+  const rule={id:'run',datum:'2026-09-05',start:'09:00',eind:null,dossierId:null,code:null,
+    omschrijving:'basis',uren:.1,urenHand:false,soort:'werk',gewijzigd:1};
+  h.state.commit({rules:[rule],running:rule,dossiers:[],stack:[],dayEnds:{},dayAudit:{},codeUsage:{}});
+  h.api.planOmschr('run','laatste tekst');
+  let calls=0,captured=[];
+  h.context.HH.services.timer={switchTask:async input=>{captured.push(input);calls++;
+    if(calls===1)return{ok:false,error:'dossier_missing'};
+    const closed={...rule,eind:'12:00',omschrijving:input.pendingDescription};
+    const next={id:input.id,datum:input.date,start:input.time,eind:null,dossierId:null,code:null,
+      omschrijving:'',uren:.1,urenHand:false,soort:'werk',gewijzigd:2};
+    return{ok:true,autoRemoved:[],closedRule:closed,rule:next,dossiers:[],codeUsage:{},stackChanged:false,dayWasClosed:false};}};
+  assertEq(await h.api.startViaService({},'switchTask'),null,'Eerste mislukte wissel moet mislukken');
+  assert(h.api.getDraft(),'Een mislukte timertransactie mag de draft niet consumeren');
+  await h.api.startViaService({},'switchTask');
+  assertEq(captured[1].pendingDescription,'laatste tekst','Retry moet exact de bewaarde tekst meenemen');
+  assertEq(h.api.getDraft(),null,'Geslaagde timertransactie moet exact haar draft bevestigen');
+  assertEq(h.storage.get('hh-oms'),undefined,'Geslaagde timertransactie moet herstelopslag opruimen');
+});
+
+test('Phase U startup-herstel faalt zichtbaar, breekt boot niet af en blijft retrybaar', async() => {
+  let fail=true;const h=evaluatePhaseURuntime(()=>fail?Promise.reject(new Error('db stuk')):Promise.resolve());
+  const rule={id:'run',datum:'2026-09-05',start:'09:00',eind:null,dossierId:null,code:null,
+    omschrijving:'basis',uren:.1,urenHand:false,soort:'werk',gewijzigd:1};
+  h.state.commit({rules:[rule],running:rule,dossiers:[]});
+  h.storage.set('hh-oms',JSON.stringify({id:'run',tekst:'herstelde tekst'}));
+  vm.runInContext(src.liveController+'\n;globalThis.__herstelOmschr=herstelOmschr;',h.context,
+    {filename:'js/ui/live-controller.js'});
+  await h.context.__herstelOmschr();
+  assert(h.toasts.some(x=>x.includes('Herstel van omschrijving mislukt')),
+    'Herstelfout moet zichtbaar zijn terwijl de aanroeper normaal terugkeert');
+  assert(h.api.getDraft(),'Mislukt legacy-herstel moet in dezelfde sessie retrybaar blijven');
+  fail=false;await h.api.flushOmschr();
+  assertEq(h.state.read().running.omschrijving,'herstelde tekst','Retry moet legacy `{id,tekst}` herstellen');
+  assertEq(h.storage.get('hh-oms'),undefined,'Geslaagde retry moet de legacy draft opruimen');
+});
+
+test('Phase U dagafsluiting en heropenen bevestigen draft alleen na servicesucces', async() => {
+  const base={id:'run',datum:'2026-09-05',start:'09:00',eind:null,dossierId:null,code:null,
+    omschrijving:'basis',uren:.1,urenHand:false,soort:'werk',gewijzigd:1};
+  const h=evaluatePhaseURuntime(()=>Promise.resolve());
+  h.context.HH.app.showTab=()=>{};h.context.bouwDag=()=>{};h.context.renderTot=()=>{};
+  vm.runInContext(read('js/ui/day-status-view.js'),h.context,{filename:'js/ui/day-status-view.js'});
+  vm.runInContext(read('js/ui/day-close-controller.js')+'\n;globalThis.__sluitWerkdag=sluitWerkdag;',h.context,
+    {filename:'js/ui/day-close-controller.js'});
+  h.state.commit({rules:[base],running:base,dossiers:[],overbookings:[],stack:[],viewDate:'2026-09-05',
+    dayEnds:{},dayAudit:{},roundingMode:'groep'});h.api.planOmschr('run','mee bij afsluiten');
+  h.context.HH.services.timer={isBlocked:()=>false,closeDay:async input=>({ok:true,dossiers:[],
+    closedRule:input.closedRule,dayEnds:{'2026-09-05':input.end},dayAudit:{},stoppedRunning:true})};
+  const close=h.context.__sluitWerkdag('2026-09-05');h.el('dc-fill').click();await close;
+  assertEq(h.api.getDraft(),null,'Geslaagde dagafsluiting moet de meegenomen draft bevestigen');
+
+  const current={...base,id:'current'},target={...base,id:'target',start:'08:00',eind:'08:30'};
+  h.state.commit({rules:[current,target],running:current,dayEnds:{},dayAudit:{}});
+  h.api.planOmschr('current','mee bij heropenen');
+  h.context.regelIsGeboekt=()=>false;h.context.bouwDag=()=>{};
+  h.context.HH.services.timer={reopenRule:async input=>({ok:true,dossiers:[],closedRule:input.closedRule,
+    rule:{...input.rule,eind:null,urenHand:false},runningId:input.rule.id})};
+  vm.runInContext(read('js/ui/day-table-controller.js')+'\n;globalThis.__maakLopend=maakLopend;',h.context,
+    {filename:'js/ui/day-table-controller.js'});
+  await h.context.__maakLopend('target');
+  assertEq(h.api.getDraft(),null,'Geslaagd heropenen moet de gesloten huidige-timerdraft bevestigen');
+});
+
+test('Phase U renderLive houdt langloopmelding zichtbaar en wist hem bij stoppen', () => {
+  const h=evaluatePhaseURuntime(()=>Promise.resolve());
+  const rule={id:'run',datum:'2026-09-05',start:'08:00',eind:null,dossierId:null,code:null,
+    omschrijving:'lang',uren:.1,urenHand:false,soort:'werk',gewijzigd:1};
+  h.state.commit({rules:[rule],running:rule,dossiers:[],stack:[]});
+  vm.runInContext(src.liveController,h.context,{filename:'js/ui/live-controller.js'});
+  h.context.ntRender=()=>{};
+  vm.runInContext(read('js/ui/now-live-view.js')+'\n;globalThis.__renderLive=renderLive;',h.context,
+    {filename:'js/ui/now-live-view.js'});
+  h.context.__renderLive();
+  assert(h.el('l-wake').classList.contains('on'),'renderLive moet een regel van vier uur lang zichtbaar waarschuwen');
+  h.state.commit({running:null});h.context.__renderLive();
+  assert(!h.el('l-wake').classList.contains('on'),'Dezelfde view moet een niet meer toepasselijke waarschuwing wissen');
+});
+
+test('Phase U geneste parkeermodal vangt toetsen, focus en dubbele submit af', async() => {
+  const pending=deferred();let submits=0;
+  const h=evaluatePhaseURuntime(()=>Promise.resolve());
+  const target={id:'d1',nummer:'123',naam:'Zaak',isI7:false,voorlopig:false,codes:[]};
+  const i7={id:'i7',nummer:'I7',naam:'Indirect',isI7:true,voorlopig:false,codes:[]};
+  h.state.commit({dossiers:[target,i7],codes:[{code:'X-704',naam:'Commercieel'}],rules:[],
+    overbookings:[],booked:{},viewDate:'2026-09-05',roundingMode:'groep'});
+  h.context.HH.services.admin={parkOverbooking:async()=>{submits++;return pending.promise;}};
+  vm.runInContext(src.modal,h.context,{filename:'js/ui/modal.js'});
+  vm.runInContext(src.booking+'\n;globalThis.__booking={openParkeer,sluitParkeer,bevestigParkeer};',h.context,
+    {filename:'js/booking.js'});
+  vm.runInContext(src.controls,h.context,{filename:'js/controls.js'});
+  const origin=h.el('bk-park');origin.focus();
+  const row={fp:'fp',dosIds:['d1'],u:1,bron:[],nummer:'123',naam:'Zaak',oms:'werk'};
+  h.context.__booking.openParkeer(row);await new Promise(r=>setTimeout(r,0));
+  assertEq(h.document.activeElement,h.el('pb-save'),'Openen moet focus in de bovenste modal plaatsen');
+  h.el('parkboek').children=[h.el('pb-save'),h.el('pb-cancel')];h.el('pb-save').focus();
+  h.document.dispatchKey('Tab',h.el('pb-save'),{shiftKey:true});
+  assertEq(h.document.activeElement,h.el('pb-cancel'),'Shift-Tab moet binnen de bovenste modal omlopen');
+  h.el('boek').classList.add('on');let underlying=0;h.el('bk-done').onclick=()=>{underlying++;};
+  h.document.dispatchKey('Enter',h.document.body);
+  assertEq(underlying,0,'Enter mag de achterliggende boekdialoog niet activeren');
+  const one=h.el('pb-save').click(),two=h.el('pb-save').click();
+  assertEq(submits,1,'Twee snelle bevestigingen mogen maar één parktransactie starten');
+  pending.reject(new Error('testfout'));await Promise.all([one,two]);
+  h.document.dispatchKey('Escape',h.document.body);await new Promise(r=>setTimeout(r,0));
+  assert(!h.el('parkboek').classList.contains('on'),'Escape moet alleen de bovenste parkeermodal sluiten');
+  assert(h.el('boek').classList.contains('on'),'Escape op parkeren moet de onderliggende boekmodal open laten');
+  assertEq(h.document.activeElement,origin,'Sluiten moet focus terugbrengen naar de opener');
 });
 
 for (const { name, fn } of tests) {

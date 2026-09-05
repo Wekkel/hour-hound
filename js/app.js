@@ -207,7 +207,7 @@ async function boot(){
     " · overboekingen "+HH.state.read().overbookings.filter(overboekingOpen).length+
     " · lopend "+(HH.state.read().running?HH.state.read().running.start:"nee"));
   if(tick)clearInterval(tick);
-  tick=setInterval(()=>{middernachtCheck();checkWake();
+  tick=setInterval(()=>{middernachtCheck();
     if(HH.state.read().running){HH.renderCoordinator.render(["live","totals"]);controleerOudeLopendeTaak();}},10000);}
 
 (async function(){
@@ -225,7 +225,7 @@ if("serviceWorker" in navigator){
         if(w.state==="installed"&&navigator.serviceWorker.controller)check();});});
     $("btn-update").onclick=()=>{
       if(HH.state.read().running&&!confirm("Er loopt een regel. De pagina herlaadt na de update.\nDoorgaan?"))return;
-      flushOmschr();
+      flushOmschr().catch(()=>{});
       setTimeout(()=>{if(reg.waiting)reg.waiting.postMessage({type:"SKIP_WAITING"});},250);};
     setInterval(()=>reg.update(),15*60*1000);}).catch(()=>{});
   let rl=false;
