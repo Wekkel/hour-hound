@@ -4,7 +4,7 @@
    een vergeten ID ondertussen timer- of navigatiesneltoetsen doorlaat. */
 (function(HH){
   const ids=Object.freeze(["dayclose","oldrun","editregel","dvnnum","dvnpost",
-    "boek","parkboek","overboekpost","herstel"]);
+    "boek","parkboek","overboekpost","herstel","backupkeuze"]);
   const element=id=>document.getElementById(id);
   const isOpen=id=>{const el=element(id);return !!(el&&el.classList.contains("on"));};
   const active=()=>ids.slice().reverse().find(isOpen)||null;

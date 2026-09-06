@@ -586,10 +586,10 @@ test('compatibiliteitshelpers delegeren en use-case-transacties blijven heel', (
     assertIncludes(src.core,line,'Bestaande opslaghelper moet rechtstreeks delegeren');
   assertIncludes(src.core,'const TXALL=HH.storage.indexedDB.TIMER_STORES',
     'Timertransacties moeten dezelfde centrale storelijst gebruiken');
-  assertIncludes(src.io,'tx(["dossiers","regels","templates","codes","overboekingen","meta"],"readwrite"',
-    'Volledige import moet één transactie over alle betrokken stores blijven');
-  assertIncludes(src.io,'tx(["dossiers","regels","templates","codes","overboekingen","meta"],"readwrite"',
-    'Samenvoegen moet één transactie over alle betrokken stores blijven');
+  assertIncludes(src.io,'stores:["dossiers","regels","templates","codes","overboekingen"]',
+    'Volledige import moet één atomaire schrijfgrens over alle recordstores gebruiken');
+  assertIncludes(src.io,'metaKeys:["running","pending","stack","dagEinde","dagAudit","rondMode","codeGebruik"',
+    'Volledige import moet de bijbehorende metadata in dezelfde atomaire schrijfgrens bewaren');
 });
 
 test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => {
@@ -1794,7 +1794,7 @@ test('timer-invariant herstelt alleen eenduidige state en blokkeert conflicten',
 
 test('backup/import bewaart dag-, DVN- en overboekingsmetadata', () => {
   const io = evaluateIoPure();
-  assertEq(io.backupVersie, 10, 'Backupversie moet duurzame boekingshistorie dekken');
+  assertEq(io.backupVersie, 11, 'Backupversie moet het volledige verliesloze formaat gebruiken');
   for (const key of ['dagAudit', 'dvnResolvedNr', 'dvnTo', 'dvnDisposition', 'dvnFinalI7At', 'dvnFinalI7RuleIds', 'dvnIntappStatus', 'dvnIntappAudit', 'dvnIntappPostedRuleIds', 'hersteld', 'herstelOrigineel']) {
     assertIncludes(src.io, key, `Backup/import mist ${key}`);
   }
@@ -1835,7 +1835,7 @@ test('backup/import bewaart dag-, DVN- en overboekingsmetadata', () => {
   assertEq(over.rondModeSnapshot,'regel','Restore moet de gebruikte afrondingsmodus bewaren');
   assertEq(over.targetLines[0].uren,1,'Restore moet latere dossierboekingsregels bewaren');
   assertIncludes(src.io, 'o.overboekingen.clear()', 'Volledig terugzetten moet de wachtrij vervangen');
-  assertIncludes(src.io, 'nO.forEach', 'Samenvoegen moet overboekingen meenemen');
+  assertIncludes(src.io, 'plan.overboekingen.forEach', 'Samenvoegen moet overboekingen meenemen');
 });
 
 test('importkeuring en checksum signaleren beschadigde kerngegevens', () => {
@@ -1853,9 +1853,9 @@ test('importkeuring en checksum signaleren beschadigde kerngegevens', () => {
   const a=io.checksumVan(basis,regels,[],[],wacht);
   const b=io.checksumVan(basis,regels,[],[],[{...wacht[0],status:'done'}]);
   assert(a!==b,'De schema-9-checksum moet een gewijzigde overboekingsstatus detecteren');
-  assertIncludes(src.io, 'if(sv>BACKUPVERSIE)',
+  assertIncludes(src.io, 'if(Number.isInteger(sv)&&sv>BACKUPVERSIE)',
     'Een back-up uit een nieuwere onbekende versie moet worden geweigerd');
-  assertIncludes(src.io, 'Een open regel wordt nooit automatisch de lopende timer',
+  assertIncludes(src.io, 'hervatten als lopende timer',
     'Restore mag een open regel alleen na expliciete keuze hervatten');
 });
 

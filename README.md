@@ -57,3 +57,40 @@ De browserloze suites bevatten 143 controles, waarvan 22 specifiek voor W.
 `tests/e2e/phase-w.spec.mjs` voegt twee browsertests voor correcties toe.
 Bij oplevering van W zijn de browserloze controles uitgevoerd; de Playwright-tests
 zijn niet uitgevoerd omdat de vereiste browseromgeving niet beschikbaar was.
+
+## Patch X: back-up en updategrens
+
+De updateknop wacht op drafts, de timerwachtrij en toegelaten databasewrites.
+Een mislukte save voorkomt activeren/herladen en blijft opnieuw te proberen.
+Een `controllerchange` vanuit een ander venster wacht eveneens op bewaren;
+bij een open dialoog wordt herladen uitgesteld tot een expliciete nieuwe poging.
+
+Het cachegedeelte van fase X is nog niet uitgevoerd: `sw.js` blijft op verzoek
+ongewijzigd. De bestaande risico's van gemengde releases, onvolledige cache-installatie
+en te brede cache-opruiming worden door alleen deze appwijziging niet opgelost.
+Een structurele SW-patch en echte upgrade/offlineproeven blijven apart nodig.
+
+Back-ups gebruiken vanaf X schema 11. De export leest alle relevante stores en
+metadata in één readonly-transactie na het afwachten van invoer en schrijfacties.
+De versiegebonden checksum omvat alle geëxporteerde recordvelden en metadata.
+Schema 11 moet worden gelezen met Patch X of later; oudere back-ups blijven
+leesbaar met een melding over de beperktere oude inhoudscontrole.
+
+Import heeft afzonderlijke knoppen Terugzetten, Samenvoegen en Annuleren.
+Terugzetten vervangt de dataset na bevestiging. Samenvoegen neemt nieuwere records
+over, voegt sjablonen/werkcodes toe of werkt ze bij en bewaart andere lokale items;
+boekingshistorie wordt samengevoegd. Conflicten in dossiernummers en een gewijzigde
+lokale dataset tussen het voorstel en de bevestiging breken de import af.
+Sluit of herstel eerst een lokale open timer. Ontbrekende verwijdermarkeringen in
+oude bestanden betekenen dat samenvoegen eerder verwijderde records kan terugbrengen;
+de keuzedialoog vermeldt dat expliciet.
+
+De schema-11-restore bewaart geldige recordvelden zonder de oude lengtebeperkingen,
+inclusief revisies en historische boekingen waarvan de bron inmiddels is verwijderd.
+De databaseversie blijft 4; een database-reset is niet nodig.
+
+Bij oplevering van Patch X zijn alle 162 browserloze controles geslaagd, inclusief
+10 updatecontroles en 9 I/O-controles. De onafhankelijke reviews vonden twee
+foutpaden (update opnieuw proberen in een leesvenster en verversfout na importcommit);
+beide zijn gerepareerd met een falende tegenproef en een geslaagde regressietest.
+Echte browser-, offline- en service-worker-upgradeproeven zijn niet uitgevoerd.

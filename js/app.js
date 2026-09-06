@@ -277,7 +277,8 @@ function bewaakLeesvenster(event){
   if(!schrijfOvergang&&HH.storage.indexedDB.hasWriteAccess())return;
   const target=event.target,viewControl=target&&typeof target.closest==="function"&&
     target.closest("#writer-takeover,#tabs,#d-prev,#d-next,#d-today,#d-date,#w-prev,#w-next,#w-now,[data-open-view]");
-  if(!schrijfOvergang&&viewControl)return;
+  if(!schrijfOvergang&&(viewControl||(updateHerlaadNodig&&target&&
+    typeof target.closest==="function"&&target.closest("#btn-update"))))return;
   if(event.type==="keydown"&&(event.key==="Tab"||(event.ctrlKey||event.metaKey)&&["c","a","f"].includes(event.key.toLowerCase())))return;
   if(event.type==="click"&&(!target||!target.closest("button,input,select,textarea,[contenteditable]")))return;
   event.preventDefault();event.stopImmediatePropagation();
@@ -296,7 +297,8 @@ async function boot(canWrite){
     " · overboekingen "+HH.state.read().overbookings.filter(overboekingOpen).length+
     " · lopend "+(HH.state.read().running?HH.state.read().running.start:"nee"));
   if(tick)clearInterval(tick);
-  tick=setInterval(()=>{if(HH.storage.indexedDB.hasWriteAccess())middernachtCheck();
+  tick=setInterval(()=>{if(schrijfOvergang)return;
+    if(HH.storage.indexedDB.hasWriteAccess())middernachtCheck();
     if(HH.state.read().running){HH.renderCoordinator.render(["live","totals"]);if(HH.storage.indexedDB.hasWriteAccess())controleerOudeLopendeTaak();}},10000);}
 
 (async function(){
@@ -312,20 +314,67 @@ async function boot(canWrite){
   catch(error){await HH.storage.indexedDB.releaseWriteLock();toast("Starten mislukt — herlaad het venster");}
   finally{schrijfOvergang=false;zetSchrijfmodus(HH.storage.indexedDB.hasWriteAccess(),!lockSupported);}})();
 
+/* Een update mag pas herladen nadat toegelaten schrijfacties zijn afgerond.
+   De schrijflease blijft vastgehouden tot reload, zodat een ander venster niet
+   tussen de laatste snapshot en de herlaadactie nieuwe wijzigingen start. */
+let updateVoorbereiding=null,updateHerlaadNodig=false,updateHerlaadt=false;
+let updateWachtTimer=null;
+function herstelNaUpdateFout(error){
+  clearTimeout(updateWachtTimer);updateWachtTimer=null;
+  updateVoorbereiding=null;
+  HH.storage.indexedDB.resumeWrites();schrijfOvergang=false;
+  zetSchrijfmodus(HH.storage.indexedDB.hasWriteAccess(),!navigator.locks);
+  $("btn-update").disabled=false;$("btn-update").style.display="";
+  toast("Update niet herladen: "+(error.message||"bewaren mislukt")+". Probeer opnieuw.");
+}
+function bereidUpdateVoor(){
+  if(updateVoorbereiding)return updateVoorbereiding;
+  if(schrijfOvergang||HH.ui.modals.anyOpen()||sluitWerkdag.busy||vulAanTot8.busy)
+    return Promise.reject(new Error("rond eerst de open actie af"));
+  schrijfOvergang=true;$("btn-update").disabled=true;
+  updateVoorbereiding=(async()=>{
+    if(HH.storage.indexedDB.hasWriteAccess()){
+      await flushOmschr();await rustig(HH.state.read().rules.map(r=>r.id));
+      await HH.services.timer.idle();
+    }
+    await HH.storage.indexedDB.pauseWrites();
+  })();
+  return updateVoorbereiding;
+}
+async function herlaadNaUpdate(){
+  if(updateHerlaadt)return;
+  try{await bereidUpdateVoor();
+    if(updateHerlaadt)return;
+    clearTimeout(updateWachtTimer);updateHerlaadt=true;location.reload();
+  }catch(error){
+    // Een andere overgang bezit zijn eigen invoer- en opslaggrens.
+    if(!updateVoorbereiding){$("btn-update").style.display="";
+      toast("Update klaar. Rond de open actie af en klik daarna op Update.");return;}
+    herstelNaUpdateFout(error);
+  }
+}
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("./sw.js").then(reg=>{
     const check=()=>{if(reg.waiting)$("btn-update").style.display="";};check();
     reg.addEventListener("updatefound",()=>{const w=reg.installing;if(!w)return;
       w.addEventListener("statechange",()=>{
         if(w.state==="installed"&&navigator.serviceWorker.controller)check();});});
-    $("btn-update").onclick=()=>{
+    $("btn-update").onclick=async()=>{
+      if(updateHerlaadNodig){await herlaadNaUpdate();return;}
+      if(updateVoorbereiding||!reg.waiting)return;
       if(HH.state.read().running&&!confirm("Er loopt een regel. De pagina herlaadt na de update.\nDoorgaan?"))return;
-      flushOmschr().catch(()=>{});
-      setTimeout(()=>{if(reg.waiting)reg.waiting.postMessage({type:"SKIP_WAITING"});},250);};
-    setInterval(()=>reg.update(),15*60*1000);}).catch(()=>{});
-  let rl=false;
+      try{
+        await bereidUpdateVoor();
+        if(!reg.waiting)throw new Error("de nieuwe versie is niet meer beschikbaar");
+        reg.waiting.postMessage({type:"SKIP_WAITING"});
+        if(!updateHerlaadt)updateWachtTimer=setTimeout(()=>herstelNaUpdateFout(
+          new Error("activeren duurt te lang")),15000);
+      }catch(error){if(updateVoorbereiding)herstelNaUpdateFout(error);
+        else toast("Rond eerst de open actie af en probeer de update opnieuw");}
+    };
+    setInterval(()=>reg.update().catch(()=>{}),15*60*1000);}).catch(()=>{});
   navigator.serviceWorker.addEventListener("controllerchange",()=>{
-    if(rl)return;rl=true;location.reload();});
+    updateHerlaadNodig=true;herlaadNaUpdate();});
   navigator.serviceWorker.ready.then(()=>{
     const c=navigator.serviceWorker.controller;
     if(!c){$("ver").textContent="versie — (geen sw)";return;}
