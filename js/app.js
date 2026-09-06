@@ -141,6 +141,11 @@ async function herlaad(metInstellingen){
   HH.state.commit(delta);
   pasInstellingenUiToe(snapshot.meta);
   await herstelInvariant(snapshot.meta,HH.storage.indexedDB.hasWriteAccess());
+  if(HH.storage.indexedDB.hasWriteAccess()){
+    const nowIso=new Date().toISOString(),legacy=await HH.services.admin.bootstrapLegacyBookings({
+      aggregateRows:sumVanData,snapshotRow:bookingSnapshotVan,nowIso});
+    if(legacy.ok&&legacy.added)HH.state.commit({bookingHistory:legacy.history});
+  }
   /* Niet awaiten: herlaad() kan vanuit de foutafhandeling van TimerService worden
      aangeroepen, en middernachtCheck() raadpleegt daarna dezelfde service.       */
   if(HH.storage.indexedDB.hasWriteAccess())setTimeout(middernachtCheck,0);
@@ -183,7 +188,8 @@ async function zorgVoorI7(){
     gewijzigd:Date.now()});}
 
 function instellingenDelta(meta){return{codeUsage:meta.codeGebruik||{},
-  booked:meta.geboekt||{},roundingMode:meta.rondMode||"groep"};}
+  booked:meta.geboekt||{},bookingHistory:bookingDomain.normalizeHistory(meta.bookingHistory),
+  roundingMode:meta.rondMode||"groep"};}
 function pasInstellingenUiToe(meta){
   logboek=meta.log||[];
   logOms=!!meta.logOms;
@@ -194,7 +200,7 @@ function pasInstellingenUiToe(meta){
 function pasInstellingenToe(meta){HH.state.commit(instellingenDelta(meta));pasInstellingenUiToe(meta);}
 async function laadInstellingen(){
   pasInstellingenToe(await HH.storage.repositories.config.getMany([
-    "codeGebruik","geboekt","log","logOms","thema","rondMode"]));
+    "codeGebruik","geboekt","bookingHistory","log","logOms","thema","rondMode"]));
 }
 
 let schrijfOvergang=false,syncTimer=null,syncBusy=false,syncNogmaals=false;

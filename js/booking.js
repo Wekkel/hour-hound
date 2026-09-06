@@ -9,39 +9,48 @@
    willekeurige regel te pakken.                                                  */
 let boek={aan:false,i:0,rows:[],datum:"",lijst:false};
 let parkBoek=null;
-/* De boekstatus hangt aan de vingerafdruk van een Intapp-regel: dossieridentiteit,
-   werkcode, genormaliseerde omschrijving, afgeronde uren, afrondingsmodus en de ID's
-   plus gewijzigd-waarden van alle onderliggende tijdregels. Wijzigt er iets aan de
-   uren, de bronregels of de afrondingsmodus, dan valt de regel automatisch terug op
-   niet-geboekt.                                                                */
-const isGeboektOp=(fp,datum)=>(HH.state.read().booked[datum]||[]).indexOf(fp)>=0;
+/* Nieuwe bevestigingen gebruiken duurzame inhoudssnapshots. Oude vingerafdrukken
+   blijven alleen als terugval gelden voor nog niet gereconstrueerde bronnen. */
+const rowSnapshotOp=(row,datum)=>bookingSnapshotVan(row,datum);
+const isGeboektOp=(row,datum)=>{if(!row)return false;const snapshot=rowSnapshotOp(row,datum),
+  history=HH.state.read().bookingHistory,evidence=bookingDomain.evidenceForSnapshot(history,snapshot);
+  return !!evidence||!bookingDomain.hasHistoricalSource(history,snapshot)&&
+    (HH.state.read().booked[datum]||[]).includes(row.fp);};
+const isCorrectieOp=(row,datum)=>{const snapshot=rowSnapshotOp(row,datum);
+  const history=HH.state.read().bookingHistory,ids=bookingDomain.rowSourceIds(snapshot);
+  return !bookingDomain.evidenceForSnapshot(history,snapshot)&&bookingDomain.evidence(history)
+    .some(item=>bookingDomain.rowSourceIds(item.snapshot).some(id=>ids.includes(id)));};
 const isGeparkeerdOp=(row,datum)=>!!overboekingVoorRow(row,datum);
-const isDossierGeboektOp=(row,datum)=>isGeboektOp(row.fp,datum)||
-  !!overboekingAfgerondVoorRow(row,datum);
+const isDossierGeboektOp=(row,datum)=>{const snapshot=rowSnapshotOp(row,datum),
+  known=bookingDomain.hasHistoricalSource(HH.state.read().bookingHistory,snapshot);
+  return isGeboektOp(row,datum)||!known&&!!overboekingAfgerondVoorRow(row,datum);};
 const isAfgehandeldOp=(row,datum)=>isDossierGeboektOp(row,datum)||isGeparkeerdOp(row,datum);
-const isGeboekt=fp=>isGeboektOp(fp,boek.datum);
+const isGeboekt=row=>isGeboektOp(row,boek.datum);
 const isGeparkeerd=row=>isGeparkeerdOp(row,boek.datum);
 const isDossierGeboekt=row=>isDossierGeboektOp(row,boek.datum);
 const isAfgehandeld=row=>isAfgehandeldOp(row,boek.datum);
 function dagBoekStatus(rows,datum){
   const aantalGeboekt=rows.filter(row=>isDossierGeboektOp(row,datum)).length;
   const aantalGeparkeerd=rows.filter(row=>isGeparkeerdOp(row,datum)).length;
+  const correcties=rows.filter(row=>isCorrectieOp(row,datum)).length;
   return{geboekt:aantalGeboekt,geparkeerd:aantalGeparkeerd,
     open:Math.max(0,rows.length-aantalGeboekt-aantalGeparkeerd),
+    correcties,
     klaar:rows.length>0&&rows.every(row=>isAfgehandeldOp(row,datum))};}
 function kanParkeren(row){
   if(!row||isAfgehandeld(row)||!Array.isArray(row.dosIds)||row.dosIds.length!==1)return false;
   const d=dosOf(row.dosIds[0]);
   return !!d&&!isIndirect(d)&&!isDvn(d)&&!!d.nummer;
 }
-async function zetGeboekt(fp,aan){
-  const next=Object.assign({},HH.state.read().booked);
-  const lijst=(HH.state.read().booked[boek.datum]||[]).filter(x=>x!==fp);
-  if(aan)lijst.push(fp);
-  if(lijst.length)next[boek.datum]=lijst;else delete next[boek.datum];
-  const dagen=Object.keys(next).sort();
-  while(dagen.length>60)delete next[dagen.shift()];
-  try{await HH.services.settings.save("geboekt",next);HH.state.commit({booked:next});return true;}
+async function zetGeboekt(row,aan){
+  const nowIso=new Date().toISOString();
+  try{const uit=await HH.services.admin.setRegularBooking({snapshot:rowSnapshotOp(row,boek.datum),
+    fingerprint:row.fp,enabled:aan,receiptId:uid(),resolutionId:uid(),nowIso,
+    rules:HH.state.read().rules,aggregateRows:sumVanData,snapshotRow:bookingSnapshotVan,
+    validateRules:valideerBoekData,
+    waitForRules:rustig});
+    if(!uit.ok){meldAdminFout(uit,"Boekstatus is niet gewijzigd");return false;}
+    HH.state.commit({booked:uit.booked,bookingHistory:uit.history});return true;}
   catch(e){
     L("FOUT-geboekt",String(e));
     toast("Boekstatus kon niet worden opgeslagen — de markering is teruggedraaid");
@@ -58,7 +67,8 @@ function boekStat(){
   el.textContent=!rs.length?"":(verwerkt?(status.geparkeerd?
     "Volledig verwerkt in Intapp · "+status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd":
     "Volledig geboekt in Intapp · "+status.geboekt+" regels"):
-    status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd · "+status.open+" open");}
+    status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd · "+status.open+" open"+
+    (status.correcties?" · "+status.correcties+" gewijzigd na boeken":""));}
 async function kopieer(tekst,btn,label){
   try{await navigator.clipboard.writeText(tekst);
     if(btn){btn.textContent="Gekopieerd \u2713";clearTimeout(btn._h);
@@ -67,6 +77,8 @@ async function kopieer(tekst,btn,label){
   catch(e){toast("Kopiëren mislukt — het venster moet actief zijn");return false;}}
 function openBoek(){
   const rs=sumRows(),datum=HH.state.read().viewDate,status=dagBoekStatus(rs,datum);
+  if(status.correcties){toast("Gewijzigd na boeken — handel eerst de correcties onder Beheer af");
+    HH.app.showTab("beheer");return;}
   if(!rs.length){toast("Niets te boeken op deze dag");return;}
   if(status.klaar&&dagSluitStatus(datum).gesloten){
     toast(status.geparkeerd?"Alle regels van deze dag zijn al geboekt of geparkeerd in Intapp":
@@ -103,7 +115,7 @@ function tekenBoek(){
   $("bk-toggle").innerHTML=(boek.lijst?"Eén voor één":"Hele lijst")+" <kbd>L</kbd>";
   $("bk-kaart").style.display=boek.lijst?"none":"block";
   $("bk-lijst").style.display=boek.lijst?"block":"none";
-  const g=isDossierGeboekt(x),p=isGeparkeerd(x);
+  const g=isDossierGeboekt(x),p=isGeparkeerd(x),c=isCorrectieOp(x,boek.datum);
   $("bk-kaart").className="kaart"+(g||p?" gedaan":"");
   $("bk-kaart").innerHTML=
     '<div class="rij"><span class="nr">'+esc(x.nummer||"—")+"</span>"+
@@ -112,14 +124,15 @@ function tekenBoek(){
     '<div class="rij"><span class="nm">'+esc(x.naam||"geen dossier")+"</span>"+
     (x.dvnStatus?'<span class="tag dvn">DVN dossier</span>':"")+
     '<span class="cd">'+esc(x.code||"geen werkcode")+"</span>"+
-    (g?'<span class="pill ok">geboekt</span>':(p?'<span class="pill wait">geparkeerd</span>':""))+"</div>"+
+    (g?'<span class="pill ok">geboekt</span>':(p?'<span class="pill wait">geparkeerd</span>':
+      (c?'<span class="pill warn">gewijzigd na boeken</span>':"")))+"</div>"+
     '<span class="cap">Omschrijving — de enige tekst die je plakt</span>'+
     '<div class="oms">'+esc(x.oms||"(leeg)")+"</div>"+
     (x.mist?'<div class="hint bad" style="margin-top:.55rem">Deze regel mist nog een '+
       "dossier, een werkcode of een omschrijving.</div>":"");
   let h="";
   rs.forEach((r,i)=>{
-    const rg=isDossierGeboekt(r),rp=isGeparkeerd(r);
+    const rg=isDossierGeboekt(r),rp=isGeparkeerd(r),rc=isCorrectieOp(r,boek.datum);
     h+='<div class="bkrow'+(i===boek.i?" nu":"")+(rg||rp?" gedaan":"")+
       '" data-i="'+i+'">'+
       '<span class="bn">'+esc(r.nummer||"—")+"</span>"+
@@ -128,8 +141,9 @@ function tekenBoek(){
       '<span class="bu">'+uu(r.u)+"</span>"+
       '<button class="sm ghost" data-copy="'+i+'">kopieer</button>'+
       (rp?'<span class="pill wait">geparkeerd</span>':
+        (rc?'<button class="sm warn" data-correctie="'+i+'">correctie bekijken</button>':
         '<input type="checkbox" data-done="'+i+'"'+(rg?" checked":"")+
-        ' style="width:auto;min-width:0" title="Staat in Intapp">')+
+        ' style="width:auto;min-width:0" title="Staat in Intapp">'))+
       (!rg&&!rp&&kanParkeren(r)?'<button class="sm ghost warn" data-park="'+i+'">tijdelijk niet boekbaar</button>':"")+
       '</div>';});
   $("bk-lijst").innerHTML=h;
@@ -179,6 +193,7 @@ async function bevestigParkeer(){
   if(meldAdminFout(uit,"Parkeren is niet uitgevoerd")){
     if(uit&&uit.error==="source_changed")sluitParkeer();return;}
   const o=uit.overbooking;HH.state.upsert("overbookings",o);
+  HH.state.commit({bookingHistory:uit.history});
   L("overboeking-geparkeerd","regels "+bronIdsVan(o).length+" · "+uu(o.hours)+" u");
   sluitParkeer();tekenBoek();boekStat();
   if(!volgendeOpen())toast("Alle regels zijn geboekt of geparkeerd");
@@ -198,7 +213,9 @@ $("bk-done").onclick=async()=>{
   const x=boek.rows[boek.i];if(!x)return;
   if(boek.rows.every(isAfgehandeld)){
     sluitBoek();toast("Alle regels van deze dag zijn geboekt of geparkeerd");return;}
-  if(!isAfgehandeld(x)){if(!await zetGeboekt(x.fp,true))return;}
+  if(isCorrectieOp(x,boek.datum)){sluitBoek();HH.app.showTab("beheer");
+    toast("Handel de wijziging af bij Boekingscorrecties");return;}
+  if(!isAfgehandeld(x)){if(!await zetGeboekt(x,true))return;}
   if(!volgendeOpen()){
     tekenBoek();
     toast("Alles geboekt of geparkeerd — Enter of klik sluit het venster");
@@ -211,9 +228,11 @@ $("bk-lijst").addEventListener("click",async e=>{
     L("boek-kopieer","regel "+(i+1)+" van "+boek.rows.length);return;}
   const d=e.target.closest("[data-done]");
   if(d){const i=+d.dataset.done;boek.i=i;
-    await zetGeboekt(boek.rows[i].fp,d.checked);tekenBoek();boekStat();return;}
+    await zetGeboekt(boek.rows[i],d.checked);tekenBoek();boekStat();return;}
   const p=e.target.closest("[data-park]");
   if(p){boek.i=+p.dataset.park;openParkeer(boek.rows[boek.i]);return;}
+  const correction=e.target.closest("[data-correctie]");
+  if(correction){sluitBoek();HH.app.showTab("beheer");return;}
   const r=e.target.closest("[data-i]");
   if(r){boek.i=+r.dataset.i;boek.lijst=false;tekenBoek();}});
 $("bk-kaart").addEventListener("click",async e=>{

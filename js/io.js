@@ -3,7 +3,7 @@
 $("b-import").onclick=()=>$("file").click();
 $("file").onchange=e=>{const f=e.target.files[0];if(f)importFile(f);e.target.value="";};
 const str=(v,max)=>typeof v==="string"?v.slice(0,max||400):"";
-const BACKUPVERSIE=9;
+const BACKUPVERSIE=10;
 /* Een samenvattingsvingerafdruk bevat alle bron-id's en gewijzigd-stempels. Bij een
    grote groep kan die legitiem ruim boven 4.000 tekens uitkomen; afkappen zou na
    restore dezelfde boeking ten onrechte weer als open laten verschijnen. */
@@ -14,7 +14,7 @@ const isDatum=s=>typeof s==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(s)&&
   !isNaN(parseD(s).getTime())&&ymd(parseD(s))===s;
 /* Eenvoudige FNV-1a over de kernvelden. Hiermee is te zien of een back-upbestand
    onderweg is aangepast of afgekapt.                                            */
-function checksumVan(dos,reg,tpl,cod,over){
+function checksumVan(dos,reg,tpl,cod,over,history){
   const stukken=[
     (dos||[]).map(d=>d&&(d.id+"|"+(d.nummer||"")+"|"+(d.naam||""))).sort().join(";"),
     (reg||[]).map(r=>r&&(r.id+"|"+r.datum+"|"+r.start+"|"+(r.eind||"")+"|"+r.uren))
@@ -25,11 +25,58 @@ function checksumVan(dos,reg,tpl,cod,over){
      van zo'n back-up weg, zodat bestaande geldige exports geldig blijven. */
   if(Array.isArray(over))stukken.push(over.map(o=>o&&(o.id+"|"+o.status+"|"+
     (o.targetDossierId||"")+"|"+(o.updatedAt||""))).sort().join(";"));
+  if(history)stukken.push(JSON.stringify(history));
   const stuk=stukken.join("#");
   let h=0x811c9dc5;
   for(let i=0;i<stuk.length;i++){h^=stuk.charCodeAt(i);h=Math.imul(h,0x01000193)>>>0;}
   return("0000000"+h.toString(16)).slice(-8);}
 const SOORTEN=["werk","pauze","telefoon","onderbreking"];
+function keurBookingHistory(value){
+  const fout=[],goed=bookingDomain.emptyHistory(),clone=x=>JSON.parse(JSON.stringify(x));
+  if(!value||value.version!==1||!Array.isArray(value.receipts)||!Array.isArray(value.resolutions)||
+    !Array.isArray(value.legacyOrphans))return{goed,fout:["ongeldige structuur boekingshistorie"]};
+  const validSnapshot=s=>s&&isDatum(s.date)&&typeof s.targetNumber==="string"&&s.targetNumber.trim()&&
+    typeof s.targetName==="string"&&typeof s.code==="string"&&typeof s.description==="string"&&
+    Number.isFinite(s.hours)&&s.hours>0&&s.hours<=24&&["regel","groep"].includes(s.roundingMode)&&
+    Array.isArray(s.sourceIds)&&s.sourceIds.length&&s.sourceIds.every(id=>typeof id==="string"&&id)&&
+    new Set(s.sourceIds).size===s.sourceIds.length&&Array.isArray(s.sources)&&
+    s.sources.every(r=>r&&typeof r.id==="string"&&s.sourceIds.includes(r.id));
+  const ids=new Set(),channels=["day","dvn","legacy","overbooking_i7","overbooking_target","overbooking_final_i7"];
+  for(const r of value.receipts){
+    if(!r||typeof r.id!=="string"||!r.id||ids.has(r.id)||!channels.includes(r.channel)||
+      !validSnapshot(r.snapshot)||typeof r.confirmedAt!=="string"||!Number.isFinite(Date.parse(r.confirmedAt))||
+      r.confirmedContent!==bookingDomain.semanticKey(r.snapshot)){
+      fout.push("ongeldig of dubbel boekingsbewijs");continue;}
+    ids.add(r.id);goed.receipts.push(clone(r));
+  }
+  const resolutionIds=new Set();
+  for(const r of value.resolutions){
+    if(!r||typeof r.id!=="string"||!r.id||resolutionIds.has(r.id)||!ids.has(r.receiptId)||
+      !["reopened","corrected"].includes(r.type)||typeof r.resolvedAt!=="string"||!Number.isFinite(Date.parse(r.resolvedAt))){
+      fout.push("ongeldige of dubbele correctie");continue;}
+    if(r.type==="corrected"){
+      if(!Array.isArray(r.currentSnapshots)||!r.currentSnapshots.every(validSnapshot)||
+        JSON.stringify(r.comparedContent)!==JSON.stringify(r.currentSnapshots.length?
+          r.currentSnapshots.map(bookingDomain.semanticKey):["deleted"])){
+        fout.push("correctie-inhoud klopt niet");continue;}
+    }else if(typeof r.comparedContent!=="string"||!r.comparedContent){fout.push("correctievergelijking ontbreekt");continue;}
+    resolutionIds.add(r.id);goed.resolutions.push(clone(r));
+  }
+  if(value.legacyOrphans.some(x=>typeof x!=="string"))fout.push("ongeldige oude boekmarkering");
+  else goed.legacyOrphans=value.legacyOrphans.slice();
+  return{goed,fout};}
+function voegBookingHistorySamen(current,incoming){
+  const merge=(existing,added)=>{const map=new Map(existing.map(x=>[x.id,x]));
+    for(const row of added){const previous=map.get(row.id);
+      if(previous&&JSON.stringify(previous)!==JSON.stringify(row))
+        throw new Error("Boekingshistorie bevat verschillende inhoud met hetzelfde id");
+      if(!previous)map.set(row.id,row);}
+    return[...map.values()];};
+  const receipts=merge(current.receipts,incoming.receipts),resolutions=merge(current.resolutions,incoming.resolutions);
+  // Bij gelijke tijdstempels blijft de huidige lokale beslissing leidend.
+  const local=new Set(current.resolutions.map(r=>r.id));
+  resolutions.sort((a,b)=>Number(local.has(a.id))-Number(local.has(b.id)));
+  return{version:1,receipts,resolutions,legacyOrphans:[...new Set(current.legacyOrphans.concat(incoming.legacyOrphans))]};}
 /* Elke tijdregel wordt afzonderlijk gekeurd. Wat niet klopt gaat de database niet in,
    en de gebruiker ziet vóór het importeren hoeveel er afvalt en waarom.         */
 function keurRegels(arr){
@@ -215,7 +262,14 @@ async function importFile(file){
       const T=keurTemplates(d.templates),C=keurCodes(d.codes);
       const O=keurOverboekingen(d.overboekingen);
       const M=(d.meta&&typeof d.meta==="object")?d.meta:{};
+      const H=sv>=10?keurBookingHistory(M.bookingHistory):
+        {goed:bookingDomain.emptyHistory(),fout:[]};
+      if(sv>=10&&H.fout.length){toast("Back-up afgewezen: ongeldige boekingshistorie");return;}
       const let_op=[];
+      if(sv<10)let_op.push("• deze oudere back-up bevat geen duurzame boekingshistorie; "+
+        "alleen nog herkenbare oude boekmarkeringen kunnen worden gereconstrueerd");
+      if(H.fout.length)let_op.push("• "+H.fout.length+" ongeldige boekingshistorie-item(s):\n    "+
+        H.fout.slice(0,4).join("\n    ")+(H.fout.length>4?"\n    …":""));
 
       /* verwijzingen: een regel mag niet naar een niet-bestaand dossier wijzen */
       const bekend={};D.goed.forEach(x=>{bekend[x.id]=1;});
@@ -258,10 +312,14 @@ async function importFile(file){
         if(man.codes!==ruwC.length)mis.push("werkcodes "+man.codes+" ≠ "+ruwC.length);
         if(sv>=9&&man.overboekingen!==ruwO.length)mis.push("overboekingen "+
           man.overboekingen+" ≠ "+ruwO.length);
+        if(sv>=10&&(man.bookingReceipts!==H.goed.receipts.length||
+          man.bookingResolutions!==H.goed.resolutions.length))mis.push("boekingshistorie wijkt af");
         if(mis.length)let_op.push("• het manifest komt niet overeen met de inhoud: "+
           mis.join(", "));
         if(man.checksum){
-          const eigen=checksumVan(ruwD,ruwR,ruwT,ruwC,sv>=9?ruwO:undefined);
+          const eigen=checksumVan(ruwD,ruwR,ruwT,ruwC,sv>=9?ruwO:undefined,
+            sv>=10?M.bookingHistory:undefined);
+          if(eigen!==man.checksum&&sv>=10){toast("Back-up afgewezen: inhoudscontrole klopt niet");return;}
           if(eigen!==man.checksum)
             let_op.push("• de checksum klopt niet ("+man.checksum+" ≠ "+eigen+
               ") — het bestand is na de export gewijzigd");}
@@ -310,7 +368,8 @@ async function importFile(file){
 
       if(herstel){
         if(!confirm("Terugzetten wist de huidige "+HH.state.read().rules.length+" tijdregels en "+
-          HH.state.read().dossiers.length+" dossiers.\n\nZeker weten?"))return;
+          HH.state.read().dossiers.length+" dossiers en vervangt ook de duurzame "+
+          "boekingshistorie door die uit de back-up.\n\nZeker weten?"))return;
         /* Expliciet: wat gaat er wel en niet mee terug?
            altijd terug : dagafsluitingen, dag-audit, afrondingsmodus, codegebruik, boekstatus, thema
            op keuze     : de geparkeerde terugkeerstapel en een lopende timer
@@ -319,6 +378,7 @@ async function importFile(file){
         const mAudit=keurDagAudit(M.dagAudit);
         const mCode=(M.codeGebruik&&typeof M.codeGebruik==="object")?M.codeGebruik:{};
         const mBoek=(M.geboekt&&typeof M.geboekt==="object")?M.geboekt:{};
+        const mHistory=H.goed;
         const mRond=M.rondMode==="regel"?"regel":"groep";
         const mThema=["licht","donker","auto"].indexOf(M.thema)>=0?M.thema:"auto";
         const mStack=Array.isArray(M.stack)?M.stack:[];
@@ -340,6 +400,7 @@ async function importFile(file){
           o.meta.put(mRond,"rondMode");
           o.meta.put(mCode,"codeGebruik");
           o.meta.put(mBoek,"geboekt");
+          o.meta.put(mHistory,"bookingHistory");
           o.meta.put(mThema,"thema");});
         HH.state.commit({running:null,stack:neemStack?mStack:[]});pending=null;
         toast("Teruggezet: "+D.goed.length+" dossiers, "+R.goed.length+" regels"+
@@ -353,20 +414,27 @@ async function importFile(file){
         const nR=R.goed.filter(r=>!hR[r.id]||(r.gewijzigd||0)>(hR[r.id].gewijzigd||0));
         const nD=D.goed.filter(x=>!hD[x.id]||(x.gewijzigd||0)>(hD[x.id].gewijzigd||0));
         const nO=O.goed.filter(x=>!hO[x.id]||(x.updatedAt||"")>(hO[x.id].updatedAt||""));
+        const currentHistory=bookingDomain.normalizeHistory(await get("meta","bookingHistory")),
+          historyPreview=voegBookingHistorySamen(currentHistory,H.goed);
         const overR=R.goed.length-nR.length,overD=D.goed.length-nD.length;
         if(!confirm("Samenvoegen:\n\n"+
           nR.length+" tijdregel(s) toevoegen of bijwerken ("+overR+
           " blijven ongewijzigd omdat de huidige versie nieuwer is)\n"+
           nD.length+" dossier(s) toevoegen of bijwerken ("+overD+" ongewijzigd)\n"+
           nO.length+" overboeking(en) toevoegen of bijwerken\n"+
+          historyPreview.receipts.length+" boekingsbewijs/bewijzen behouden na samenvoegen\n"+
           T.goed.length+" sjablonen en "+C.goed.length+
           " werkcodes worden overschreven door het bestand\n\n"+
           "Instellingen, dagafsluitingen en boekstatus blijven zoals ze nu zijn."+
           "\n\nDoorgaan?"))return;
-        await tx(["dossiers","regels","templates","codes","overboekingen"],"readwrite",o=>{
+        await HH.storage.indexedDB.atomicWrite({stores:["dossiers","regels","templates","codes","overboekingen"],
+          metaKeys:["bookingHistory"]},(snapshot,writer)=>{
+          const o=writer.stores,history=voegBookingHistorySamen(
+            bookingDomain.normalizeHistory(snapshot.meta.bookingHistory),H.goed);
           nD.forEach(x=>o.dossiers.put(x));nR.forEach(x=>o.regels.put(x));
           nO.forEach(x=>o.overboekingen.put(x));
-          T.goed.forEach(x=>o.templates.put(x));C.goed.forEach(x=>o.codes.put(x));});
+          T.goed.forEach(x=>o.templates.put(x));C.goed.forEach(x=>o.codes.put(x));
+          o.meta.put(history,"bookingHistory");});
         toast("Samengevoegd: "+nD.length+" dossiers, "+nR.length+" regels, "+
           nO.length+" overboekingen");}
       /* De ongedaan-stapel hoort bij de vorige dataset en mag daar niet overheen. */
@@ -391,6 +459,7 @@ $("b-export").onclick=async()=>{
       rondMode:(await get("meta","rondMode"))||"groep",
       codeGebruik:(await get("meta","codeGebruik"))||{},
       geboekt:(await get("meta","geboekt"))||{},
+      bookingHistory:bookingDomain.normalizeHistory(await get("meta","bookingHistory")),
       thema:(await get("meta","thema"))||"auto",
       running:(await get("meta","running"))||null}};
   /* meta.dagEinde, rondMode, codeGebruik, geboekt en thema worden bij terugzetten
@@ -400,9 +469,12 @@ $("b-export").onclick=async()=>{
   dump.manifest={dossiers:dump.dossiers.length,regels:dump.regels.length,
     templates:dump.templates.length,codes:dump.codes.length,
     overboekingen:dump.overboekingen.length,
+    bookingReceipts:dump.meta.bookingHistory.receipts.length,
+    bookingResolutions:dump.meta.bookingHistory.resolutions.length,
     uren:Math.round(dump.regels.reduce((s,r)=>s+(+r.uren||0),0)*10)/10,
     open:dump.regels.filter(r=>!r.eind).length,
-    checksum:checksumVan(dump.dossiers,dump.regels,dump.templates,dump.codes,dump.overboekingen)};
+    checksum:checksumVan(dump.dossiers,dump.regels,dump.templates,dump.codes,
+      dump.overboekingen,dump.meta.bookingHistory)};
   const url=URL.createObjectURL(new Blob([JSON.stringify(dump,null,2)],
     {type:"application/json"}));
   const a=document.createElement("a");a.href=url;a.download="hourhound-"+today()+".json";

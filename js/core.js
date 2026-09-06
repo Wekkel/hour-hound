@@ -51,8 +51,9 @@
    B3. Blokkerende fouten (open regel, lopende timer, ontbrekend dossier, ontbrekende
        verplichte i7-code, lege omschrijving, ongeldige tijd) kunnen niet met
        "toch boeken" worden gepasseerd. Waarschuwingen wel.
-   B4. De boekstatus hangt aan een vingerafdruk van de inhoud; wijzigt er iets aan
-       uren, bronregels of afrondingsmodus, dan vervalt de status vanzelf.
+   B4. Bevestigde boekingen blijven als inhoudssnapshot bewaard. Een gewijzigd
+       Intapp-resultaat geeft een correctietaak; oude markeringen zijn alleen
+       terugval zolang er nog geen boekingshistorie voor de bron bestaat.
    B5. Automatisch aanvullen tot 8,0 uur kan alleen op een expliciet afgesloten werkdag.
        Het is een administratieve totaalaanvulling: bij minder dan 8,0 uur wordt exact
        het ontbrekende aantal uren als i7/Diversen toegevoegd, onafhankelijk van gaten
@@ -81,6 +82,9 @@ const {pad,uu,ymd,today,nowHM,hm2m,m2hm,dmy,parseD,addD,dagLabel,kortDag,
 const bookingDomain=HH.domain.booking;
 const dvnDomain=HH.domain.dvn,overbookingDomain=HH.domain.overbooking;
 const adminFoutTekst={invalid_dvn:"Deze DVN is niet meer beschikbaar",
+  invalid_booking:"De actuele regels zijn nog niet geldig om te boeken",
+  correction_changed:"De correctie is intussen gewijzigd; open Beheer opnieuw",
+  correction_required:"Deze regel is gewijzigd na boeken; handel de correctie af onder Beheer",
   number_required:"Vul eerst een dossiernummer in",
   target_is_dvn:"Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.",
   number_exists:"Deze DVN heeft al een dossiernummer en kan niet naar definitief i7",
@@ -412,7 +416,23 @@ function overboekingStatusTekst(o){
 const dvnRegels=d=>HH.state.selectors.dvnRules(d);
 const dvnResolvedDoel=d=>dvnDomain.resolvedTarget(d,HH.state.read().dossiers);
 const dvnResolvedNummer=d=>dvnDomain.resolvedNumber(d,HH.state.read().dossiers);
-const dvnIntappState=d=>dvnDomain.intappState(d,HH.state.read().dossiers);
+function dvnBoekSnapshots(d,rules,dossierRows,history,roundingMode){
+  const all=(rules||HH.state.read().rules).filter(r=>d&&r.dossierId===d.id&&r.soort!=="pauze"),
+    dates=[...new Set(all.map(r=>r.datum))],out=[];
+  dates.forEach(date=>sumVanData(all.filter(r=>r.datum===date),dossierRows,roundingMode,null,history)
+    .forEach(row=>out.push(bookingSnapshotVan(row,date,rules,roundingMode))));return out;}
+function dvnIntappState(d){
+  const base=dvnDomain.intappState(d,HH.state.read().dossiers);
+  if(base==="missing"||base==="final_i7")return base;
+  const snapshots=dvnBoekSnapshots(d),history=HH.state.read().bookingHistory;
+  if(snapshots.length&&snapshots.every(s=>bookingDomain.evidenceForSnapshot(history,s)))return"posted";
+  const ids=new Set(snapshots.flatMap(bookingDomain.rowSourceIds)),known=bookingDomain.evidence(history)
+    .filter(item=>item.receipt.dossierId===d.id||(item.receipt.snapshot.sources||[]).some(r=>r.dossierId===d.id)||
+      bookingDomain.rowSourceIds(item.snapshot).some(id=>ids.has(id)));
+  if(known.length)return "needs_check";
+  if((history.receipts||[]).some(item=>item.dossierId===d.id||
+    (item.snapshot.sources||[]).some(r=>r.dossierId===d.id)))return "ready";
+  return base;}
 function dvnStatusTekst(d){
   const nr=dvnResolvedNummer(d),st=dvnIntappState(d);
   if(st==="missing")return"dossiernummer ontbreekt";
@@ -459,23 +479,42 @@ function codeFout(d,r){
   return false;}
 /* Adapter naar de pure Intapp-aggregatie. Alle runtimecontext wordt hier expliciet
    verzameld; core.js is daardoor niet meer afhankelijk van views.js. */
-function sumVan(lijst){
+function sumVanData(lijst,dossierRows,roundingMode,overbookingRows,history){
+  const ds=dossierRows||HH.state.read().dossiers,overs=overbookingRows||HH.state.read().overbookings,
+    hist=history||HH.state.read().bookingHistory;
+  const dossier=id=>ds.find(d=>d.id===id)||null;
+  const info=d=>{const x=dvnDomain.intappInfo(d,{dossiers:ds,i7Dossier:ds.find(x=>x.isI7),
+    fallbackI7Name:"Indirecte uren"});return{nummer:x.nummer,naam:x.naam,dvn:x.dvn,status:x.dvn?"DVN":""};};
   return bookingDomain.aggregateIntapp(lijst,{
-    roundingMode:HH.state.read().roundingMode,runningId:HH.state.read().running?HH.state.read().running.id:null,today:today(),nowHM:nowHM(),
-    getDossier:dosOf,getIntappInfo:intappDossierInfo,getCodeName:codeNaam,
-    hasCodeError:codeFout,
-    getBoundaryId:r=>{const over=overboekingVoorBronId(r.id);return over?over.id:"";}
+    roundingMode:roundingMode||HH.state.read().roundingMode,
+    runningId:HH.state.read().running?HH.state.read().running.id:null,today:today(),nowHM:nowHM(),
+    getDossier:dossier,getIntappInfo:info,getCodeName:(d,c)=>{if(!c)return"";
+      const codes=d&&isIndirect(d)?HH.state.read().codes:(d&&d.codes||[]);
+      const found=codes.find(x=>x.code===c);return found?found.naam:c;},
+    hasCodeError:(d,r)=>codeFout(d,r),
+    getBoundaryId:r=>{const over=overs.find(o=>overbookingDomain.isOpen(o)&&
+      overbookingDomain.sourceIds(o).includes(r.id));return over?over.id:
+      bookingDomain.boundaryForSource(hist,r.id,r.datum);}
   });}
+function sumVan(lijst){return sumVanData(lijst);}
+function bookingSnapshotVan(row,datum,rules,roundingMode){
+  const ids=bookingDomain.rowSourceIds(row),all=rules||HH.state.read().rules;
+  return bookingDomain.bookingSnapshot(row,datum,{roundingMode:roundingMode||HH.state.read().roundingMode,
+    sources:ids.map(id=>all.find(r=>r.id===id)).filter(Boolean).map(r=>({id:r.id,datum:r.datum,
+      start:r.start,eind:r.eind,dossierId:r.dossierId,code:r.code||"",
+      omschrijving:r.omschrijving||"",uren:urenOf(r)}))});}
 /* Compatibiliteitsadapters voor klassieke UI-scripts. De implementatie blijft in
    de pure booking-domain; wizard en Dag mogen geen eigen normalisatie of totaallogica
    introduceren. */
 const normOms=bookingDomain.normalizeDescription;
 const simIntappTotaal=lijst=>sumVan(lijst).reduce((t,row)=>t+row.u,0);
-function valideerBoekDag(lijst){
+function valideerBoekData(lijst,dossierRows){
+  const ds=dossierRows||HH.state.read().dossiers,dossier=id=>ds.find(d=>d.id===id)||null;
   return bookingDomain.validateDay(lijst,{runningId:HH.state.read().running?HH.state.read().running.id:null,
-    today:today(),nowHM:nowHM(),getDossier:dosOf,isIndirect,hasCodeError:codeFout,
+    today:today(),nowHM:nowHM(),getDossier:dossier,isIndirect,hasCodeError:codeFout,
     isFixedCode:d=>!!d&&(d.voorlopig||dvnDefinitiefI7(d)),getFixedCode:defaultCode,
     getCodeName:codeNaam});}
+function valideerBoekDag(lijst){return valideerBoekData(lijst);}
 const dagCapaciteit=(datum,extra,exclId)=>
   bookingDomain.dayCapacity(HH.state.read().rules,datum,extra,exclId,boekRekenContext());
 /* Een regel op i7 of op een dossier waarvan het nummer nog volgt móét een werkcode
@@ -699,3 +738,15 @@ function omschrItems(d,q){
   return HH.state.read().templates.filter(t=>!s||((t.nl||"")+" "+(t.en||"")+" "+t.cat).toLowerCase().includes(s))
     .slice(0,25).map(t=>({label:(lang==="en"&&t.en)?t.en:t.nl,sub:t.cat,
       value:(lang==="en"&&t.en)?t.en:t.nl,code:t.code,group:"Sjablonen"}));}
+
+const bookingSemanticKey=bookingDomain.semanticKey;
+const bookingCorrectionsFor=rows=>bookingDomain.corrections(HH.state.read().bookingHistory,rows);
+
+function dvnHeeftBoekCorrecties(d){
+  const rows=dvnBoekSnapshots(d),ids=new Set(dvnRegels(d).map(r=>r.id)),h=HH.state.read().bookingHistory;
+  return bookingDomain.evidence(h).some(item=>(item.receipt.dossierId===d.id||
+    (item.receipt.snapshot.sources||[]).some(r=>r.dossierId===d.id)||
+    bookingDomain.rowSourceIds(item.snapshot).some(id=>ids.has(id)))&&
+    !rows.some(row=>bookingDomain.semanticEqual(item.snapshot,row)));}
+
+const legeBookingHistory=bookingDomain.emptyHistory;

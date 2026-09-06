@@ -68,6 +68,78 @@
 
   const normalizeDescription=value=>String(value==null?"":value)
     .replace(/\s+/g," ").trim().toLowerCase();
+  const emptyHistory=()=>({version:1,receipts:[],resolutions:[],legacyOrphans:[]});
+  function normalizeHistory(value){
+    const h=value&&typeof value==="object"?value:{};
+    return{version:1,receipts:Array.isArray(h.receipts)?h.receipts.slice():[],
+      resolutions:Array.isArray(h.resolutions)?h.resolutions.slice():[],
+      legacyOrphans:Array.isArray(h.legacyOrphans)?h.legacyOrphans.slice():[]};
+  }
+  const rowSourceIds=row=>(row&&Array.isArray(row.sourceIds)?row.sourceIds:
+    (row&&Array.isArray(row.bron)?row.bron.map(source=>source.id):[]))
+    .filter(Boolean).slice().sort();
+  function bookingSnapshot(row,date,options){
+    const o=options||{},sourceIds=rowSourceIds(row);
+    return{date:date||row.date||"",targetNumber:String(row.targetNumber!=null?
+        row.targetNumber:(row.nummer||"")),targetName:String(row.targetName!=null?
+        row.targetName:(row.naam||"")),code:String(row.code||""),
+      description:String(row.description!=null?row.description:(row.oms||"")),
+      normalizedDescription:normalizeDescription(row.description!=null?
+        row.description:(row.oms||"")),hours:Math.round(+(row.hours!=null?row.hours:row.u)*10)/10,
+      roundingMode:o.roundingMode||row.roundingMode||"groep",sourceIds,
+      sources:Array.isArray(o.sources)?o.sources.map(source=>Object.assign({},source)):[]};
+  }
+  function semanticKey(value){
+    const s=value&&value.snapshot?value.snapshot:value||{};
+    return JSON.stringify([String(s.date||""),String(s.targetNumber||"").trim().toLowerCase(),
+      String(s.code||"").trim().toLowerCase(),normalizeDescription(
+        s.description!=null?s.description:s.normalizedDescription),
+      (Math.round((+s.hours||0)*10)/10).toFixed(1),
+      rowSourceIds(s)]);
+  }
+  const semanticEqual=(a,b)=>semanticKey(a)===semanticKey(b);
+  function latestResolution(history,receiptId){
+    return normalizeHistory(history).resolutions.filter(r=>r.receiptId===receiptId)
+      .sort((a,b)=>String(a.resolvedAt||"").localeCompare(String(b.resolvedAt||""))).pop()||null;
+  }
+  function evidence(history){
+    const h=normalizeHistory(history),out=[];
+    h.receipts.forEach(receipt=>{
+      if(receipt.channel==="overbooking_i7")return;
+      const resolution=latestResolution(h,receipt.id);
+      if(resolution&&resolution.type==="reopened")return;
+      const snapshots=resolution&&resolution.type==="corrected"?
+        (Array.isArray(resolution.currentSnapshots)?resolution.currentSnapshots:
+          (resolution.currentSnapshot?[resolution.currentSnapshot]:[])):[receipt.snapshot];
+      snapshots.filter(Boolean).forEach((snapshot,index)=>out.push({id:receipt.id+
+        (snapshots.length>1?":"+index:""),receiptId:receipt.id,receipt,resolution,snapshot}));
+    });
+    return out;
+  }
+  const evidenceForSnapshot=(history,snapshot)=>evidence(history)
+    .find(item=>semanticEqual(item.snapshot,snapshot))||null;
+  function hasHistoricalSource(history,snapshot){
+    const ids=rowSourceIds(snapshot),h=normalizeHistory(history);
+    return h.receipts.some(receipt=>receipt.channel!=="overbooking_i7"&&
+      rowSourceIds(receipt.snapshot).some(id=>ids.includes(id)));
+  }
+  function boundaryForSource(history,sourceId,date){
+    const found=evidence(history).slice().reverse().find(item=>item.snapshot&&
+      item.snapshot.date===date&&rowSourceIds(item.snapshot).includes(sourceId));
+    return found?"booking:"+found.id:"";
+  }
+  function corrections(history,currentSnapshots){
+    const current=currentSnapshots||[],groups=new Map(),out=[];
+    evidence(history).forEach(item=>{const rows=groups.get(item.receiptId)||[];
+      rows.push(item.snapshot);groups.set(item.receiptId,rows);});
+    groups.forEach((beforeSnapshots,receiptId)=>{
+      if(beforeSnapshots.every(before=>current.some(now=>semanticEqual(before,now))))return;
+      const ids=new Set(beforeSnapshots.flatMap(rowSourceIds)),matches=current.filter(snapshot=>
+        rowSourceIds(snapshot).some(id=>ids.has(id)));
+      out.push({receiptId,before:beforeSnapshots[0],beforeSnapshots,
+        current:matches.length===1?matches[0]:null,currentOptions:matches,deleted:!matches.length});
+    });return out;
+  }
   function aggregateIntapp(rules,options){
     const o=Object.assign({roundingMode:"groep",getDossier:()=>null,
       getIntappInfo:()=>({nummer:"",naam:"",status:""}),getCodeName:(d,c)=>c||"",
@@ -153,5 +225,8 @@
 
   HH.domain.booking=Object.freeze({NORM,DAGMAX,endOf,rawMinutes,hoursOf,pauseHours,
     totalHours,gapsFor,gapHours,autoFillShortfall,dayHours,dayCapacity,
-    normalizeDescription,aggregateIntapp,validateDay});
+    normalizeDescription,emptyHistory,normalizeHistory,rowSourceIds,bookingSnapshot,
+    semanticKey,semanticEqual,evidence,evidenceForSnapshot,hasHistoricalSource,
+    boundaryForSource,corrections,
+    aggregateIntapp,validateDay});
 })(globalThis.HH);

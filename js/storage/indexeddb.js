@@ -9,7 +9,7 @@
   const SNAPSHOT_STORES=Object.freeze([
     "dossiers","templates","codes","regels","overboekingen","meta"]);
   const SNAPSHOT_META_KEYS=Object.freeze([
-    "stack","dagEinde","dagAudit","running","pending","codeGebruik","geboekt",
+    "stack","dagEinde","dagAudit","running","pending","codeGebruik","geboekt","bookingHistory",
     "log","logOms","thema","rondMode"]);
   let database=null;
   let writeGuard=null;

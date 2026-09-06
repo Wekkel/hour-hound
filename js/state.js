@@ -7,7 +7,8 @@
   const vandaag=time.today();
   const data={
     db:null,dossiers:[],templates:[],codes:[],rules:[],running:null,stack:[],
-    overbookings:[],dayEnds:{},dayAudit:{},booked:{},roundingMode:"groep",
+    overbookings:[],dayEnds:{},dayAudit:{},booked:{},
+    bookingHistory:{version:1,receipts:[],resolutions:[],legacyOrphans:[]},roundingMode:"groep",
     codeUsage:{},viewDate:vandaag,weekAnchor:vandaag,tab:"nu"
   };
   const listeners=new Set();

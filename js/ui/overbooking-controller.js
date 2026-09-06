@@ -22,10 +22,10 @@ async function handelOverboekingenAf(){
   try{uit=await HH.services.admin.completeOverbookings({ids,overbookings:HH.state.read().overbookings,
     rules:HH.state.read().rules,dossiers:HH.state.read().dossiers,summarize:sumVan,
     roundingMode:HH.state.read().roundingMode,booked:HH.state.read().booked,
-    nowIso,bookedDate});}
+    hoursOf:urenOf,nowIso,bookedDate});}
   catch(e){L("FOUT-overboeking-afhandelen",String(e));toast("Afhandelen mislukt — er is niets gewijzigd");return;}
   if(meldAdminFout(uit,"Afhandelen is niet uitgevoerd")){sluitOverboekPost();return;}
-  HH.state.commit({booked:uit.booked,
+  HH.state.commit({booked:uit.booked,bookingHistory:uit.history,
     overbookings:mergeById(HH.state.read().overbookings,uit.overbookings)});
   sluitOverboekPost();renderBeheer();boekStat();
   L("overboeking-afgehandeld",uit.overbookings.length+" item(s)");
@@ -55,10 +55,12 @@ async function maakOverboekingDefinitiefI7(id){
   const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
   try{uit=await HH.services.admin.finalizeOverbookingI7({overbooking:o,rules:HH.state.read().rules,
     i7Dossier:ind,commercialCode:com,runningId:HH.state.read().running?HH.state.read().running.id:null,
-    summarize:sumVan,booked:HH.state.read().booked,waitForRules:rustig,nowMs,nowIso});}
+    summarize:sumVan,booked:HH.state.read().booked,waitForRules:rustig,
+    roundingMode:HH.state.read().roundingMode,hoursOf:urenOf,nowMs,nowIso});}
   catch(e){L("FOUT-overboeking-definitief-i7",String(e));toast("Omzetten mislukt — er is niets gewijzigd");return;}
   if(meldAdminFout(uit,"Omzetten is niet uitgevoerd"))return;
-  HH.state.commit({booked:uit.booked,rules:mergeById(HH.state.read().rules,uit.rules),
+  HH.state.commit({booked:uit.booked,bookingHistory:uit.history,
+    rules:mergeById(HH.state.read().rules,uit.rules),
     overbookings:mergeById(HH.state.read().overbookings,[uit.overbooking])});HH.app.render();
   L("overboeking-definitief-i7",uit.rules.length+" regel(s)");
   toast("Definitief i7 · Commercieel");}

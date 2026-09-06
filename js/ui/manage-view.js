@@ -1,6 +1,30 @@
 "use strict";
 /* ---------- beheer ---------- */
+let bookingCorrectionMap=new Map();
+function alleBookingSnapshots(){
+  const out=[],rules=HH.state.read().rules,dates=[...new Set(rules.map(r=>r.datum))];
+  dates.forEach(date=>sumVanData(rules.filter(r=>r.datum===date)).forEach(row=>
+    out.push(bookingSnapshotVan(row,date))));return out;}
+function bookingRegelHtml(s){return !s?'<span class="hint">Regels verwijderd</span>':
+  '<span class="mono">'+esc(dmy(s.date))+' · '+esc(s.targetNumber||'—')+' · '+
+  esc(s.code||'—')+' · '+uu(s.hours)+' u</span><br>'+esc(s.description||'');}
+function renderBookingCorrections(){
+  const el=$("booking-corrections");if(!el)return;
+  const corrections=bookingCorrectionsFor(alleBookingSnapshots());bookingCorrectionMap=new Map(corrections.map(c=>[c.receiptId,c]));
+  const history=HH.state.read().bookingHistory,legacy=(history.receipts||[]).some(r=>r.legacyInferred)||
+    (history.legacyOrphans||[]).length,notice=legacy?
+      '<div class="hint">Oude boekmarkeringen zijn behouden. De oorspronkelijke inhoud was niet volledig opgeslagen; gereconstrueerde boekingen zijn geen bewijs van het destijds gebruikte dossiernummer.</div>':"";
+  if(!corrections.length){el.innerHTML=notice+'<div class="hint">Geen boekingscorrecties.</div>';return;}
+  el.innerHTML=notice+corrections.map(c=>'<div class="dvncard needs_check">'+
+    '<div class="dvnhead"><strong>Gewijzigd na boeken</strong><span class="tag warn">controle nodig</span></div>'+
+    '<div class="cols"><div><span class="cap">Eerder bevestigd</span><div style="margin-top:.35rem">'+
+    (c.beforeSnapshots||[c.before]).map(bookingRegelHtml).join("<hr>")+'</div></div><div><span class="cap">Huidig</span><div style="margin-top:.35rem">'+
+    (c.currentOptions.length?c.currentOptions.map(bookingRegelHtml).join('<hr>'):
+      '<span class="hint">Regels verwijderd</span>')+'</div></div></div>'+
+    '<div class="bar mini"><button class="sm go" data-booking-resolve="'+esc(c.receiptId)+
+    '">Correctie in Intapp afgehandeld</button></div></div>').join("");}
 function renderBeheer(){
+  renderBookingCorrections();
   renderDvnIntapp();
   renderOverboekingen();
   $("b-list").innerHTML=HH.state.read().dossiers.filter(d=>!dvnDefinitiefI7(d)).map(d=>{

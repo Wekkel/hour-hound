@@ -3,6 +3,16 @@ async function bewaarBeheerDossier(next){
   const uit=await HH.services.admin.saveDossier({dossier:next});
   if(meldAdminFout(uit,"Dossierwijziging is niet opgeslagen"))return false;
   HH.state.upsert("dossiers",uit.dossier);return true;}
+$("booking-corrections").addEventListener("click",async e=>{
+  const button=e.target.closest("[data-booking-resolve]");if(!button)return;
+  const correction=bookingCorrectionMap.get(button.dataset.bookingResolve);if(!correction)return;
+  if(!confirm("Bevestig dat deze wijziging of verwijdering in Intapp is gecontroleerd en afgehandeld."))return;
+  const nowIso=new Date().toISOString(),uit=await HH.services.admin.resolveBookingCorrection({
+    receiptId:correction.receiptId,currentKeys:correction.currentOptions.map(bookingSemanticKey),
+    resolutionId:uid(),nowIso,aggregateRows:sumVanData,snapshotRow:bookingSnapshotVan,validateRules:valideerBoekData});
+  if(meldAdminFout(uit,"Correctie is niet afgehandeld"))return;
+  HH.state.commit({bookingHistory:uit.history});renderBeheer();announce();
+  toast("Correctie afgehandeld en vastgelegd");});
 $("dvn-intapp").addEventListener("click",async e=>{
   const num=e.target.closest("[data-dvn-num]");
   if(num){await kenNummerToe(num.dataset.dvnNum);return;}
@@ -93,7 +103,8 @@ $("b-wipe").onclick=async()=>{
   if(!confirm("Zeker weten? Maak eerst een export als je iets wilt bewaren."))return;
   const uit=await HH.services.admin.clearTrackedData();
   if(meldAdminFout(uit,"Gegevens zijn niet gewist"))return;
-  HH.state.commit({stack:[],dayEnds:{},dayAudit:{},booked:{},overbookings:[],running:null});
+  HH.state.commit({stack:[],dayEnds:{},dayAudit:{},booked:{},
+    bookingHistory:legeBookingHistory(),overbookings:[],running:null});
   undoStack=[];
   await zorgVoorI7();await herlaad();
   L("alles-gewist","");toast("Gewist — hourhound begint schoon");};

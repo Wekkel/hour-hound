@@ -7,13 +7,13 @@ function dvnAuditTekst(d){
     " na "+d.dvnIntappNeedsCheckReason:"");
   return "";}
 function dvnKaartHtml(d,afgehandeld){
-  const rs=dvnRegels(d),info=intappDossierInfo(d),dagen={},st=dvnIntappState(d);
-  rs.forEach(r=>{dagen[r.datum]=(dagen[r.datum]||0)+urenOf(r);});
-  const totaal=rs.reduce((s,r)=>s+urenOf(r),0);
-  const det=rs.slice().sort((a,b)=>(a.datum+a.start)<(b.datum+b.start)?-1:1)
-    .map(r=>'<tr><td class="mono">'+esc(kortDag(r.datum))+'</td><td class="mono">'+
-      esc(r.start+'–'+(r.eind||'loopt'))+'</td><td>'+esc((r.omschrijving||'').replace(VOOR,''))+
-      '</td><td class="mono" style="text-align:right">'+uu(urenOf(r))+'</td></tr>').join("");
+  const rs=dvnRegels(d),rows=dvnBoekSnapshots(d),info=intappDossierInfo(d),dagen={},st=dvnIntappState(d);
+  rows.forEach(r=>{dagen[r.date]=(dagen[r.date]||0)+r.hours;});
+  const totaal=rows.reduce((s,r)=>s+r.hours,0);
+  const det=rows.slice().sort((a,b)=>a.date.localeCompare(b.date))
+    .map(r=>'<tr><td class="mono">'+esc(kortDag(r.date))+'</td><td class="mono">'+
+      esc(r.code||'—')+'</td><td>'+esc(r.description||'')+
+      '</td><td class="mono" style="text-align:right">'+uu(r.hours)+'</td></tr>').join("");
   const dagtekst=Object.keys(dagen).sort().map(k=>kortDag(k)+" "+uu(dagen[k])).join(" · ")||"nog geen uren";
   const audit=dvnAuditTekst(d);
   const nummerActie=d.voorlopig?'<button class="sm go" data-dvn-num="'+esc(d.id)+'">Dossiernummer toekennen</button>':
@@ -23,15 +23,15 @@ function dvnKaartHtml(d,afgehandeld){
   const eindActie=!afgehandeld&&st==="missing"?
     '<button class="sm ghost warn" data-dvn-final-i7="'+esc(d.id)+'">Naar definitief i7</button>':'';
   const acties=nummerActie+boekActie+eindActie+
-    (rs.length?'<button class="sm" data-dvn-day="'+esc(rs[0].datum)+'">Toon eerste dag</button>':'');
+    (rows.length?'<button class="sm" data-dvn-day="'+esc(rows[0].date)+'">Toon eerste dag</button>':'');
   return '<div class="dvncard '+esc(st||'dvn')+'" data-dvn-card="'+esc(d.id)+'">'+
     '<div class="dvnhead"><div><strong>'+esc(d.naam)+'</strong> '+
     '<span class="tag dvn">'+esc(dvnStatusTekst(d))+'</span></div>'+ 
-    '<span class="mono">'+rs.length+' regel(s) · '+uu(totaal)+' u</span></div>'+ 
+    '<span class="mono">'+rows.length+' boekregel(s) · '+uu(totaal)+' u</span></div>'+ 
     '<div class="hint">Intapp: '+esc(info.nummer||'geen nummer')+' · '+esc(info.naam||'geen naam')+
     ' · '+esc(dagtekst)+'</div>'+(audit?'<div class="hint">'+esc(audit)+'</div>':'')+
     '<div class="bar mini">'+acties+
-    '</div><details><summary>Toon regels</summary><div class="tw"><table><thead><tr><th>Dag</th><th>Tijd</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody>'+ 
+    '</div><details><summary>Toon boekregels</summary><div class="tw"><table><thead><tr><th>Dag</th><th>Werkcode</th><th>Omschrijving</th><th style="text-align:right">Uren</th></tr></thead><tbody>'+ 
     (det||'<tr><td colspan="4" class="hint">Geen regels.</td></tr>')+
     '</tbody></table></div></details></div>';}
 function renderDvnIntapp(){

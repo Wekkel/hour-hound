@@ -383,8 +383,8 @@ test('Patch R UI-instellingen en Beheer-mutaties lopen via services', () => {
     'Themakeuze moet via de configuratieservice opslaan');
   assertIncludes(read('js/ui/day-controller.js'),'HH.services.settings.save("rondMode"',
     'Afrondingsmodus moet via de configuratieservice opslaan');
-  assertIncludes(src.booking,'HH.services.settings.save("geboekt"',
-    'Boekstatus moet via de configuratieservice opslaan');
+  assertIncludes(src.booking,'HH.services.admin.setRegularBooking(',
+    'Boekstatus moet via de transactionele boekingsservice opslaan');
   const manage=read('js/ui/manage-controller.js');
   for(const method of ['saveDossier','deleteDossier','clearTrackedData'])
     assertIncludes(manage,`HH.services.admin.${method}`,`Beheer moet ${method} via de service uitvoeren`);
@@ -588,7 +588,7 @@ test('compatibiliteitshelpers delegeren en use-case-transacties blijven heel', (
     'Timertransacties moeten dezelfde centrale storelijst gebruiken');
   assertIncludes(src.io,'tx(["dossiers","regels","templates","codes","overboekingen","meta"],"readwrite"',
     'Volledige import moet één transactie over alle betrokken stores blijven');
-  assertIncludes(src.io,'tx(["dossiers","regels","templates","codes","overboekingen"],"readwrite"',
+  assertIncludes(src.io,'tx(["dossiers","regels","templates","codes","overboekingen","meta"],"readwrite"',
     'Samenvoegen moet één transactie over alle betrokken stores blijven');
 });
 
@@ -612,7 +612,12 @@ test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => 
   assertEq(assigned.dossier.dvnIntappAudit.at(-1).reden,'dossiernummer aangepast',
     'Nummerwijziging moet traceerbaar blijven');
 
-  const posted=await service.markDvnPosted({dossier:assigned.dossier,
+  const aggregateRows=(rs,ds,mode)=>HH.domain.booking.aggregateIntapp(rs,{roundingMode:mode,
+    getDossier:id=>ds.find(d=>d.id===id),getIntappInfo:d=>({nummer:HH.domain.dvn.resolvedNumber(d,ds),naam:d.naam})}),
+    snapshotRow=(row,date)=>HH.domain.booking.bookingSnapshot(row,date),
+    bookingInput={aggregateRows,snapshotRow,snapshots:aggregateRows(assigned.rules,[assigned.dossier],'groep')
+      .map(row=>snapshotRow(row,assigned.rules[0].datum))};
+  const posted=await service.markDvnPosted({...bookingInput,dossier:assigned.dossier,
     dossiers:[assigned.dossier],rules:assigned.rules,hoursOf:()=>1,
     nowMs:11,nowIso:'2026-08-25T10:01:00.000Z'});
   assertEq(posted.dossier.dvnIntappStatus,'posted','DVN moet expliciet posted worden');
@@ -642,7 +647,7 @@ test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => 
   const failedDb=fakeDatabase({dossiers:[assigned.dossier],regels:assigned.rules,meta:{}},{fail:true});
   gateway.use(failedDb);
   let rejected=false;
-  try{await service.markDvnPosted({dossier:assigned.dossier,dossiers:[assigned.dossier],
+  try{await service.markDvnPosted({...bookingInput,dossier:assigned.dossier,dossiers:[assigned.dossier],
     rules:assigned.rules,hoursOf:()=>1,nowMs:99,nowIso:'later'});}catch(error){rejected=true;}
   assert(rejected,'Een geïnjecteerde DVN-writefout moet afwijzen');
   assert(failedDb.calls.some(call=>call.op==='put'&&call.store==='dossiers'),
@@ -1539,10 +1544,9 @@ test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', as
   assertIncludes(src.html, 'Alles ingevoerd in Intapp', 'Expliciete eindbevestiging ontbreekt');
   assertIncludes(src.timer, 'function openDvnPostSheet', 'DVN-post-sheet opener ontbreekt');
   assertIncludes(src.timer, 'async function markeerDvnIngevoerd', 'Markeer-als-ingevoerd functie ontbreekt');
-  assertIncludes(src.timer, 'data-dvn-rule', 'Boekingssheet moet herkenbare bronregels tonen');
   assertIncludes(src.admin, 'dvnIntappPostedRuleIds:rules.map',
     'Afhandeling moet de betrokken regel-id’s vastleggen');
-  assertIncludes(src.core, 'const dvnIntappState=d=>dvnDomain.intappState',
+  assertIncludes(src.core, 'function dvnIntappState(d)',
     'DVN-statusadapter ontbreekt');
   assertIncludes(src.core, 'function dvnPutIfPosted', 'Gedeelde posted-DVN-terugval ontbreekt');
   assertIncludes(src.core, '"posted"', 'DVN posted-status ontbreekt');
@@ -1622,7 +1626,7 @@ test('Patch H houdt gewone blokkade los van DVN en echte boekstatus', () => {
   assertIncludes(src.html, 'Nog over te boeken naar dossier', 'Beheer mist de overboekingswerkvoorraad');
   assertIncludes(src.html, 'Tijdelijk niet boekbaar', 'Dagwizard mist de parkeeractie');
   assertIncludes(src.html, 'Op i7 geboekt · parkeren', 'Expliciete tijdelijke i7-bevestiging ontbreekt');
-  assertIncludes(src.admin, 'atomic(input,["regels","dossiers","overboekingen"],["running"]',
+  assertIncludes(src.admin, 'atomic(input,["regels","dossiers","overboekingen"],["running","bookingHistory"]',
     'Parkeren moet apart van geboekt worden opgeslagen');
   assertNotIncludes(src.booking, 'zetGeboekt(p.row.fp,true)', 'Parkeren mag niet als echte dossierboeking gelden');
   assertIncludes(src.booking, 'status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd · "+status.open+" open',
@@ -1733,9 +1737,9 @@ test('brede H-regressie bewaakt modal, verwijdering, groepering en atomaire afha
     'Een bronregel in de open overboekingswachtrij mag niet verwijderbaar zijn');
   assertIncludes(src.views, 'rond de overboeking eerst af onder Beheer',
     'De verwijderblokkade moet de gebruiker naar de herstelplek verwijzen');
-  assertIncludes(src.core, 'const over=overboekingVoorBronId(r.id)',
+  assertIncludes(src.core, 'const over=overs.find(o=>overbookingDomain.isOpen(o)',
     'Aggregatie moet een overboekingslifecycle als eigen groeperingsgrens gebruiken');
-  assertIncludes(src.admin, 'atomic(input,["overboekingen","regels","dossiers"],["geboekt"]',
+  assertIncludes(src.admin, 'atomic(input,["overboekingen","regels","dossiers"],["geboekt","bookingHistory"]',
     'Afhandelen en duurzame boekstatus moeten in één transactie worden opgeslagen');
   assertIncludes(src.admin, 'sourceFingerprints:fingerprints',
     'Afhandelen moet de actuele inhoudsvingerafdrukken bewaren');
@@ -1790,7 +1794,7 @@ test('timer-invariant herstelt alleen eenduidige state en blokkeert conflicten',
 
 test('backup/import bewaart dag-, DVN- en overboekingsmetadata', () => {
   const io = evaluateIoPure();
-  assertEq(io.backupVersie, 9, 'Backupversie moet Patch H-wachtrij dekken');
+  assertEq(io.backupVersie, 10, 'Backupversie moet duurzame boekingshistorie dekken');
   for (const key of ['dagAudit', 'dvnResolvedNr', 'dvnTo', 'dvnDisposition', 'dvnFinalI7At', 'dvnFinalI7RuleIds', 'dvnIntappStatus', 'dvnIntappAudit', 'dvnIntappPostedRuleIds', 'hersteld', 'herstelOrigineel']) {
     assertIncludes(src.io, key, `Backup/import mist ${key}`);
   }

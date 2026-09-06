@@ -398,23 +398,37 @@ function openDvnPostSheet(id){
   const d=dosOf(id),dlg=$("dvnpost");
   if(!dlg||!d||!isDvn(d))return Promise.resolve(false);
   if(!dvnResolvedNummer(d)){toast("Ken eerst een dossiernummer toe");return Promise.resolve(false);}
+  if(dvnHeeftBoekCorrecties(d)){toast("Gewijzigd na boeken — handel eerst de correctie onder Beheer af");
+    HH.app.showTab("beheer");return Promise.resolve(false);}
+  const legacyCorrection=d.dvnIntappStatus==="needs_check"&&(d.dvnIntappPostedRuleIds||[]).length&&
+    !(HH.state.read().bookingHistory.receipts||[]).some(r=>r.dossierId===d.id||
+      (r.snapshot.sources||[]).some(source=>source.dossierId===d.id));
+  if(legacyCorrection&&!confirm("Deze DVN is eerder geboekt en daarna gewijzigd. De oude app bewaarde de oorspronkelijke inhoud niet volledig. Controleer eerst de bestaande boekingen in Intapp; voer de uren niet nogmaals in. Doorgaan om de huidige inhoud te controleren en als correctie te bevestigen?"))return Promise.resolve(false);
+  dlg._legacyCorrection=!!legacyCorrection;
   const rs=dvnRegels(d).slice().sort((a,b)=>(a.datum+a.start).localeCompare(b.datum+b.start));
-  const u=Math.round(rs.reduce((s,r)=>s+urenOf(r),0)*10)/10,info=intappDossierInfo(d);
+  const blok=valideerBoekData(rs).filter(problem=>problem.blok);
+  if(blok.length){toonBlokkade(blok,"DVN boeken");return Promise.resolve(false);}
+  const snapshots=dvnBoekSnapshots(d).filter(snapshot=>!bookingDomain.evidenceForSnapshot(
+    HH.state.read().bookingHistory,snapshot)),u=Math.round(snapshots.reduce((s,r)=>s+r.hours,0)*10)/10,
+    info=intappDossierInfo(d);
   dlg.dataset.id=id;
+  dlg._bookingSnapshots=snapshots;
   $("dp-status").textContent=dvnStatusTekst(d);
   $("dp-meta").innerHTML='<span class="cap">Boeken op dossier</span><br><b class="mono">'+
     esc(info.nummer)+"</b> · <b>"+esc(info.naam||d.naam)+"</b><br>Oorspronkelijke DVN: "+
     esc(d.dvnOriginalName||d.naam);
-  $("dp-lines").querySelector("tbody").innerHTML=rs.length?rs.map(r=>
-    '<tr data-dvn-rule="'+esc(r.id)+'"><td class="mono">'+esc(dmy(r.datum))+'</td><td>'+ 
-    esc(((r.omschrijving||"").replace(VOOR,"").trim())||"geen omschrijving")+
-    '</td><td class="mono" style="text-align:right">'+uu(urenOf(r))+"</td></tr>").join(""):
-    '<tr><td colspan="3" class="hint">Geen regels om over te nemen.</td></tr>';
+  $("dp-lines").querySelector("tbody").innerHTML=snapshots.length?snapshots.map(r=>
+    '<tr><td class="mono">'+esc(dmy(r.date))+'</td><td>'+esc(r.code||"—")+' · '+
+    esc(r.description||"geen omschrijving")+'</td><td class="mono" style="text-align:right">'+
+    uu(r.hours)+"</td></tr>").join(""):
+    '<tr><td colspan="3" class="hint">Alle huidige regels zijn al via Dag bevestigd.</td></tr>';
   $("dp-total").innerHTML='<span class="cap">Totaal</span><br><b class="mono">'+uu(u)+
-    " uur</b> · "+rs.length+" regel"+(rs.length===1?"":"s");
-  $("dp-help").textContent=rs.length?
-    "Verwerk iedere getoonde regel in Intapp op het echte dossiernummer. Na bevestiging verhuist deze DVN naar Afgehandeld onder Beheer.":
-    "Deze DVN heeft geen tijdregels. Controleer of afhandeling werkelijk nodig is.";
+    " uur</b> · "+snapshots.length+" boekregel"+(snapshots.length===1?"":"s");
+  $("dp-help").textContent=snapshots.length?
+    "Verwerk deze vaste, per dag gegroepeerde regels in Intapp. Al via Dag bevestigde regels zijn weggelaten.":
+    "Alle huidige DVN-regels hebben al gedeeld boekingsbewijs.";
+  if(legacyCorrection)$("dp-help").textContent="Controleer en corrigeer de bestaande Intapp-boeking naar de hieronder getoonde huidige inhoud. De oorspronkelijke inhoud is onbekend; voeg deze uren niet opnieuw toe.";
+  $("dp-save").textContent=legacyCorrection?"Correctie afgehandeld":"Alles ingevoerd in Intapp";
   dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
   return new Promise(res=>{dlg._resolve=res;setTimeout(()=>$("dp-save").focus(),0);});}
 function sluitDvnPostSheet(v){
@@ -426,16 +440,18 @@ async function markeerDvnIngevoerd(){
   if(!dlg||!d||!isDvn(d)){sluitDvnPostSheet(false);return;}
   const nr=dvnResolvedNummer(d);
   if(!nr){toast("Ken eerst een dossiernummer toe");return;}
-  const rs=dvnRegels(d),u=Math.round(rs.reduce((s,r)=>s+urenOf(r),0)*10)/10;
-  if(!confirm("Bevestig dat alle "+rs.length+" regel(s) / "+uu(u)+
-    " uur voor dossier "+nr+" in Intapp zijn ingevoerd."))return;
+  const snapshots=dlg._bookingSnapshots||[],u=Math.round(snapshots.reduce((s,r)=>s+r.hours,0)*10)/10;
+  if(!confirm(snapshots.length?("Bevestig dat alle "+snapshots.length+" boekregel(s) / "+uu(u)+
+    " uur voor dossier "+nr+" in Intapp zijn ingevoerd."):
+    ("Bevestig dat dossier "+nr+" volledig is; alle regels waren al via Dag bevestigd.")))return;
   const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
   try{uit=await HH.services.admin.markDvnPosted({dossier:d,dossiers:HH.state.read().dossiers,
     rules:HH.state.read().rules,
-    hoursOf:urenOf,nowMs,nowIso});}
+    hoursOf:urenOf,nowMs,nowIso,snapshots,legacyReviewed:!!dlg._legacyCorrection,aggregateRows:sumVanData,
+    snapshotRow:bookingSnapshotVan,validateRules:valideerBoekData});}
   catch(e){L("FOUT-dvn-post",String(e));toast("Markeren mislukt — niets gewijzigd: "+e);return;}
   if(meldAdminFout(uit,"DVN is niet als afgehandeld gemarkeerd"))return;
-  memDossier(uit.dossier);HH.app.render();announce();
+  memDossier(uit.dossier);HH.state.commit({bookingHistory:uit.history});HH.app.render();announce();
   L("dvn-intapp",dosIdLog(id)+" · "+uit.rules.length+" regel(s) · "+uu(uit.total)+" u");
   toast("DVN afgehandeld — alles ingevoerd in Intapp");sluitDvnPostSheet(true);}
 

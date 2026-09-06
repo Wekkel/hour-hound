@@ -5,7 +5,8 @@
 (function(HH){
   if(!HH||!HH.services||!HH.storage||!HH.domain)
     throw new Error("HH-lagen ontbreken vóór services/admin.js");
-  const gateway=HH.storage.indexedDB,dvn=HH.domain.dvn,over=HH.domain.overbooking;
+  const gateway=HH.storage.indexedDB,dvn=HH.domain.dvn,over=HH.domain.overbooking,
+    booking=HH.domain.booking;
   const PREFIX=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
   const ok=effects=>Object.assign({ok:true},effects||{});
   const fail=(error,details)=>Object.assign({ok:false,error},details||{});
@@ -46,13 +47,149 @@
   const ruleSnapshot=(rule,hoursOf)=>({
     id:rule.id,datum:rule.datum,start:rule.start,eind:rule.eind,
     dossierId:rule.dossierId,code:rule.code||null,omschrijving:rule.omschrijving||"",
-    uren:hoursOf(rule),gewijzigd:rule.gewijzigd||0
+    uren:typeof hoursOf==="function"?hoursOf(rule):booking.hoursOf(rule),gewijzigd:rule.gewijzigd||0
   });
   function addBooked(booked,date,fingerprints){
     const next=copy(booked),list=(next[date]||[]).concat(fingerprints||[]);
     next[date]=[...new Set(list)];
-    const days=Object.keys(next).sort();while(days.length>60)delete next[days.shift()];
     return next;
+  }
+  const removeBooked=(booked,date,fp)=>{const next=copy(booked),list=(next[date]||[])
+    .filter(value=>value!==fp);if(list.length)next[date]=list;else delete next[date];return next;};
+  const receipt=(id,channel,snapshot,input,extra)=>Object.assign({id,channel,
+    snapshot:copy(snapshot),confirmedAt:input.nowIso||new Date().toISOString(),
+    confirmedContent:booking.semanticKey(snapshot)},extra||{});
+  const rowIds=row=>booking.rowSourceIds(row);
+  function snapshotsFor(input,rules,dossiers,history,onlyDate){
+    const dates=[...new Set((rules||[]).filter(r=>r.soort!=="pauze"&&(!onlyDate||r.datum===onlyDate))
+      .map(r=>r.datum))],out=[];
+    dates.forEach(date=>{
+      const day=(rules||[]).filter(r=>r.datum===date);
+      (input.aggregateRows(day,dossiers,input.roundingMode,null,history)||[]).forEach(row=>
+        out.push(input.snapshotRow(row,date,rules,input.roundingMode)));
+    });return out;
+  }
+
+  async function setRegularBooking(input){
+    const expected=input.snapshot;
+    if(!expected||!expected.date||!rowIds(expected).length)return fail("source_changed");
+    await waitFor(input,rowIds(expected));
+    return atomic(input,["regels","dossiers"],["geboekt","bookingHistory","rondMode"],
+      (snapshot,writer)=>{
+      const mode=snapshot.meta.rondMode||"groep",ctx=Object.assign({},input,{roundingMode:mode}),
+        current=snapshotsFor(ctx,snapshot.regels,snapshot.dossiers,snapshot.meta.bookingHistory,
+          expected.date).find(item=>sameIds(rowIds(item),rowIds(expected)));
+      if(!current||!booking.semanticEqual(current,expected))return fail("source_changed");
+      const contributing=rowIds(current).map(id=>byId(snapshot.regels,id)).filter(Boolean);
+      if(contributing.length!==rowIds(current).length||contributing.some(rule=>!rule.eind)||
+        !current.targetNumber||!current.description.trim()||!(current.hours>0)||
+        typeof input.validateRules==="function"&&input.validateRules(contributing,
+          snapshot.dossiers).some(problem=>problem.blok))return fail("invalid_booking");
+      let history=booking.normalizeHistory(snapshot.meta.bookingHistory),
+        booked=copy(snapshot.meta.geboekt);
+      if(input.enabled){
+        const allCurrent=snapshotsFor(ctx,snapshot.regels,snapshot.dossiers,history),ids=rowIds(current);
+        if(booking.corrections(history,allCurrent).some(item=>item.beforeSnapshots.flatMap(rowIds)
+          .some(id=>ids.includes(id))))return fail("correction_required");
+        if(!booking.evidenceForSnapshot(history,current))history.receipts.push(receipt(
+          input.receiptId,"day",current,input));
+        booked=addBooked(booked,current.date,[input.fingerprint]);
+      }else{
+        const found=booking.evidenceForSnapshot(history,current);
+        if(found){const remaining=booking.evidence(history).filter(item=>item.receiptId===found.receiptId&&
+          !booking.semanticEqual(item.snapshot,current)).map(item=>item.snapshot);
+          history.resolutions.push({id:input.resolutionId,receiptId:found.receiptId,
+            type:remaining.length?"corrected":"reopened",currentSnapshots:remaining,
+            resolvedAt:input.nowIso,comparedContent:remaining.length?
+              remaining.map(booking.semanticKey):booking.semanticKey(current)});}
+
+        booked=removeBooked(booked,current.date,input.fingerprint);
+      }
+      writer.stores.meta.put(history,"bookingHistory");
+      writer.stores.meta.put(booked,"geboekt");
+      return ok({history,booked,snapshot:current});
+    });
+  }
+
+  async function bootstrapLegacyBookings(input){
+    return atomic(input,["regels","dossiers","overboekingen"],["geboekt","bookingHistory","rondMode"],
+      (snapshot,writer)=>{
+      const booked=snapshot.meta.geboekt||{},history=booking.normalizeHistory(snapshot.meta.bookingHistory),
+        mode=snapshot.meta.rondMode||"groep",ctx=Object.assign({},input,{roundingMode:mode});
+      let added=0;
+      // Een oude afgeronde overboeking bewaart wél het werkelijke doelnummer en
+      // de geboekte regel. Gebruik die gegevens vóór afgeleide oude vlaggen.
+      for(const old of snapshot.overboekingen.filter(o=>o.status==="done")){
+        const lines=old.targetLines||[],ids=over.sourceIds(old);
+        if(lines.length!==1||!ids.length||!old.targetNumberSnapshot||
+          history.receipts.some(r=>r.overbookingId===old.id))continue;
+        const line=lines[0],snap=booking.bookingSnapshot({targetNumber:old.targetNumberSnapshot,
+          targetName:old.targetNameSnapshot||"",code:line.werkcode||"",description:line.omschrijving||"",
+          hours:line.uren,sourceIds:ids},old.sourceDate,{roundingMode:old.rondModeSnapshot,
+            sources:old.sourceSnapshot||[]});
+        if(!snap.hours||booking.hasHistoricalSource(history,snap))continue;
+        history.receipts.push(receipt("legacy-over-"+old.id,"overbooking_target",snap,input,
+          {overbookingId:old.id,bookedDate:old.targetBookedDate||null,
+            confirmedAt:old.targetBookedAt||old.doneAt||input.nowIso}));added++;
+      }
+      Object.keys(booked).forEach(date=>{
+        const rows=input.aggregateRows((snapshot.regels||[]).filter(r=>r.datum===date),
+          snapshot.dossiers,mode,null,history)||[];
+        rows.filter(row=>(booked[date]||[]).includes(row.fp)).forEach((row,index)=>{
+          const current=input.snapshotRow(row,date,snapshot.regels,mode);
+          if(booking.evidenceForSnapshot(history,current)||booking.hasHistoricalSource(history,current))return;
+          history.receipts.push(receipt("legacy-"+date+"-"+index+"-"+history.receipts.length,
+            "legacy",current,input,{legacyInferred:true,legacyFingerprint:row.fp,
+              inferenceNote:"Doelnummer gereconstrueerd uit de eerste nog overeenkomende lokale regel"}));added++;
+        });
+        (booked[date]||[]).filter(fp=>!rows.some(row=>row.fp===fp)).forEach(fp=>{
+          const marker=date+"\u0000"+fp;if(!history.legacyOrphans.includes(marker)){
+            history.legacyOrphans.push(marker);added++;}});
+      });
+      // Oude DVN-sheet bevestigde losse regels. Reconstrueer alleen een nog exact
+      // herkenbare afgesloten bronset en bewaar die oude afrondingsgrenzen.
+      for(const d of snapshot.dossiers.filter(d=>d.dvnIntappStatus==="posted")){
+        const ids=d.dvnIntappPostedRuleIds||[],rules=ids.map(id=>byId(snapshot.regels,id));
+        if(!ids.length||rules.some(r=>!r||!r.eind||r.dossierId!==d.id))continue;
+        const total=rules.reduce((n,r)=>n+booking.hoursOf(r),0);
+        if(Math.abs(total-(+d.dvnIntappPostedHours||0))>0.001)continue;
+        rules.forEach((r,index)=>{
+          const row=input.aggregateRows([r],snapshot.dossiers,mode,null,history)[0];if(!row)return;
+          const current=input.snapshotRow(row,r.datum,snapshot.regels,mode);
+          if(!current.targetNumber||booking.hasHistoricalSource(history,current))return;
+          history.receipts.push(receipt("legacy-dvn-"+d.id+"-"+index,"legacy",current,input,
+            {dossierId:d.id,legacyInferred:true,inferenceNote:"Gereconstrueerd uit de oude DVN-bevestiging; oorspronkelijk doelnummer niet afzonderlijk bewaard"}));added++;
+        });
+      }
+      if(added)writer.stores.meta.put(history,"bookingHistory");
+      return ok({history,added});
+    });
+  }
+
+  async function resolveBookingCorrection(input){
+    return atomic(input,["regels","dossiers"],["bookingHistory","rondMode"],
+      (snapshot,writer)=>{
+      const history=booking.normalizeHistory(snapshot.meta.bookingHistory),
+        receiptRow=history.receipts.find(item=>item.id===input.receiptId);
+      if(!receiptRow)return fail("correction_changed");
+      const mode=snapshot.meta.rondMode||"groep",ctx=Object.assign({},input,{roundingMode:mode}),
+        all=snapshotsFor(ctx,snapshot.regels,snapshot.dossiers,history),
+        correction=booking.corrections(history,all).find(item=>item.receiptId===input.receiptId);
+      if(!correction)return fail("correction_changed");
+      const selectedKeys=Array.isArray(input.currentKeys)?input.currentKeys.slice().sort():[],
+        actualKeys=correction.currentOptions.map(booking.semanticKey).sort();
+      if(selectedKeys.length!==actualKeys.length||selectedKeys.some((key,index)=>key!==actualKeys[index]))
+        return fail("correction_changed");
+      const resolved=correction.currentOptions,sourceIds=new Set(resolved.flatMap(rowIds)),
+        contributing=snapshot.regels.filter(rule=>sourceIds.has(rule.id));
+      if(contributing.some(rule=>!rule.eind)||resolved.some(item=>!item.targetNumber||!item.description.trim()||item.hours<=0)||
+        typeof input.validateRules==="function"&&input.validateRules(contributing,snapshot.dossiers).some(p=>p.blok))
+        return fail("invalid_booking");
+      history.resolutions.push({id:input.resolutionId,receiptId:input.receiptId,type:"corrected",
+        resolvedAt:input.nowIso,currentSnapshots:resolved,
+        comparedContent:resolved.length?resolved.map(booking.semanticKey):["deleted"]});
+      writer.stores.meta.put(history,"bookingHistory");return ok({history});
+    });
   }
   function currentOverbooking(record,input){
     const ids=over.sourceIds(record),rules=ids.map(id=>(input.rules||[])
@@ -124,7 +261,7 @@
     if(!number)return fail("number_required");
     const expected=dvn.rulesFor(dossier,input.rules||[]);
     await waitFor(input,expected.map(rule=>rule.id));
-    return atomic(input,["dossiers","regels"],["running"],(snapshot,writer)=>{
+    return atomic(input,["dossiers","regels"],["running","bookingHistory","rondMode"],(snapshot,writer)=>{
     const actual=byId(snapshot.dossiers,dossier.id);
     if(!entityMatches(actual,dossier)||!dvn.isDvn(actual)||dvn.isFinalI7(actual))
       return fail("invalid_dvn");
@@ -137,15 +274,35 @@
       return fail("source_changed");
     if(rules.some(rule=>!rule.eind||rule.id===(snapshot.meta.running||null)))
       return fail("timer_running");
-    const total=hours(rules,input.hoursOf);
+    if(!rules.length||typeof input.validateRules==="function"&&input.validateRules(rules,
+      snapshot.dossiers).some(problem=>problem.blok))return fail("invalid_booking");
+    const mode=snapshot.meta.rondMode||"groep",history=booking.normalizeHistory(
+      snapshot.meta.bookingHistory),ctx=Object.assign({},input,{roundingMode:mode}),
+      current=snapshotsFor(ctx,rules,snapshot.dossiers,history),unhandled=current.filter(item=>
+        !booking.evidenceForSnapshot(history,item)),expectedSnapshots=input.snapshots||[];
+    if(expectedSnapshots.length!==unhandled.length||expectedSnapshots.some(item=>!unhandled.some(actual=>
+      booking.semanticEqual(item,actual))))return fail("source_changed");
+    const currentIds=new Set(rules.map(r=>r.id));
+    if(booking.evidence(history).some(item=>(item.receipt.dossierId===actual.id||
+      (item.receipt.snapshot.sources||[]).some(r=>r.dossierId===actual.id)||
+      rowIds(item.snapshot).some(id=>currentIds.has(id)))&&
+      !current.some(now=>booking.semanticEqual(item.snapshot,now))))return fail("correction_required");
+    const legacyCorrection=actual.dvnIntappStatus==="needs_check"&&
+      (actual.dvnIntappPostedRuleIds||[]).length&&!history.receipts.some(r=>r.dossierId===actual.id||
+        (r.snapshot.sources||[]).some(source=>source.dossierId===actual.id));
+    if(legacyCorrection&&!input.legacyReviewed)return fail("correction_required");
+    unhandled.forEach((item,index)=>history.receipts.push(receipt(
+      (input.receiptIds||[])[index]||("dvn-"+actual.id+"-"+input.nowIso+"-"+index),"dvn",item,input,
+      {dossierId:actual.id,legacyCorrection:!!legacyCorrection})));
+    const total=current.reduce((sum,item)=>sum+(+item.hours||0),0);
     const updated=replaceEntity(actual,Object.assign({},actual,{dvnIntappStatus:"posted",
-      dvnIntappPostedAt:input.nowIso,dvnIntappPostedCount:rules.length,
+      dvnIntappPostedAt:input.nowIso,dvnIntappPostedCount:current.length,
       dvnIntappPostedHours:total,dvnIntappPostedRuleIds:rules.map(rule=>rule.id),
       dvnIntappNeedsCheckAt:null,dvnIntappNeedsCheckReason:null,
       dvnIntappAudit:dvn.auditAdd(actual,"ingevoerd",{
-        regels:rules.length,uren:total,nummer:actualNumber},input.nowIso)}),input.nowMs);
-    writer.put("dossiers",updated);
-    return ok({dossier:updated,rules,total,number:actualNumber});
+        regels:current.length,uren:total,nummer:actualNumber},input.nowIso)}),input.nowMs);
+    writer.put("dossiers",updated);writer.stores.meta.put(history,"bookingHistory");
+    return ok({dossier:updated,rules,rows:current,total,number:actualNumber,history});
     });
   }
 
@@ -200,7 +357,7 @@
     const ids=(row.bron||[]).map(item=>item.id).filter(Boolean);
     if(!ids.length)return fail("source_changed");
     await waitFor(input,ids);
-    return atomic(input,["regels","dossiers","overboekingen"],["running"],(snapshot,writer)=>{
+    return atomic(input,["regels","dossiers","overboekingen"],["running","bookingHistory"],(snapshot,writer)=>{
     const actualTarget=byId(snapshot.dossiers,target.id),actualIndirect=byId(snapshot.dossiers,indirect.id),
       source=ids.map(id=>byId(snapshot.regels,id)).filter(Boolean);
     if(!entityMatches(actualTarget,target)||!entityMatches(actualIndirect,indirect)||
@@ -222,8 +379,14 @@
         HH.domain.time.schoon(row.naam)+" · "+HH.domain.time.schoon(row.oms),
       parkedAt:input.nowIso,updatedAt:input.nowIso,
       audit:[{type:"op-i7-geboekt-geparkeerd",t:input.nowIso}]};
-    writer.put("overboekingen",record);
-    return ok({overbooking:record});
+    const history=booking.normalizeHistory(snapshot.meta.bookingHistory),temporary=
+      booking.bookingSnapshot({nummer:actualIndirect.nummer||"",naam:actualIndirect.naam||"",
+        code:input.commercialCode,oms:record.temporaryDescription,u:row.u,bron:source},input.sourceDate,
+        {roundingMode:input.roundingMode,sources:record.sourceSnapshot});
+    history.receipts.push(receipt(input.receiptId||("over-i7-"+input.id),"overbooking_i7",
+      temporary,input,{overbookingId:input.id}));
+    writer.put("overboekingen",record);writer.stores.meta.put(history,"bookingHistory");
+    return ok({overbooking:record,history});
     });
   }
 
@@ -262,7 +425,7 @@
     const wanted=input.ids||[],records=wanted.map(id=>(input.overbookings||[])
       .find(record=>record.id===id)).filter(Boolean);
     if(!records.length||records.length!==wanted.length)return fail("queue_changed");
-    return atomic(input,["overboekingen","regels","dossiers"],["geboekt"],(snapshot,writer)=>{
+    return atomic(input,["overboekingen","regels","dossiers"],["geboekt","bookingHistory"],(snapshot,writer)=>{
     const actualRecords=wanted.map(id=>byId(snapshot.overboekingen,id)).filter(Boolean);
     if(actualRecords.length!==wanted.length||actualRecords.some((record,index)=>
       !recordMatches(record,records[index])))return fail("queue_changed");
@@ -272,10 +435,17 @@
     const targets=[...new Set(actualRecords.map(record=>record.targetDossierId))],
       target=byId(actualInput.dossiers,targets[0]);
     if(targets.length!==1||!target||!target.nummer)return fail("invalid_target");
-    let booked=copy(snapshot.meta.geboekt),updates=[];
+    let booked=copy(snapshot.meta.geboekt),updates=[],history=booking.normalizeHistory(
+      snapshot.meta.bookingHistory);
     actualRecords.forEach(record=>{
       const current=currentOverbooking(record,actualInput),fingerprints=current.rows.map(row=>row.fp);
       booked=addBooked(booked,record.sourceDate,fingerprints);
+      current.rows.forEach((row,index)=>{const snap=booking.bookingSnapshot(row,record.sourceDate,
+        {roundingMode:input.roundingMode,sources:current.rules.map(rule=>
+          ruleSnapshot(rule,input.hoursOf)).filter(rule=>rowIds(row).includes(rule.id))});
+        if(!booking.evidenceForSnapshot(history,snap))history.receipts.push(receipt(
+          "over-target-"+record.id+"-"+index,"overbooking_target",snap,input,
+          {overbookingId:record.id,bookedDate:input.bookedDate}));});
       updates.push(replaceRecord(record,Object.assign({},record,{status:"done",sourceFingerprints:fingerprints,
         sourceFingerprint:fingerprints.length===1?fingerprints[0]:(record.sourceFingerprint||""),
         rondModeSnapshot:input.roundingMode,targetBookedAt:input.nowIso,
@@ -284,8 +454,8 @@
           type:"op-dossier-geboekt",t:input.nowIso,boekdatum:input.bookedDate}])})));
     });
     updates.forEach(record=>writer.put("overboekingen",record));
-    writer.stores.meta.put(booked,"geboekt");
-    return ok({overbookings:updates,booked,target});
+    writer.stores.meta.put(booked,"geboekt");writer.stores.meta.put(history,"bookingHistory");
+    return ok({overbookings:updates,booked,target,history});
     });
   }
 
@@ -296,7 +466,7 @@
     if(!input.commercialCode)return fail("commercial_code_missing");
     const ids=over.sourceIds(record),expectedRules=ids.map(id=>byId(input.rules,id)).filter(Boolean);
     await waitFor(input,ids);
-    return atomic(input,["overboekingen","regels","dossiers"],["running","geboekt"],
+    return atomic(input,["overboekingen","regels","dossiers"],["running","geboekt","bookingHistory"],
       (snapshot,writer)=>{
     const actualRecord=byId(snapshot.overboekingen,record.id),actualIndirect=byId(snapshot.dossiers,indirect.id);
     if(!recordMatches(actualRecord,record)||!over.isOpen(actualRecord)||
@@ -311,13 +481,20 @@
     const updatedRules=merged.rules;
     const fingerprints=input.summarize(updatedRules).map(row=>row.fp);
     const booked=addBooked(snapshot.meta.geboekt,actualRecord.sourceDate,fingerprints);
+    const history=booking.normalizeHistory(snapshot.meta.bookingHistory);
+    input.summarize(updatedRules).forEach((row,index)=>{const snap=booking.bookingSnapshot(row,
+      actualRecord.sourceDate,{roundingMode:input.roundingMode,sources:updatedRules
+        .filter(rule=>rowIds(row).includes(rule.id)).map(rule=>ruleSnapshot(rule,input.hoursOf))});
+      history.receipts.push(receipt("over-final-i7-"+actualRecord.id+"-"+index,
+        "overbooking_final_i7",snap,input,{overbookingId:actualRecord.id}));});
     const updated=replaceRecord(actualRecord,Object.assign({},actualRecord,{status:"final_i7",finalI7At:input.nowIso,
       updatedAt:input.nowIso,finalI7Fingerprints:fingerprints,
       audit:(actualRecord.audit||[]).slice(-49).concat([{
         type:"definitief-i7",t:input.nowIso}])}));
     updatedRules.forEach(rule=>writer.put("regels",rule));
     writer.put("overboekingen",updated);writer.stores.meta.put(booked,"geboekt");
-    return ok({overbooking:updated,rules:updatedRules,booked});
+    writer.stores.meta.put(history,"bookingHistory");
+    return ok({overbooking:updated,rules:updatedRules,booked,history});
     });
   }
 
@@ -377,9 +554,9 @@
 
   async function clearTrackedData(){
     return atomic({},["dossiers","regels","overboekingen"],
-      ["running","pending","stack","dagEinde","dagAudit","geboekt"],(snapshot,writer)=>{
+      ["running","pending","stack","dagEinde","dagAudit","geboekt","bookingHistory"],(snapshot,writer)=>{
       writer.stores.dossiers.clear();writer.stores.regels.clear();writer.stores.overboekingen.clear();
-      ["running","pending","stack","dagEinde","dagAudit","geboekt"]
+      ["running","pending","stack","dagEinde","dagAudit","geboekt","bookingHistory"]
         .forEach(key=>writer.stores.meta.delete(key));
       return ok();
     });
@@ -387,5 +564,6 @@
 
   HH.services.admin=Object.freeze({assignDvnNumber,markDvnPosted,finalizeDvnI7,
     parkOverbooking,refreshOverbooking,completeOverbookings,finalizeOverbookingI7,
+    setRegularBooking,bootstrapLegacyBookings,resolveBookingCorrection,
     saveDossier,deleteDossier,saveDvnRename,clearTrackedData});
 })(globalThis.HH);
