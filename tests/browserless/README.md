@@ -212,3 +212,23 @@ controllers. Geen van beide UI-typen schrijft rechtstreeks naar IndexedDB of imp
 domeinmodule; mutaties lopen via services en adapters in `core.js`. Alle modals en sheets delen
 één registry voor globale sneltoetsblokkade. De bestaande Playwrightflows voor recente taken,
 regelbewerking, DVN en overboekingen blijven de zichtbare contracten bewaken.
+
+### Patch V-contract
+
+`test:browserless` voert naast de bestaande suite drie uitvoerende suites uit:
+`phase-v-mutations.mjs` (veldmerge, dagstatus, aanvulling en rollback),
+`phase-v-locks.mjs` (schrijfrecht en transacties afronden vóór overdracht) en
+`phase-v-admin.mjs` (undo en administratieve conflicten). Ze gebruiken asynchrone
+IndexedDB-doubles; de nieuwe concurrentietests serialiseren transacties en weigeren
+het lezen van een request-resultaat zolang de request nog pending is.
+
+Een venster bezit het schrijfrecht via Web Locks. Andere vensters lezen de volledige
+opslagsnapshot en kunnen het schrijfrecht overnemen zodra open invoer is afgerond.
+Automatische aanvullingen met boekingshistorie blijven bij heropenen behouden. Undo
+weigert conflicten met latere revisies of administratieve beslissingen.
+
+De browserloze tests bewijzen geen echte browserwerking. De drie aanvullende
+Playwright-tests in `tests/e2e/phase-v.spec.mjs` controleren echte IndexedDB en twee
+vensters. Deze moeten afzonderlijk worden uitgevoerd met een geïnstalleerde browser.
+Bij ingebruikname van V moeten alle vensters met de oude appversie worden gesloten:
+oude code neemt nog niet deel aan de nieuwe schrijfvergrendeling.

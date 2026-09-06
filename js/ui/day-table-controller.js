@@ -27,6 +27,7 @@ $("d-table").addEventListener("click",async e=>{
       meldDagRegelFout(uit,"Verwijderen is niet uitgevoerd"))return;
     const delta={dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),rules:zonderIds(HH.state.read().rules,[id])};
     if(wasRunning)delta.running=null;HH.state.commit(delta);pasMutatieUndoToe(uit.undo);
+    if(uit.dayWasClosed){undoStack=[];await herlaad(true);}
     L("regel-weg",oud.start+"-"+(oud.eind||"loopt")+" · "+uu(urenOf(oud))+" u");
     bouwDag();HH.app.render();announce();return;}
   const mk=e.target.closest("[data-maaklopend]");
@@ -44,6 +45,7 @@ $("d-table").addEventListener("click",async e=>{
     catch(x){L("FOUT-gat-invullen",String(x));toast("Regel toevoegen mislukt — niets gewijzigd");return;}
     if(meldDagRegelFout(uit,"Regel toevoegen is niet uitgevoerd"))return;
     uit.dossiers.forEach(memDossier);memRegel(uit.rule);pasMutatieUndoToe(uit.undo);
+    if(uit.dayWasClosed){undoStack=[];await herlaad(true);}
     bouwDag();renderTot();announce();
     await openRegelEditor(uit.rule.id,"dag");}});
 /* De enige manier om een afgesloten regel weer te laten lopen. Sluit de huidige timer
@@ -82,6 +84,7 @@ async function maakLopend(id){
   pending=null;ntWizard=null;const nextRules=mergeById(HH.state.read().rules,[uit.closedRule,uit.rule]);
   HH.state.commit({dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),rules:nextRules,
     running:nextRules.find(x=>x.id===uit.rule.id)});
+  if(uit.dayWasClosed){undoStack=[];await herlaad(true);}
   vergeetTimerUndo("timer overgezet");liveId=null;bouwDag();HH.app.render();announce();
   L("timer-overgezet",dosIdLog(uit.rule.dossierId)+" · sinds "+uit.rule.start);
   toast("Deze regel loopt weer sinds "+uit.rule.start);}
@@ -99,4 +102,5 @@ $("d-add").onclick=async()=>{
   catch(x){L("FOUT-regel-toevoegen",String(x));toast("Regel toevoegen mislukt — niets gewijzigd");return;}
   if(meldDagRegelFout(uit,"Regel toevoegen is niet uitgevoerd"))return;
   uit.dossiers.forEach(memDossier);memRegel(uit.rule);pasMutatieUndoToe(uit.undo);
+    if(uit.dayWasClosed){undoStack=[];await herlaad(true);}
   bouwDag();announce();await openRegelEditor(uit.rule.id,"dag");};

@@ -1,5 +1,6 @@
 "use strict";
 /* ---------- render en start ---------- */
+HH.storage.indexedDB.requireWriteLock();
 HH.renderCoordinator.register("live",renderLive).register("recent",renderRecent)
   .register("totals",renderTot).register("openDays",renderOpenDagen)
   .register("day",bouwDag).register("week",renderWeek).register("manage",renderBeheer);
@@ -47,7 +48,7 @@ async function migrate(){
    regel met een ontbrekende of verkeerde pointer. Bij meerdere open regels wordt er
    niets gewijzigd; dan verschijnt het herstelvenster en liggen alle timeracties stil
    tot de gebruiker heeft bevestigd.                                            */
-async function herstelInvariant(snapshotMeta){
+async function herstelInvariant(snapshotMeta,allowWrite){
   const uitSnapshot=!!snapshotMeta;
   const rid=uitSnapshot?snapshotMeta.running:await get("meta","running");
   /* Oude versies konden een uitgestelde taakwissel in meta.pending bewaren. De
@@ -55,7 +56,8 @@ async function herstelInvariant(snapshotMeta){
      opgeruimd, zonder retroactief een tijdknip te verzinnen. */
   const oudPending=(uitSnapshot?snapshotMeta.pending:await get("meta","pending"))||null;
   const uit=await HH.services.timer.repairInvariant({currentTimer:HH.state.read().running,
-    readCurrentTimer:()=>HH.state.read().running,rules:HH.state.read().rules,pointerId:rid||null,pendingId:oudPending});
+    readCurrentTimer:()=>HH.state.read().running,rules:HH.state.read().rules,pointerId:rid||null,
+    pendingId:oudPending,allowWrite:allowWrite!==false});
   if(await meldTimerFout(uit,"Timerstatus herstellen is niet uitgevoerd"))return;
   pending=null;if(oudPending)L("migratie-pending","oude uitgestelde taakwissel verwijderd");
   HH.state.commit({running:uit.currentTimer});
@@ -135,13 +137,13 @@ async function herlaad(metInstellingen){
     codes:snapshot.codes,rules:snapshot.regels,overbookings:snapshot.overboekingen,
     stack:snapshot.meta.stack||[],dayEnds:snapshot.meta.dagEinde||{},
     dayAudit:snapshot.meta.dagAudit||{}};
-  if(metInstellingen)Object.assign(delta,instellingenDelta(snapshot.meta));
+  Object.assign(delta,instellingenDelta(snapshot.meta));
   HH.state.commit(delta);
-  if(metInstellingen)pasInstellingenUiToe(snapshot.meta);
-  await herstelInvariant(snapshot.meta);
+  pasInstellingenUiToe(snapshot.meta);
+  await herstelInvariant(snapshot.meta,HH.storage.indexedDB.hasWriteAccess());
   /* Niet awaiten: herlaad() kan vanuit de foutafhandeling van TimerService worden
      aangeroepen, en middernachtCheck() raadpleegt daarna dezelfde service.       */
-  setTimeout(middernachtCheck,0);
+  if(HH.storage.indexedDB.hasWriteAccess())setTimeout(middernachtCheck,0);
   liveId=null;HH.app.render();}
 
 /* W2: de handmatig geïmporteerde i7-werklijst in IndexedDB is leidend. De gebruiker
@@ -195,27 +197,114 @@ async function laadInstellingen(){
     "codeGebruik","geboekt","log","logOms","thema","rondMode"]));
 }
 
+let schrijfOvergang=false,syncTimer=null,syncBusy=false,syncNogmaals=false;
+const overnameAntwoorden=new Map();
+function zetSchrijfmodus(canWrite,unsupported){
+  const banner=$("writer-banner");if(!banner)return;
+  banner.style.display=canWrite?"none":"flex";
+  $("writer-status").textContent=unsupported?
+    "Deze browser ondersteunt geen veilig schrijfvenster. Gebruik een browser met Web Locks om uren te wijzigen.":
+    "Dit venster is alleen-lezen. Je kunt hier de actuele uren bekijken of verder werken.";
+  document.body.classList.toggle("read-only",!canWrite);
+  $("writer-takeover").disabled=!!unsupported||schrijfOvergang;
+}
+function stuurVensterbericht(message){if(bc)try{bc.postMessage(Object.assign({from:TABID},message));}catch(ignore){}}
+HH.storage.indexedDB.onCommit(()=>stuurVensterbericht({type:"changed"}));
+async function synchroniseerLeesvenster(){
+  if(HH.storage.indexedDB.hasWriteAccess()||schrijfOvergang)return;
+  if(syncBusy){syncNogmaals=true;return;}
+  syncBusy=true;
+  try{await herlaad(true);}catch(error){toast("Bijwerken mislukt — probeer opnieuw of herlaad het venster");}
+  finally{syncBusy=false;if(syncNogmaals){syncNogmaals=false;synchroniseerLeesvenster();}}
+}
+async function ontvangVensterbericht(event){
+  const m=event.data;if(!m||m.from===TABID||!HH.state.read().db)return;
+  if(m.target&&m.target!==TABID)return;
+  if(m.type==="takeover-ready"||m.type==="takeover-denied"){
+    const resolve=overnameAntwoorden.get(m.requestId);if(resolve)resolve(m);return;
+  }
+  if(m.type==="takeover-request"){
+    if(!HH.storage.indexedDB.hasWriteAccess())return;
+    const antwoord=type=>stuurVensterbericht({type,target:m.from,requestId:m.requestId});
+    const active=document.activeElement,editing=active&&/^(INPUT|SELECT|TEXTAREA)$/.test(active.tagName);
+    if(schrijfOvergang||HH.ui.modals.anyOpen()||editing||sluitWerkdag.busy||vulAanTot8.busy){
+      antwoord("takeover-denied");return;}
+    schrijfOvergang=true;zetSchrijfmodus(false,false);
+    try{
+      await flushOmschr();await rustig(HH.state.read().rules.map(r=>r.id));
+      if(HH.services.timer.idle)await HH.services.timer.idle();
+      await HH.storage.indexedDB.releaseWriteLock();
+      undoStack=[];ntWizard=null;liveId=null;antwoord("takeover-ready");
+    }catch(error){HH.storage.indexedDB.resumeWrites();antwoord("takeover-denied");
+      toast("Overname niet uitgevoerd: de laatste wijziging kon niet worden opgeslagen");}
+    finally{schrijfOvergang=false;zetSchrijfmodus(HH.storage.indexedDB.hasWriteAccess(),false);}
+    if(!HH.storage.indexedDB.hasWriteAccess())await synchroniseerLeesvenster();return;
+  }
+  // An active writer owns local drafts; only readers replace their entire snapshot.
+  if(!HH.storage.indexedDB.hasWriteAccess()){
+    clearTimeout(syncTimer);syncTimer=setTimeout(synchroniseerLeesvenster,30);
+  }
+}
+async function neemSchrijvenOver(){
+  if(schrijfOvergang)return;
+  schrijfOvergang=true;const button=$("writer-takeover");button.disabled=true;
+  try{
+    let acquired=await HH.storage.indexedDB.acquireWriteLock(navigator.locks,false);
+    if(!acquired&&bc){
+      const requestId=TABID+":"+Date.now(),answer=await new Promise(resolve=>{
+        const timeout=setTimeout(()=>{overnameAntwoorden.delete(requestId);resolve(null);},5000);
+        overnameAntwoorden.set(requestId,m=>{clearTimeout(timeout);overnameAntwoorden.delete(requestId);resolve(m);});
+        stuurVensterbericht({type:"takeover-request",requestId});
+      });
+      if(answer&&answer.type==="takeover-ready")acquired=await HH.storage.indexedDB.acquireWriteLock(navigator.locks,false);
+    }
+    if(!acquired){toast("Rond de invoer in het andere venster af of sluit het; probeer daarna opnieuw");return;}
+    // Do not enable editing until the new owner has loaded and repaired the current snapshot.
+    undoStack=[];ntWizard=null;await migrate();await boot(true);
+    toast("Je kunt in dit venster verder werken");
+  }catch(error){await HH.storage.indexedDB.releaseWriteLock();
+    toast("Overname mislukt — dit venster blijft alleen-lezen");}
+  finally{schrijfOvergang=false;zetSchrijfmodus(HH.storage.indexedDB.hasWriteAccess(),!navigator.locks);}
+}
+$("writer-takeover").onclick=neemSchrijvenOver;
+function bewaakLeesvenster(event){
+  if(!schrijfOvergang&&HH.storage.indexedDB.hasWriteAccess())return;
+  const target=event.target,viewControl=target&&typeof target.closest==="function"&&
+    target.closest("#writer-takeover,#tabs,#d-prev,#d-next,#d-today,#d-date,#w-prev,#w-next,#w-now,[data-open-view]");
+  if(!schrijfOvergang&&viewControl)return;
+  if(event.type==="keydown"&&(event.key==="Tab"||(event.ctrlKey||event.metaKey)&&["c","a","f"].includes(event.key.toLowerCase())))return;
+  if(event.type==="click"&&(!target||!target.closest("button,input,select,textarea,[contenteditable]")))return;
+  event.preventDefault();event.stopImmediatePropagation();
+}
+["click","keydown","beforeinput","change","drop","paste"].forEach(type=>window.addEventListener(type,bewaakLeesvenster,true));
+window.addEventListener("focus",()=>{if(!HH.storage.indexedDB.hasWriteAccess())synchroniseerLeesvenster();});
+
 let tick=null;
-async function boot(){
-  await zorgVoorI7();
-  await laadWerkcodes();
+async function boot(canWrite){
+  if(canWrite){await zorgVoorI7();await laadWerkcodes();}
   await herlaad(true);
-  await herstelOmschr();
-  setTimeout(controleerOudeLopendeTaak,0);
+  if(canWrite)await herstelOmschr();
+  if(canWrite)setTimeout(controleerOudeLopendeTaak,0);
   L("app-start","dossiers "+HH.state.read().dossiers.length+" · regels "+HH.state.read().rules.length+
     " · sjablonen "+HH.state.read().templates.length+" · i7-codes "+HH.state.read().codes.length+
     " · overboekingen "+HH.state.read().overbookings.filter(overboekingOpen).length+
     " · lopend "+(HH.state.read().running?HH.state.read().running.start:"nee"));
   if(tick)clearInterval(tick);
-  tick=setInterval(()=>{middernachtCheck();
-    if(HH.state.read().running){HH.renderCoordinator.render(["live","totals"]);controleerOudeLopendeTaak();}},10000);}
+  tick=setInterval(()=>{if(HH.storage.indexedDB.hasWriteAccess())middernachtCheck();
+    if(HH.state.read().running){HH.renderCoordinator.render(["live","totals"]);if(HH.storage.indexedDB.hasWriteAccess())controleerOudeLopendeTaak();}},10000);}
 
 (async function(){
   try{HH.state.commit({db:await openDB()});}catch(e){
     document.body.innerHTML="<main><section>IndexedDB niet beschikbaar: "+esc(e)+"</section></main>";return;}
   if(navigator.storage&&navigator.storage.persist){
     try{if(!(await navigator.storage.persisted()))await navigator.storage.persist();}catch(e){}}
-  await migrate();await boot();})();
+  const lockSupported=!!(navigator.locks&&typeof navigator.locks.request==="function"),
+    canWrite=await HH.storage.indexedDB.acquireWriteLock(navigator.locks,false);
+  zetSchrijfmodus(canWrite,!lockSupported);
+  schrijfOvergang=true;
+  try{if(canWrite)await migrate();await boot(canWrite);}
+  catch(error){await HH.storage.indexedDB.releaseWriteLock();toast("Starten mislukt — herlaad het venster");}
+  finally{schrijfOvergang=false;zetSchrijfmodus(HH.storage.indexedDB.hasWriteAccess(),!lockSupported);}})();
 
 if("serviceWorker" in navigator){
   navigator.serviceWorker.register("./sw.js").then(reg=>{

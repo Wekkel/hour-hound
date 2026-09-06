@@ -1,15 +1,28 @@
 "use strict";
 /* ---------- regels ---------- */
 const saveRegel=r=>{
-  const kop=Object.assign({},kopie1(r),{gewijzigd:Date.now()});
-  const dvn=dvnPutIfPosted(dosOf(kop.dossierId),"tijdregel gewijzigd");
-  const vorige=schrijfRij[kop.id]||Promise.resolve();
-  const p=vorige.then(()=>tx(dvn?["regels","dossiers"]:"regels","readwrite",o=>{
-    if(dvn){o.regels.put(kop);o.dossiers.put(dvn);}else o.put(kop);}));
-  schrijfRij[kop.id]=p.then(()=>{},()=>{});
-  return p.then(()=>{const delta={rules:mergeById(HH.state.read().rules,[kop])};
-    if(HH.state.read().running&&HH.state.read().running.id===kop.id)delta.running=delta.rules.find(x=>x.id===kop.id)||kop;
-    if(dvn)delta.dossiers=mergeById(HH.state.read().dossiers,[dvn]);HH.state.commit(delta);return kop;});};
+  const before=kopie1(HH.state.read().rules.find(x=>x.id===r.id)||r),desired=kopie1(r),nowMs=Date.now();
+  const vorige=schrijfRij[before.id]||Promise.resolve();
+  const schrijf=()=>HH.storage.indexedDB.atomicWrite({stores:["regels","dossiers"]},(snapshot,writer)=>{
+    const current=(snapshot.regels||[]).find(x=>x.id===before.id);
+    const merged=HH.storage.indexedDB.mergeRule(current,before,desired,nowMs);
+    if(!merged.ok)return merged;
+    const opgeslagenDossiers=snapshot.dossiers||[],
+      dossier=opgeslagenDossiers.find(d=>d.id===merged.rule.dossierId),
+      dvn=dossier&&dvnDomain.isDvn(dossier)&&dvnDomain.intappState(dossier,opgeslagenDossiers)==="posted"?
+        dvnDomain.markNeedsCheck(dossier,"tijdregel gewijzigd",{dossiers:opgeslagenDossiers,needsAt:new Date(nowMs).toISOString(),
+          auditAt:new Date(nowMs).toISOString(),modifiedAt:nowMs}):null;
+    if(!merged.noChange)writer.put("regels",merged.rule);if(dvn){dvn.revision=HH.storage.indexedDB.revisionOf(dossier)+1;writer.put("dossiers",dvn);}
+    return Object.assign({},merged,{dossier:dvn});
+  });
+  const p=vorige.then(schrijf,schrijf);
+  schrijfRij[before.id]=p.then(()=>{},()=>{});
+  return p.then(uit=>{if(!uit||!uit.ok)throw new Error("Tijdregel is intussen gewijzigd");
+    const kop=uit.rule,delta={rules:mergeById(HH.state.read().rules,[kop])};
+    if(HH.state.read().running&&HH.state.read().running.id===kop.id)
+      delta.running=delta.rules.find(x=>x.id===kop.id)||kop;
+    if(uit.dossier)delta.dossiers=mergeById(HH.state.read().dossiers,[uit.dossier]);
+    HH.state.commit(delta);return kop;});};
 /* Dagregels zijn vanaf Patch Q een selector en hebben geen eigen geheugenkopie. */
 function refreshDay(){return HH.state.selectors.day(HH.state.read().viewDate);}
 function prefixVoor(d,datum,tekst){
@@ -150,7 +163,7 @@ async function koppelRegel(r,op){
   if(op.nieuweCode&&dosK&&!isIndirect(dosK)&&
     !dosK.codes.some(c=>c.code===op.nieuweCode))
     dosK.codes.push({code:op.nieuweCode,naam:op.nieuweCode});
-  const nw=Object.assign({},r);
+  let nw=Object.assign({},r);
   if(dosId!==undefined)nw.dossierId=dosId||null;
   if(op.code!==undefined)nw.code=op.code;
   /* Alleen een echte dossierwissel mag bepalen of de oude code nog past. Bij een
@@ -168,31 +181,56 @@ async function koppelRegel(r,op){
      daarom hier óók meetellen voor de sortering op meest gebruikt; vroeger gebeurde
      dat alleen wanneer de code al bij _start() bekend was. */
   const telCode=!!(dosK&&isIndirect(dosK)&&nw.code&&nw.code!==r.code);
-  const nwCode=Object.assign({},HH.state.read().codeUsage);
-  if(telCode)nwCode[nw.code]=(nwCode[nw.code]||0)+1;
-  const dvnNw=dvnPutIfPosted(dosK,"tijdregel gewijzigd");
-  if(dvnNw)dosK=dvnNw;
-  const dvnOud=(!dosK||!oudD||oudD.id!==dosK.id)?dvnPutIfPosted(oudD,"tijdregel gewijzigd"):null;
+  let opgeslagen;
   try{
     await rustig([r.id]);
-    await tx(["dossiers","regels","meta"],"readwrite",o=>{
-      if(dosK)o.dossiers.put(dosK);
-      if(dvnOud)o.dossiers.put(dvnOud);
-      o.regels.put(nw);
-      if(telCode)o.meta.put(nwCode,"codeGebruik");});
+    opgeslagen=await HH.storage.indexedDB.atomicWrite({stores:["regels","dossiers"],
+      metaKeys:["codeGebruik"]},(snapshot,writer)=>{
+      const current=(snapshot.regels||[]).find(x=>x.id===r.id),
+        merged=HH.storage.indexedDB.mergeRule(current,r,nw,Date.now());
+      if(!merged.ok)return merged;
+      const gateway=HH.storage.indexedDB,updates=new Map(),nowMs=Date.now();
+      if(dosK){
+        const actual=snapshot.dossiers.find(d=>d.id===dosK.id),before=dosOf(dosK.id);
+        if(maak&&actual||!maak&&!actual)return{ok:false,error:"dossier_changed"};
+        if(actual&&["voorlopig","nummer","isI7","dvnResolvedNr","dvnDisposition"].some(
+          key=>JSON.stringify(actual[key])!==JSON.stringify(before&&before[key])))
+          return{ok:false,error:"dossier_changed"};
+        const updated=Object.assign({},actual||dosK);
+        if(op.telUsed)updated.used=((actual||{}).used||0)+1;
+        if(op.nieuweCode&&!isIndirect(updated)&&!(updated.codes||[]).some(c=>c.code===op.nieuweCode))
+          updated.codes=(updated.codes||[]).concat([{code:op.nieuweCode,naam:op.nieuweCode}]);
+        updates.set(updated.id,updated);
+      }
+      for(const id of new Set([current.dossierId,merged.rule.dossierId].filter(Boolean))){
+        const d=updates.get(id)||snapshot.dossiers.find(x=>x.id===id);
+        if(d&&dvnDomain.isDvn(d)&&dvnDomain.intappState(d,snapshot.dossiers)==="posted")
+          updates.set(id,dvnDomain.markNeedsCheck(d,"tijdregel gewijzigd",{dossiers:snapshot.dossiers,
+            needsAt:new Date(nowMs).toISOString(),auditAt:new Date(nowMs).toISOString(),modifiedAt:nowMs}));
+      }
+      for(const [id,d] of updates){const updated=gateway.replaceRule(snapshot.dossiers.find(x=>x.id===id),d,nowMs);
+        updates.set(id,updated);writer.put("dossiers",updated);}
+      if(!merged.noChange)writer.put("regels",merged.rule);
+      const usage=Object.assign({},snapshot.meta.codeGebruik||{});
+      if(telCode){usage[nw.code]=(usage[nw.code]||0)+1;writer.stores.meta.put(usage,"codeGebruik");}
+      return Object.assign({},merged,{dossier:updates.get(dosId)||null,
+        oldDossier:current.dossierId!==dosId?updates.get(current.dossierId)||null:null,codeUsage:usage});
+    });
+    if(!opgeslagen||!opgeslagen.ok){toast("De tijdregel is intussen op hetzelfde veld gewijzigd");return null;}
   }catch(e){L("FOUT-koppelen",String(e));
     toast("Koppelen mislukt — er is niets gewijzigd: "+e);
     return null;}
-  const nextDossiers=mergeById(HH.state.read().dossiers,[dosK,dvnOud]);
+  const nextDossiers=mergeById(HH.state.read().dossiers,[opgeslagen.dossier,opgeslagen.oldDossier]);
+  nw=opgeslagen.rule;
   const nextRules=mergeById(HH.state.read().rules,[nw]);
   const delta={dossiers:nextDossiers,rules:nextRules};
-  if(telCode)delta.codeUsage=nwCode;
+  if(telCode)delta.codeUsage=opgeslagen.codeUsage;
   if(HH.state.read().running&&HH.state.read().running.id===nw.id)delta.running=nextRules.find(x=>x.id===nw.id)||nw;
   HH.state.commit(delta);
   if(maak)L("dossier-nieuw","dos"+idKort(maak.id)+(maak.nummer?"":" · VOORLOPIG")+
     (logOms?" · "+kort(maak.naam):""));
   if(HH.state.read().running&&HH.state.read().running.id===nw.id)liveId=null;
-  return{regel:nw,dossier:dosK};}
+  return{regel:nw,dossier:opgeslagen.dossier};}
 async function makeDossier(naam,nummer,lang){
   const d={id:uid(),nummer:nummer||null,naam:naam||"Zonder naam",lang:lang||"nl",
     voorlopig:!nummer,codes:[],c:HH.state.read().dossiers.length,used:1,isI7:false,archief:false,

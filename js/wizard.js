@@ -276,17 +276,20 @@ async function hernoemVoorlopig(id,naam,opt){
   if(dubbel){toast('Er bestaat al een DVN met de naam "'+kort(dubbel.naam,28)+'"');return null;}
   if(nieuw===d.naam)return{dossier:d,regels:[]};
   if(omsWacht)await flushOmschr();
-  const nwD=stempel(Object.assign({},d,{naam:nieuw}));
-  const oudRs=HH.state.read().rules.filter(r=>r.dossierId===id),nwRs=oudRs.map(r=>Object.assign({},r,{
+  let nwD=stempel(Object.assign({},d,{naam:nieuw}));
+  const oudRs=HH.state.read().rules.filter(r=>r.dossierId===id);let nwRs=oudRs.map(r=>Object.assign({},r,{
     omschrijving:prefixVoor(nwD,r.datum,(r.omschrijving||"").replace(VOOR,"")),
     gewijzigd:Date.now()}));
-  const stackRaakt=HH.state.read().stack.some(x=>x.dossierId===id);
-  const nwStack=HH.state.read().stack.map(x=>x.dossierId!==id?x:
+  let stackRaakt=HH.state.read().stack.some(x=>x.dossierId===id);
+  let nwStack=HH.state.read().stack.map(x=>x.dossierId!==id?x:
     Object.assign({},x,{omschrijving:vervangDvnPrefix(x.omschrijving,nieuw)}));
   try{
-    const uit=await HH.services.admin.saveDvnRename({dossier:nwD,rules:nwRs,stack:nwStack,
-      stackChanged:stackRaakt,waitForRules:rustig});
+    const uit=await HH.services.admin.saveDvnRename({beforeDossier:d,beforeRules:oudRs,
+      dossier:nwD,rules:nwRs,stack:nwStack,stackChanged:stackRaakt,
+      waitForRules:rustig,nowMs:Date.now()});
     if(meldAdminFout(uit,"DVN-naam wijzigen is niet uitgevoerd"))return null;
+    nwD=uit.dossier;nwRs=uit.rules;
+    if(uit.stackChanged){stackRaakt=true;nwStack=uit.stack;}
   }catch(e){L("FOUT-voorlopig-hernoemen",String(e));toast("DVN-naam wijzigen mislukt");return null;}
   const nextRules=mergeById(HH.state.read().rules,nwRs),delta={dossiers:mergeById(HH.state.read().dossiers,[nwD]),
     rules:nextRules};

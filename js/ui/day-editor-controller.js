@@ -14,7 +14,8 @@ function regelBoekRow(r){
 function regelBoekFingerprint(r){const hit=regelBoekRow(r);return hit?hit.fp:null;}
 function regelIsGeboekt(r){const hit=regelBoekRow(r);return !!(hit&&
   ((HH.state.read().booked[r.datum]||[]).indexOf(hit.fp)>=0||overboekingAfgerondVoorRow(hit,r.datum)));}
-let editorUrenHand=false,editorUrenInitial="",editorUrenWasHand=false,editorBegin=null;
+let editorUrenHand=false,editorUrenInitial="",editorUrenWasHand=false,editorBegin=null,
+  editorBefore=null;
 function toonBerekendeEditorUren(){
   const a=hm2m($("er-start").value.trim()),b=hm2m($("er-eind").value.trim());
   if(a!=null&&b!=null&&b>=a)$("er-uren").value=uu(Math.ceil(Math.max(1,b-a)/6)/10);}
@@ -53,6 +54,7 @@ function normaliseerCodeVoorOpslag(d,r,txt){
   return hit?{code:hit.code}:{code:v,nieuweCode:v};}
 function openRegelEditor(id,bron){
   const r=HH.state.read().rules.find(x=>x.id===id);if(!r)return Promise.resolve(false);
+  editorBefore=kopie1(r);
   const dlg=$("editregel");if(!dlg)return Promise.resolve(false);
   const d=dosOf(r.dossierId),loopt=HH.state.read().running&&HH.state.read().running.id===r.id;
   $("er-date").textContent=dagLabel(r.datum);
@@ -94,7 +96,7 @@ function openRegelEditor(id,bron){
       const cur=HH.state.read().rules.find(x=>x.id===id);if(!cur){toast("Regel bestaat niet meer");sluit(false);return;}
       const nu=["er-start","er-eind","er-dossier","er-code","er-oms","er-uren"].map(x=>$(x).value);
       if(editorBegin&&nu.every((v,i)=>v===editorBegin[i])&&editorUrenHand===editorUrenWasHand){sluit(true);return;}
-      const voor=kopie1(cur),looptNu=HH.state.read().running&&HH.state.read().running.id===cur.id;
+      const voor=kopie1(editorBefore),looptNu=HH.state.read().running&&HH.state.read().running.id===cur.id;
       const start=$("er-start").value.trim(),eind=$("er-eind").value.trim();
       const sm=hm2m(start),em=eind?hm2m(eind):null;
       if(sm==null){toast("Ongeldige starttijd");$("er-start").focus();return;}
@@ -104,7 +106,7 @@ function openRegelEditor(id,bron){
       if(looptNu&&sm>hm2m(nowHM())){toast("De starttijd van een lopende regel kan niet in de toekomst liggen");return;}
       const op=opdrachtUitDossierTekst($("er-dossier").value,cur.dossierId);
       if(op.fout){toast(op.fout);$("er-dossier").focus();return;}
-      let tmpD=null,tmpRule=Object.assign({},cur);
+      let tmpD=null,tmpRule=Object.assign({},voor);
       if(op.nieuwDossier)tmpD=bouwDossier(op.nieuwDossier);
       else if(op.dossierId!==undefined)tmpD=op.dossierId?dosOf(op.dossierId):null;
       else tmpD=dosOf(cur.dossierId);
@@ -153,6 +155,7 @@ function openRegelEditor(id,bron){
         else if(looptNu){delta.running=delta.rules.find(x=>x.id===uit.rule.id);liveId=null;}
         HH.state.commit(delta);
         pasMutatieUndoToe(uit.undo);
+        if(uit.dayWasClosed){undoStack=[];await herlaad(true);}
         return true;};
       try{
         if(!await schrijf())return;

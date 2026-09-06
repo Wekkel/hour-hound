@@ -217,29 +217,39 @@ function evaluateDayRules(){
 function evaluateTimerService(){return evaluateDayRules();}
 
 function fakeDatabase(values={},options={}){
-  const calls=[];
-  const store=name=>({
-    getAll(){calls.push({op:'getAll',store:name});return{result:values[name]||[]};},
-    get(key){calls.push({op:'get',store:name,key});
-      return{result:(values[name]&&values[name][key])};},
-    put(value,key){calls.push({op:'put',store:name,value,key});
-      return{result:key===undefined?(value&&value.id):key};},
-    delete(key){calls.push({op:'delete',store:name,key});return{result:undefined};},
-    clear(){calls.push({op:'clear',store:name});return{result:undefined};}
-  });
+  const calls=[],clone=value=>value===undefined?undefined:JSON.parse(JSON.stringify(value)),rows={};
+  for(const name of ['regels','dossiers','meta','overboekingen','codes','templates'])
+    rows[name]=new Map(name==='meta'?Object.entries(values[name]||{}):
+      (values[name]||[]).map(value=>[value.id||value.code,clone(value)]));
   const database={calls,transaction(stores,mode){
     calls.push({op:'transaction',stores:Array.isArray(stores)?[...stores]:stores,mode});
-    let aborted=false;
-    const transaction={error:null,objectStore:store,abort(){
-      if(aborted)return;aborted=true;transaction.error=new Error('afgebroken door test');
-      queueMicrotask(()=>transaction.onabort&&transaction.onabort());
-    }};
-    queueMicrotask(()=>{
-      if(aborted)return;
-      if(options.fail){transaction.error=new Error('geïnjecteerde databasefout');
-        if(transaction.onabort)transaction.onabort();}
-      else if(transaction.oncomplete)transaction.oncomplete();
+    const names=Array.isArray(stores)?stores:[stores],data=Object.fromEntries(names.map(name=>
+      [name,new Map([...rows[name]].map(([key,value])=>[key,clone(value)]))]));
+    let aborted=false,pending=0,finishQueued=false;
+    const finish=()=>{if(finishQueued)return;finishQueued=true;setTimeout(()=>{
+      finishQueued=false;if(pending)return;
+      if(options.fail){aborted=true;transaction.error=new Error('geïnjecteerde databasefout');}
+      if(aborted){transaction.onabort&&transaction.onabort();return;}
+      if(mode==='readwrite')names.forEach(name=>rows[name]=data[name]);
+      transaction.oncomplete&&transaction.oncomplete();},0);};
+    const request=fn=>{let value,ready='pending';const req={error:null,get readyState(){return ready;},
+      get result(){if(ready==='pending')throw new Error('InvalidStateError');return value;}};
+      pending++;queueMicrotask(()=>{if(aborted)return;try{value=fn();ready='done';
+        req.onsuccess&&req.onsuccess({target:req});}catch(error){req.error=transaction.error=error;
+        aborted=true;ready='done';req.onerror&&req.onerror({target:req});}
+        pending--;if(!pending)finish();});return req;};
+    const store=name=>({
+      getAll(){calls.push({op:'getAll',store:name});return request(()=>[...data[name].values()].map(clone));},
+      get(key){calls.push({op:'get',store:name,key});return request(()=>clone(data[name].get(key)));},
+      put(value,key){calls.push({op:'put',store:name,value,key});return request(()=>{
+        const id=key===undefined?(value&&value.id)||(value&&value.code):key;data[name].set(id,clone(value));return id;});},
+      delete(key){calls.push({op:'delete',store:name,key});return request(()=>data[name].delete(key));},
+      clear(){calls.push({op:'clear',store:name});return request(()=>data[name].clear());}
     });
+    const transaction={error:null,objectStore:store,abort(){
+      if(aborted)return;aborted=true;transaction.error=new Error('afgebroken door test');finish();
+    }};
+    queueMicrotask(()=>{if(!pending)finish();});
     return transaction;
   }};
   return database;
@@ -429,10 +439,12 @@ test('state-commit volgt opslag en tab-synchronisatie blijft veilig', () => {
   const forbidden=/(?<!\.)\b(?:viewDate|weekAnchor|rondMode|dagEinde|dagAudit|geboekt|overboekingen|running|stack|alle|dossiers)\s*=(?!=)/;
   assert(!forbidden.test(src.views),
     'Views mogen de gedeelde runtime-state niet rechtstreeks toewijzen');
-  assertIncludes(src.core,'if(bc)bc.onmessage=async e=>',
-    'BroadcastChannel-herladen moet aanwezig blijven');
-  assertIncludes(src.core,'await herlaad();toast("Bijgewerkt vanuit een ander venster")',
-    'Een BroadcastChannel-update moet de volledige opslagsnapshot herladen');
+  assertIncludes(src.core,'if(bc)bc.onmessage=e=>',
+    'BroadcastChannel-berichten moeten veilig worden ontvangen');
+  assertIncludes(src.app,'async function synchroniseerLeesvenster()',
+    'Een BroadcastChannel-update moet via de leesvenster-synchronisatie lopen');
+  assertIncludes(src.app,'try{await herlaad(true);}',
+    'Een synchronisatiebericht moet de volledige opslagsnapshot herladen');
   assertIncludes(src.core,'document.addEventListener("focusout"',
     'Uitgesteld herladen na focus-save moet aanwezig blijven');
 });
@@ -582,12 +594,12 @@ test('compatibiliteitshelpers delegeren en use-case-transacties blijven heel', (
 
 test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => {
   const HH=evaluateAdmin(),service=HH.services.admin,gateway=HH.storage.indexedDB;
-  const db=fakeDatabase();gateway.use(db);
   const dossier={id:'dvn-1',naam:'Voorlopig',voorlopig:true,dvn:true,
     dvnIntappStatus:'posted',dvnResolvedNr:'304000000',dvnIntappAudit:[]};
   const rule={id:'r1',datum:'2026-08-25',start:'09:00',eind:'10:00',
     dossierId:dossier.id,code:'COM',omschrijving:'25.08.2026 · Voorlopig · Werk',
     soort:'werk',gewijzigd:1};
+  const db=fakeDatabase({dossiers:[dossier,{id:'dvn-2',naam:'Geen nummer',voorlopig:true,dvn:true,dvnIntappAudit:[]}],regels:[rule,{...rule,id:'r2',dossierId:'dvn-2',code:'ANDERS',omschrijving:'Werk'}],meta:{stack:[{dossierId:dossier.id,omschrijving:rule.omschrijving},{dossierId:'dvn-2'}],running:null}});gateway.use(db);
   const assigned=await service.assignDvnNumber({dossier,number:'304000001',name:'Nieuwe naam',
     dossiers:[dossier],rules:[rule],stack:[{dossierId:dossier.id,omschrijving:rule.omschrijving}],
     waitForRules:()=>Promise.resolve(),nowMs:10,nowIso:'2026-08-25T10:00:00.000Z'});
@@ -617,27 +629,30 @@ test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => 
   assertEq(finalI7.dossier.dvnFinalI7RuleIds.join(','),'r2',
     'Definitief i7 moet betrokken regels bewaren');
   assertEq(finalI7.rules[0].code,'COM','Definitief i7 moet Commercieel afdwingen');
-  assertEq(finalI7.stack.length,0,'DVN moet uit de terugkeerstapel verdwijnen');
+  assert(!finalI7.stack.some(item=>item.dossierId===open.id),
+    'DVN moet uit de terugkeerstapel verdwijnen');
 
   const transactions=db.calls.filter(call=>call.op==='transaction');
   assertEq(JSON.stringify(transactions.map(call=>[call.stores,call.mode])),JSON.stringify([
-    [['regels','meta','dossiers','overboekingen'],'readwrite'],
-    ['dossiers','readwrite'],
-    [['regels','meta','dossiers','overboekingen'],'readwrite']]),
+    [['dossiers','regels','meta'],'readwrite'],
+    [['dossiers','regels','meta'],'readwrite'],
+    [['dossiers','regels','meta'],'readwrite']]),
   'Iedere DVN-use-case moet één volledige transactie bezitten');
 
-  gateway.use(fakeDatabase({}, {fail:true}));
+  const failedDb=fakeDatabase({dossiers:[assigned.dossier],regels:assigned.rules,meta:{}},{fail:true});
+  gateway.use(failedDb);
   let rejected=false;
   try{await service.markDvnPosted({dossier:assigned.dossier,dossiers:[assigned.dossier],
     rules:assigned.rules,hoursOf:()=>1,nowMs:99,nowIso:'later'});}catch(error){rejected=true;}
   assert(rejected,'Een geïnjecteerde DVN-writefout moet afwijzen');
+  assert(failedDb.calls.some(call=>call.op==='put'&&call.store==='dossiers'),
+    'Foutinjectie moet een werkelijk voorbereide write afbreken, niet vooraf op ongeldige invoer stranden');
   assertEq(assigned.dossier.dvnIntappStatus,'needs_check',
     'De invoerstate mag bij een databasefout niet vooraf worden gemuteerd');
 });
 
 test('overboekingsservices bewaren beide terminale routes en eerdere i7-boeking', async() => {
   const HH=evaluateAdmin(),service=HH.services.admin,gateway=HH.storage.indexedDB;
-  const db=fakeDatabase();gateway.use(db);
   const target={id:'d1',nummer:'304000001',naam:'Doel'},i7={id:'i7',isI7:true,
     nummer:'I700000000',naam:'Indirect'};
   const rule={id:'r1',datum:'2026-08-25',start:'09:00',eind:'10:00',dossierId:target.id,
@@ -646,8 +661,9 @@ test('overboekingsservices bewaren beide terminale routes en eerdere i7-boeking'
     item.dossierId).join(','),code:'',oms:'Werk',u:1,bron:rules.map(item=>({id:item.id}))}];
   const row={fp:summarize([rule])[0].fp,dosIds:[target.id],nummer:target.nummer,
     naam:target.naam,code:'',oms:'Werk',u:1,bron:[{id:rule.id}]};
+  const db=fakeDatabase({dossiers:[target,i7],regels:[rule],meta:{running:null,geboekt:{oud:['bestaande-i7-boeking']}},overboekingen:[]});gateway.use(db);
   const parked=await service.parkOverbooking({row,target,i7Dossier:i7,commercialCode:'COM',
-    rules:[rule],overbookings:[],sourceDate:rule.datum,roundingMode:'groep',id:'o1',
+    rules:[rule],overbookings:[],sourceDate:rule.datum,roundingMode:'groep',summarize,id:'o1',
     nowIso:'2026-08-25T10:00:00.000Z',hoursOf:()=>1,waitForRules:()=>Promise.resolve()});
   assertEq(parked.overbooking.status,'waiting','Parkeren moet waiting opslaan');
   assertEq(parked.overbooking.sourceFingerprint,row.fp,'Bronfingerprint moet gelijk blijven');
@@ -655,14 +671,17 @@ test('overboekingsservices bewaren beide terminale routes en eerdere i7-boeking'
     'Tijdelijk i7 voor 304000001 · Doel · Werk','Tijdelijke i7-omschrijving moet gelijk blijven');
 
   const changed={...rule,gewijzigd:2};
+  await gateway.atomicWrite({stores:['regels'],metaKeys:[],operationId:'test-change',completedAt:'2026-08-25T11:00:00.000Z'},(snapshot,writer)=>{writer.put('regels',changed);return {ok:true};});
   const beforeTransactions=db.calls.filter(call=>call.op==='transaction').length;
   const blocked=await service.completeOverbookings({ids:['o1'],
     overbookings:[parked.overbooking],rules:[changed],dossiers:[target,i7],
     summarize,roundingMode:'groep',booked:{},nowIso:'2026-08-25T11:00:00.000Z',
     bookedDate:'2026-08-25'});
   assertEq(blocked.error,'queue_changed','Gewijzigde bronregel moet afhandeling blokkeren');
-  assertEq(db.calls.filter(call=>call.op==='transaction').length,beforeTransactions,
-    'Geblokkeerde afhandeling mag geen transactie starten');
+  assertEq(db.calls.filter(call=>call.op==='transaction').length,beforeTransactions+1,
+    'Snapshotvalidatie moet binnen de transactie plaatsvinden');
+  assert(!db.calls.some(call=>call.op==='put'&&call.store==='overboekingen'&&call.value&&call.value.status==='done'),
+    'Geblokkeerde afhandeling mag geen duurzame boeking schrijven');
 
   const refreshed=await service.refreshOverbooking({overbooking:parked.overbooking,
     rules:[changed],dossiers:[target,i7],runningId:null,summarize,hoursOf:()=>1,
@@ -688,6 +707,7 @@ test('overboekingsservices bewaren beide terminale routes en eerdere i7-boeking'
   const finalRecord={...parked.overbooking,id:'o2',sourceRuleIds:['r2'],
     sourceSnapshot:[{...parked.overbooking.sourceSnapshot[0],id:'r2'}]};
   const finalRule={...rule,id:'r2'};
+  await gateway.atomicWrite({stores:['regels','overboekingen'],metaKeys:[],operationId:'seed-final',completedAt:'2026-08-25T11:02:30.000Z'},(snapshot,writer)=>{writer.put('regels',finalRule);writer.put('overboekingen',finalRecord);return {ok:true};});
   const finalI7=await service.finalizeOverbookingI7({overbooking:finalRecord,
     rules:[finalRule],i7Dossier:i7,commercialCode:'COM',runningId:null,
     summarize,booked:{oud:['bestaande-i7-boeking']},waitForRules:()=>Promise.resolve(),
@@ -746,12 +766,12 @@ test('administratieve UI-adapters schrijven niet meer rechtstreeks naar opslag',
 
 test('dagregelservice bewaart waarschuwingen, DVN-terugval en undo-soort atomair', async() => {
   const HH=evaluateDayRules(),service=HH.services.dayRules,gateway=HH.storage.indexedDB;
-  const db=fakeDatabase();gateway.use(db);
   const dossier={id:'dvn',nummer:'304000001',naam:'DVN',dvn:true,
     dvnIntappStatus:'posted',dvnIntappAudit:[]};
   const rule={id:'r1',datum:'2026-08-25',start:'09:00',eind:'10:00',dossierId:'dvn',
     code:'COM',omschrijving:'Werk',uren:1,urenHand:false,soort:'werk',gewijzigd:1};
   const changed={...rule,eind:'10:30',uren:1.5};
+  const db=fakeDatabase({regels:[rule],dossiers:[dossier],overboekingen:[],meta:{}});gateway.use(db);
   const common={before:rule,rule:changed,rules:[rule],dossiers:[dossier],overbookings:[],
     runningId:null,isBooked:true,bookingContext:{runningId:null,today:'2026-08-25',nowHM:'11:00'},
     waitForRules:()=>Promise.resolve(),nowTime:'11:00',nowMs:2,nowIso:'nu'};
@@ -766,6 +786,7 @@ test('dagregelservice bewaart waarschuwingen, DVN-terugval en undo-soort atomair
   assertEq(edited.dossiers[0].dvnIntappStatus,'needs_check',
     'Wijzigen moet een posted DVN in dezelfde transactie terugzetten');
   assertEq(edited.undo.kind,'data','Een gewone regelbewerking blijft gegevens-undo');
+  gateway.use(fakeDatabase({regels:[rule],dossiers:[dossier],overboekingen:[],meta:{running:rule.id}}));
   const runningEdit=await service.editRule({...common,rules:[rule],runningId:rule.id,
     rule:{...changed,eind:'10:30'},confirmedWarnings:true,nowMs:3});
   assertEq(runningEdit.undo.kind,'timer',
@@ -779,7 +800,7 @@ test('dagregelservice bewaart waarschuwingen, DVN-terugval en undo-soort atomair
   assertEq(db.calls.filter(call=>call.op==='transaction').length,before,
     'Bescherming van een geparkeerde bronregel moet vóór IndexedDB gelden');
 
-  const failed=fakeDatabase({}, {fail:true});gateway.use(failed);
+  const failed=fakeDatabase({regels:[rule],dossiers:[dossier],overboekingen:[],meta:{}}, {fail:true});gateway.use(failed);
   const sourceBefore=JSON.stringify({rule,dossier});let rejected=false;
   try{await service.editRule({...common,confirmedWarnings:true,nowMs:5});}
   catch(error){rejected=true;}
@@ -790,16 +811,16 @@ test('dagregelservice bewaart waarschuwingen, DVN-terugval en undo-soort atomair
 
 test('dagservice sluit, vult exact aan en heropent vanuit één opgeslagen dagstaat', async() => {
   const HH=evaluateDayRules(),service=HH.services.dayRules,gateway=HH.storage.indexedDB;
-  const db=fakeDatabase();gateway.use(db);
   const date='2026-08-25',rule={id:'r1',datum:date,start:'09:00',eind:'14:54',
     dossierId:'d1',omschrijving:'Werk',uren:5.9,urenHand:true,soort:'werk'};
+  const i7={id:'i7',isI7:true,naam:'Indirect'};
+  const db=fakeDatabase({regels:[rule],dossiers:[{id:'d1'},i7],overboekingen:[],meta:{}});gateway.use(db);
   const closed=await service.closeDay({date,end:'17:00',rules:[rule],dossiers:[{id:'d1'}],
     overbookings:[],runningId:null,dayEnds:{},dayAudit:{},stack:[],totalBefore:5.9,
     bookingContext:{runningId:null,today:date,nowHM:'17:00'},nowMs:1,nowIso:'sluit'});
   assertEq(closed.dayEnds[date],'17:00','Afsluiten moet de centrale dageindtijd schrijven');
   assertEq(closed.dayAudit[date].events[0].type,'gesloten','Afsluiten moet dagaudit schrijven');
 
-  const i7={id:'i7',isI7:true,naam:'Indirect'};
   const fillInput={date,isWorkday:true,dayEnds:closed.dayEnds,dayAudit:closed.dayAudit,
     dayEnd:'17:00',rules:[rule],dossiers:[{id:'d1'},i7],overbookings:[],runningId:null,
     i7Dossier:i7,code:'ADM',currentTotal:5.9,
@@ -856,7 +877,7 @@ test('Dag-UI is alleen adapter voor dag- en regelmutaties', () => {
 test('sluitWerkdag voert aanvullen en niet-aanvullen echt uit met eindtijd en focusherstel', async() => {
   const body=read('js/ui/day-close-controller.js');
   const run=async fill=>{
-    const elements=new Map(),listeners=[];let active,ariaFocusAtClose=null,closeInput=null,autoCalls=0;
+    const elements=new Map(),listeners=[];let active,ariaFocusAtClose=null,closeInput=null;
     const make=id=>{const set=new Set();return {id,value:id==='dc-end'?'17:00':'',textContent:'',innerHTML:'',style:{},onclick:null,
       classList:{add:c=>set.add(c),remove:c=>set.delete(c),toggle:(c,v)=>v?set.add(c):set.delete(c),contains:c=>set.has(c)},
       setAttribute(n,v){this[n]=v;if(id==='dayclose'&&n==='aria-hidden'&&v==='true')ariaFocusAtClose=active;},focus(){active=this;}};};
@@ -867,8 +888,8 @@ test('sluitWerkdag voert aanvullen en niet-aanvullen echt uit met eindtijd en fo
       $:id=>elements.get(id),today:()=> '2026-08-26',dagLabel:()=> '25-08-2026',dmy:()=> '25-08-2026',voorstelDagEinde:()=> '17:00',nowHM:()=> '17:00',werkdag:()=>true,
       dagIntappTotaal:()=>5,dagTekort:()=>3,dagSluitStatus:()=>({gesloten:false}),dagAfsluitWaarschuwing:()=>[],uu:n=>String(n),NORM:8,esc:s=>s,
       hm2m:s=>/^([01]\d|2[0-3]):[0-5]\d$/.test(s)?1:null,dagRegels:()=>state.rules,sluitObj:()=>null,boekRekenContext:()=>({}),rustig:()=>Promise.resolve(),
-      toast:()=>{},L:()=>{},announce:()=>{},meldTimerFout:()=>false,meldDagRegelFout:()=>false,mergeById:(a,b)=>(a||[]).concat((b||[]).filter(Boolean)),pending:null,liveId:null,vergeetTimerUndo:()=>{},vulAanTot8:()=>autoCalls++,
-      HH:{state:{read:()=>state,commit:d=>Object.assign(state,d)},app:{showTab:()=>{},render:()=>{}},renderCoordinator:{render:()=>{}},services:{timer:{isBlocked:()=>false,closeDay:async input=>{closeInput=input;return {dossiers:[],closedRule:null,dayEnds:{[input.date]:input.end},dayAudit:{}};}}}}};
+      toast:()=>{},L:()=>{},announce:()=>{},meldTimerFout:()=>false,meldDagRegelFout:()=>false,mergeById:(a,b)=>(a||[]).concat((b||[]).filter(Boolean)),pending:null,liveId:null,vergeetTimerUndo:()=>{},
+      HH:{state:{read:()=>state,commit:d=>Object.assign(state,d)},app:{showTab:()=>{},render:()=>{}},renderCoordinator:{render:()=>{}},services:{timer:{isBlocked:()=>false,closeDay:async input=>{closeInput=input;return {dossiers:[],closedRule:null,fill:input.fill?{noChange:false,rule:{id:'fill'},shortfall:3}:null,dayEnds:{[input.date]:input.end},dayAudit:{}};}}}}};
     vm.createContext(context);vm.runInContext(body,context,{filename:'js/ui/day-close-controller.js'});
     const closing=context.sluitWerkdag('2026-08-25');
     const button=elements.get(fill?'dc-fill':'dc-nofill');assert(typeof button.onclick==='function','Sluitactieknop is niet gekoppeld');
@@ -879,18 +900,19 @@ test('sluitWerkdag voert aanvullen en niet-aanvullen echt uit met eindtijd en fo
     assertEq(elements.get('dayclose')['aria-hidden'],'true','Modal moet na sluiten aria-hidden zijn');
     assertEq(active,opener,'Focus moet teruggaan naar de opener');
     assertEq(ariaFocusAtClose,opener,'aria-hidden=true mag pas worden gezet nadat focus naar de opener is teruggebracht');
-    if(fill)assertEq(autoCalls,1,'Aanvullen moet de aanvuladapter starten');
-    else assertEq(autoCalls,0,'Niet-aanvullen mag de aanvuladapter niet starten');
+    assertEq(closeInput.fill,fill,
+      'De gekozen aanvulactie moet in dezelfde closeDay-servicecall worden vastgelegd');
   };
   await run(true);await run(false);
 });
 
 test('TimerService knipt direct, serialiseert en houdt maximaal één regel open', async() => {
   const HH=evaluateTimerService(),service=HH.services.timer,gateway=HH.storage.indexedDB;
-  const db=fakeDatabase();gateway.use(db);
   const oud={id:'r-oud',datum:'2026-08-25',start:'09:00',eind:null,dossierId:'d1',
     code:null,omschrijving:'Oud werk',uren:0.1,urenHand:false,soort:'werk',gewijzigd:1};
   const dossiers=[{id:'d1',naam:'Oud dossier',used:0},{id:'d2',naam:'Nieuw dossier',used:0}];
+  const db=fakeDatabase({regels:[oud],dossiers,overboekingen:[],meta:{running:oud.id,
+    stack:[],dagEinde:{},dagAudit:{},codeGebruik:{},geboekt:{}}});gateway.use(db);
   let runtime=oud;
   const input={currentTimer:runtime,readCurrentTimer:()=>runtime,rules:[oud],dossiers,
     stack:[],dayEnds:{},dayAudit:{},codeUsage:{},id:'r-nieuw',dossierId:'d2',
@@ -902,7 +924,7 @@ test('TimerService knipt direct, serialiseert en houdt maximaal één regel open
   const resulting=[switched.closedRule,switched.rule].filter(rule=>!rule.eind);
   assertEq(resulting.length,1,'Na een taakwissel mag precies één open regel overblijven');
   assertEq(switched.currentTimerId,'r-nieuw','De nieuwe regel moet de enige timerpointer worden');
-  const pointerWrites=db.calls.filter(call=>call.store==='meta'&&call.key==='running');
+  const pointerWrites=db.calls.filter(call=>call.op==='put'&&call.store==='meta'&&call.key==='running');
   assertEq(pointerWrites.length,1,'De pointer hoort één keer in dezelfde transactie te wijzigen');
 
   const stale=await service.start({...input,id:'r-dubbel'});
@@ -910,7 +932,7 @@ test('TimerService knipt direct, serialiseert en houdt maximaal één regel open
     'Een al ingehaalde UI-snapshot mag geen tweede open timer starten');
 
   runtime=switched.rule;
-  const failed=fakeDatabase({}, {fail:true});gateway.use(failed);
+  const failed=fakeDatabase({regels:[runtime],dossiers,overboekingen:[],meta:{running:runtime.id}}, {fail:true});gateway.use(failed);
   const before=JSON.stringify(runtime);
   const stopped=await service.stop({currentTimer:runtime,readCurrentTimer:()=>runtime,
     rules:[runtime],dossiers,stack:[],date:'2026-08-25',time:'10:08',end:'10:08',
@@ -922,11 +944,11 @@ test('TimerService knipt direct, serialiseert en houdt maximaal één regel open
 
 test('TimerService laat oude timers en meervoudige open regels alleen expliciet herstellen', async() => {
   const HH=evaluateTimerService(),service=HH.services.timer,gateway=HH.storage.indexedDB;
-  const db=fakeDatabase();gateway.use(db);
   const a={id:'a',datum:'2026-08-24',start:'09:00',eind:null,dossierId:null,
     uren:0.1,urenHand:false,soort:'werk'},
     b={id:'b',datum:'2026-08-25',start:'10:00',eind:null,dossierId:null,
       uren:0.1,urenHand:false,soort:'werk'};
+  const db=fakeDatabase({regels:[a,b],dossiers:[],overboekingen:[],meta:{pending:'oud-pending'}});gateway.use(db);
   const inspected=service.inspectOldTimer({currentTimer:a,date:'2026-08-25'});
   assert(inspected.old,'Een timer van een vorige dag moet als oud worden herkend');
   const kept=await service.keepOldTimer({currentTimer:a,readCurrentTimer:()=>a});
@@ -1381,11 +1403,14 @@ test('modal/sheet staat globale sneltoetsen niet toe', () => {
     'Controls moet de centrale modalguard gebruiken');
 });
 
-test('dagafsluiting gebruikt expliciete sheet en auditvelden', () => {
+test('dagafsluiting gebruikt expliciete sheet en auditvelden', async() => {
   assertIncludes(src.html, 'id="dayclose"', 'Dagafsluitsheet ontbreekt');
   assertIncludes(src.views, 'function dagAfsluitKeuze', 'Dagafsluitkeuze moet via sheet lopen');
-  assertIncludes(src.dayRules, 'dayAuditAfter(input.dayAudit,input.date,"gesloten"',
-    'Dagafsluitservice moet audit schrijven');
+  const HH=evaluateDayRules(),gateway=HH.storage.indexedDB;
+  const date='2026-08-25',rule={id:'audit-r1',datum:date,start:'09:00',eind:'10:00',dossierId:'audit-d1',omschrijving:'Werk',uren:1,urenHand:true};
+  gateway.use(fakeDatabase({regels:[rule],dossiers:[{id:'audit-d1'}],overboekingen:[],meta:{}}));
+  const closed=await HH.services.dayRules.closeDay({date,end:'17:00',rules:[rule],dossiers:[{id:'audit-d1'}],overbookings:[],runningId:null,dayEnds:{},dayAudit:{},stack:[],totalBefore:1,bookingContext:{runningId:null,today:date,nowHM:'17:00'},nowMs:1,nowIso:'sluit'});
+  assertEq(closed.dayAudit[date].events.at(-1).type,'gesloten','Dagafsluitservice moet audit schrijven');
   assertIncludes(src.views, 'HH.services.timer.closeDay',
     'De afsluitsheet moet de dagservice via TimerService aanroepen');
   assertIncludes(src.views, 'function heropenWerkdag', 'Heropenfunctie ontbreekt');
@@ -1507,7 +1532,7 @@ test('DVN blijft intern herkenbaar na dossiernummer-toekenning', () => {
   assertIncludes(src.views, 'tag dvn', 'Dag/Intapp-output moet DVN-badge kunnen tonen');
 });
 
-test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', () => {
+test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', async() => {
   assertIncludes(src.html, 'id="dvnpost"', 'DVN-post-sheet ontbreekt');
   assertIncludes(src.html, 'Boeken in Intapp', 'De begeleide DVN-boekingsactie ontbreekt');
   assertIncludes(src.html, 'id="dp-lines"', 'De boekingssheet moet alle DVN-regels kunnen tonen');
@@ -1527,7 +1552,14 @@ test('DVN Intapp-workflow toont regels, archiveert done en bewaakt terugval', ()
   assertIncludes(src.dayRules, '"tijdregel opnieuw lopend gemaakt"', 'Opnieuw lopend maken moet controle nodig maken');
   assertIncludes(src.admin, 'dossiernummer aangepast',
     'Dossiernummerwijziging na posted moet controle nodig maken');
-  assertIncludes(src.timer, 'dvnPutIfPosted', 'Timerpaden moeten posted DVN via de gedeelde helper terugzetten');
+  const HH=evaluateDayRules(),dossier={id:'posted-dvn',dvn:true,voorlopig:false,
+    naam:'DVN',dvnResolvedNr:'123',dvnIntappStatus:'posted'};
+  HH.storage.indexedDB.use(fakeDatabase({dossiers:[dossier],regels:[],meta:{}}));
+  const started=await HH.services.timer.start({currentTimer:null,date:'2026-08-25',time:'10:00',
+    id:'posted-new',dossierId:dossier.id,description:'Werk',kind:'werk',nowMs:2,nowIso:'nu'});
+  assert(started.ok,'Timerstart op posted DVN moet slagen');
+  const saved=await HH.storage.indexedDB.get('dossiers',dossier.id);
+  assertEq(saved.dvnIntappStatus,'needs_check','Nieuwe tijd moet posted DVN terugzetten naar controle nodig');
   assertIncludes(src.views, 'id="dvn-open"', 'Open DVN-acties moeten een eigen werkvoorraad hebben');
   assertIncludes(src.views, 'id="dvn-done"', 'Afgehandelde DVN’s moeten traceerbaar en inklapbaar blijven');
   assertIncludes(src.views, '>Boeken in Intapp</button>', 'Beheer moet de begeleide boekingsactie aanbieden');
@@ -1590,7 +1622,7 @@ test('Patch H houdt gewone blokkade los van DVN en echte boekstatus', () => {
   assertIncludes(src.html, 'Nog over te boeken naar dossier', 'Beheer mist de overboekingswerkvoorraad');
   assertIncludes(src.html, 'Tijdelijk niet boekbaar', 'Dagwizard mist de parkeeractie');
   assertIncludes(src.html, 'Op i7 geboekt · parkeren', 'Expliciete tijdelijke i7-bevestiging ontbreekt');
-  assertIncludes(src.admin, 'gateway.tx("overboekingen","readwrite"',
+  assertIncludes(src.admin, 'atomic(input,["regels","dossiers","overboekingen"],["running"]',
     'Parkeren moet apart van geboekt worden opgeslagen');
   assertNotIncludes(src.booking, 'zetGeboekt(p.row.fp,true)', 'Parkeren mag niet als echte dossierboeking gelden');
   assertIncludes(src.booking, 'status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd · "+status.open+" open',
@@ -1617,14 +1649,16 @@ test('Patch H detecteert wijzigingen en heeft twee terminale routes', () => {
   assertEq(api.overboekingState({...wacht,status:'done'}),'done','Dossierboeking is terminale route één');
   assertEq(api.overboekingState({...wacht,status:'final_i7'}),'final_i7','Definitief i7 is terminale route twee');
   assertIncludes(src.views, 'async function maakOverboekingDefinitiefI7', 'Definitief-i7-overgang ontbreekt');
-  assertIncludes(src.admin, 'dossierId:indirect.id',
+  assertIncludes(src.admin, 'dossierId:actualIndirect.id',
     'Definitief i7 moet bronregels echt herclassificeren');
   assertIncludes(src.admin, 'code:input.commercialCode',
     'Definitief i7 moet de verplichte code toepassen');
   assertIncludes(src.admin, 'await waitFor(input,ids)',
     'Lopende bronwrites moeten voor omzetting klaar zijn');
-  assertIncludes(src.admin, 'stores.overboekingen.put(updated)',
-    'Bronregels en terminale status moeten transactioneel schrijven');
+  assertIncludes(src.admin, 'writer.put("overboekingen",updated)',
+    'Terminale status moet transactioneel worden opgeslagen');
+  assertIncludes(src.admin, 'updatedRules.forEach(rule=>writer.put("regels",rule))',
+    'Definitief i7 moet bronregels transactioneel herclassificeren');
 });
 
 test('afgeronde overboeking blijft geboekt totdat de broninhoud wijzigt', () => {
@@ -1701,7 +1735,7 @@ test('brede H-regressie bewaakt modal, verwijdering, groepering en atomaire afha
     'De verwijderblokkade moet de gebruiker naar de herstelplek verwijzen');
   assertIncludes(src.core, 'const over=overboekingVoorBronId(r.id)',
     'Aggregatie moet een overboekingslifecycle als eigen groeperingsgrens gebruiken');
-  assertIncludes(src.admin, 'gateway.tx(["overboekingen","meta"],"readwrite"',
+  assertIncludes(src.admin, 'atomic(input,["overboekingen","regels","dossiers"],["geboekt"]',
     'Afhandelen en duurzame boekstatus moeten in één transactie worden opgeslagen');
   assertIncludes(src.admin, 'sourceFingerprints:fingerprints',
     'Afhandelen moet de actuele inhoudsvingerafdrukken bewaren');
@@ -1734,7 +1768,7 @@ test('oude timer en editor volgen het TimerService-contract', () => {
 });
 
 test('timer-invariant herstelt alleen eenduidige state en blokkeert conflicten', () => {
-  const begin=src.app.indexOf('async function herstelInvariant(snapshotMeta)');
+  const begin=src.app.indexOf('async function herstelInvariant(snapshotMeta,allowWrite)');
   const einde=src.app.indexOf('\nfunction openRegels()',begin);
   const herstel=begin>=0&&einde>begin?src.app.slice(begin,einde):'';
   assert(herstel,'herstelInvariant() ontbreekt');
@@ -1969,12 +2003,18 @@ function evaluatePhaseURuntime(txImpl){
     ['services/timer',src.timerService],['services/settings',src.settings],['state',src.state]])
     vm.runInContext(code,context,{filename:`js/${name}.js`});
   context.HH.storage.indexedDB.use({transaction(stores,mode){
-    const objectStore=()=>({put(){},delete(){},get(){return{result:null};},getAll(){return{result:[]};},clear(){}});
+    const request=value=>{let result,ready='pending';const r={error:null,get readyState(){return ready;},
+      get result(){if(ready==='pending')throw new Error('InvalidStateError');return result;}};
+      queueMicrotask(()=>{result=value();ready='done';r.onsuccess&&r.onsuccess({target:r});});return r;};
+    const objectStore=name=>({put(){return request(()=>undefined);},delete(){return request(()=>undefined);},
+      get(key){return request(()=>name==='meta'?undefined:null);},
+      getAll(){return request(()=>name==='regels'?context.HH.state.read().rules:
+        name==='dossiers'?context.HH.state.read().dossiers:[]);},clear(){return request(()=>undefined);}});
     const transaction={error:null,objectStore,abort(){this.error=new Error('afgebroken');
-      queueMicrotask(()=>this.onabort&&this.onabort());}};
+      setTimeout(()=>this.onabort&&this.onabort(),0);}};
     Promise.resolve().then(()=>txImpl(stores,mode)).then(
-      ()=>queueMicrotask(()=>transaction.oncomplete&&transaction.oncomplete()),
-      error=>{transaction.error=error;queueMicrotask(()=>transaction.onabort&&transaction.onabort());});
+      ()=>setTimeout(()=>transaction.oncomplete&&transaction.oncomplete(),0),
+      error=>{transaction.error=error;setTimeout(()=>transaction.onabort&&transaction.onabort(),0);});
     return transaction;}});
   context.HH.app.render=()=>{};
   vm.runInContext(src.core,context,{filename:'js/core.js'});
@@ -2100,7 +2140,7 @@ test('Phase U geneste parkeermodal vangt toetsen, focus en dubbele submit af', a
   const i7={id:'i7',nummer:'I7',naam:'Indirect',isI7:true,voorlopig:false,codes:[]};
   h.state.commit({dossiers:[target,i7],codes:[{code:'X-704',naam:'Commercieel'}],rules:[],
     overbookings:[],booked:{},viewDate:'2026-09-05',roundingMode:'groep'});
-  h.context.HH.services.admin={parkOverbooking:async()=>{submits++;return pending.promise;}};
+  h.context.HH.services.admin={parkOverbooking:async input=>{assertEq(typeof input.summarize,'function','Parkeeradapter moet de samenvattingsfunctie doorgeven');submits++;return pending.promise;}};
   vm.runInContext(src.modal,h.context,{filename:'js/ui/modal.js'});
   vm.runInContext(src.booking+'\n;globalThis.__booking={openParkeer,sluitParkeer,bevestigParkeer};',h.context,
     {filename:'js/booking.js'});

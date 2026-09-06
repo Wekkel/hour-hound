@@ -91,7 +91,8 @@ const adminFoutTekst={invalid_dvn:"Deze DVN is niet meer beschikbaar",
   source_missing:"Niet alle bronregels bestaan nog",already_parked:"Deze regels zijn al geparkeerd",
   not_open:"Deze wachtrijregel is niet meer open",
   multiple_targets:"De bronregels horen nu bij verschillende dossiers",
-  queue_changed:"De wachtrij is gewijzigd — open de boekingswizard opnieuw"};
+  queue_changed:"De wachtrij is gewijzigd — open de boekingswizard opnieuw",
+  admin_changed:"De administratieve gegevens zijn intussen gewijzigd"};
 function meldAdminFout(result,fallback){
   if(result&&result.ok)return false;
   toast(adminFoutTekst[result&&result.error]||fallback||"Administratieve actie niet uitgevoerd");
@@ -106,6 +107,7 @@ const dagRegelFoutTekst={rule_missing:"De tijdregel ontbreekt",
   day_limit:"Dat zou meer dan 24,0 uur op één dag maken",
   confirmation_required:"Bevestig eerst de administratieve gevolgen",
   parked_rule:"Deze regel wacht nog op dossierboeking — rond de overboeking eerst af onder Beheer",
+  booked_rule:"Deze geboekte regel blijft bewaard — controleer eerst de boeking in Intapp",
   day_closed:"Deze werkdag is al afgesloten",day_empty:"Deze dag heeft geen tijdregels",
   weekend:"Weekenddagen hebben geen 8-uursaanvulling",
   day_open:"Sluit deze werkdag eerst af met E",day_open_already:"Deze dag is al open",
@@ -121,6 +123,13 @@ const timerFoutTekst={blocked:"Rond eerst het herstelvenster af",
   timer_changed:"De lopende timer is intussen gewijzigd",
   timer_missing:"Er loopt geen timer meer",dossier_missing:"Het dossier bestaat niet meer",
   invalid_recovery:"De herstelkeuze past niet meer bij de open regels",
+  invalid_undo:"De opgeslagen toestand kan niet veilig worden hersteld",
+  rule_changed:"De betrokken regel is intussen gewijzigd",
+  parked_rule:"Een betrokken regel wacht op dossierboeking",
+  booked_rule:"Een betrokken dag is inmiddels geboekt",
+  admin_changed:"De administratieve status is inmiddels gewijzigd",
+  day_closed:"Een betrokken werkdag is inmiddels afgesloten",
+  day_limit:"Herstellen zou de daggrens overschrijden",
   write_failed:"Timeractie mislukt — er is niets gewijzigd"};
 async function meldTimerFout(result,fallback){
   if(result&&result.ok)return false;
@@ -135,8 +144,8 @@ function pasMutatieUndoToe(undo){
   if(!undo)return;
   if(undo.kind==="timer")undoTimer(undo.label,undo.rules,{weg:undo.remove,
     herstelRunning:undo.restoreRunning,verwachtRunning:undo.expectedRunning,
-    verwacht:(undo.expected||[]).map(item=>({id:item.id,gewijzigd:item.modified}))});
-  else undoData(undo.label,undo.rules,{weg:undo.remove});
+    verwacht:(undo.expected||[]).map(item=>({id:item.id,revision:item.revision}))});
+  else undoData(undo.label,undo.rules,{weg:undo.remove,expected:undo.expected});
 }
 function vervangOverboekingenGeheugen(updated){
   HH.state.commit({overbookings:mergeById(HH.state.read().overbookings,updated||[])});
@@ -261,7 +270,8 @@ function L(k,v){
   logboek.push(pad(d.getHours())+":"+pad(d.getMinutes())+":"+pad(d.getSeconds())+
     "  "+k+(v?"  "+v:""));
   if(logboek.length>600)logboek.shift();
-  clearTimeout(logT);logT=setTimeout(()=>putK("meta",logboek,"log").catch(()=>{}),2000);
+  clearTimeout(logT);if(HH.storage.indexedDB.hasWriteAccess())
+    logT=setTimeout(()=>putK("meta",logboek,"log").catch(()=>{}),2000);
   const el=$("logstat");if(el)el.textContent=logboek.length+" regels";}
 window.addEventListener("error",e=>L("FOUT",(e.message||"")+" @"+(e.lineno||"?")));
 window.addEventListener("unhandledrejection",e=>
@@ -274,9 +284,10 @@ let undoStack=[];
    ongewijzigd. Iedere timerwissel die zelf niet terug te draaien is (starten, wisselen,
    einde werkdag, herstel, import) gooit de openstaande timerstappen weg.        */
 function undoData(label,rs,opts){
+  const o=opts||{};
   try{undoStack.push({soort:"data",label:label||"",
     regels:(rs||[]).filter(Boolean).map(kopie1),
-    weg:(opts&&opts.weg)||[]});
+    weg:o.weg||[],verwacht:(o.expected||[]).map(kopie1)});
   if(undoStack.length>25)undoStack.shift();}catch(e){}}
 function undoTimer(label,rs,opts){
   const o=opts||{};
@@ -285,14 +296,18 @@ function undoTimer(label,rs,opts){
     weg:o.weg||[],
     herstelRunning:o.herstelRunning||null,
     verwachtRunning:o.verwachtRunning===undefined?null:o.verwachtRunning,
-    verwacht:o.verwacht||[]});
+    verwacht:(o.verwacht||[]).map(item=>{
+      if(Object.prototype.hasOwnProperty.call(item,"revision"))return kopie1(item);
+      const current=HH.state.read().rules.find(rule=>rule.id===item.id);
+      return current&&(item.gewijzigd==null||(current.gewijzigd||0)===item.gewijzigd)?
+        {id:item.id,revision:HH.storage.indexedDB.revisionOf(current)}:kopie1(item);})});
   if(undoStack.length>25)undoStack.shift();}catch(e){}}
 function vergeetTimerUndo(reden){
   const n=undoStack.length;
   undoStack=undoStack.filter(a=>a.soort==="data");
   if(n!==undoStack.length)L("undo-timer-vervallen",reden+" · "+(n-undoStack.length));}
 async function undo(){
-  const a=undoStack.pop();
+  const a=undoStack[undoStack.length-1];
   if(!a){toast("Niets om ongedaan te maken");return;}
   if(a.soort==="timer")return undoTimerStap(a);
   const runId=HH.state.read().running?HH.state.read().running.id:null;
@@ -303,13 +318,19 @@ async function undo(){
   if(fout||weg.indexOf(runId)>=0){
     L("undo-geweigerd","gegevensstap raakt de timerstatus");
     toast("Deze stap raakt de lopende timer en wordt niet teruggedraaid");return;}
-  try{
-    await rustig(a.regels.map(r=>r.id).concat(weg));
-    await tx("regels","readwrite",o=>{
-      a.regels.forEach(r=>o.put(r));weg.forEach(id=>o.delete(id));});
-  }catch(e){L("FOUT-ongedaan",String(e));toast("Ongedaan maken mislukt: "+e);return;}
-  const nextRules=mergeById(zonderIds(HH.state.read().rules,weg),a.regels),delta={rules:nextRules};
+  let uit;
+  try{uit=await HH.services.timer.restoreUndo({kind:"data",
+    currentTimer:HH.state.read().running,readCurrentTimer:()=>HH.state.read().running,
+    rules:a.regels,remove:weg,expected:a.verwacht,expectedRunning:runId,
+    waitForRules:rustig,nowMs:Date.now(),nowIso:new Date().toISOString(),bookingContext:{runningId:runId,
+      today:today(),nowHM:nowHM()}});}
+  catch(e){L("FOUT-ongedaan",String(e));toast("Ongedaan maken mislukt: "+e);return;}
+  if(await meldTimerFout(uit,"Ongedaan maken is niet uitgevoerd"))return;
+  undoStack=undoStack.filter(item=>item!==a);
+  const nextRules=mergeById(zonderIds(HH.state.read().rules,weg),uit.rules),delta={rules:nextRules};
   if(runId)delta.running=nextRules.find(x=>x.id===runId)||HH.state.read().running;
+  if(uit.dayEnds)delta.dayEnds=uit.dayEnds;
+  if(uit.dayAudit)delta.dayAudit=uit.dayAudit;
   HH.state.commit(delta);
   liveId=null;HH.renderCoordinator.render("day");HH.app.render();announce();
   L("ongedaan","gegevens · "+(a.label||"actie")+" · "+a.regels.length+" regel(s)");
@@ -321,19 +342,19 @@ async function undoTimerStap(a){
     L("undo-geweigerd","timerstatus is inmiddels veranderd");
     toast("Er loopt inmiddels een andere timer — deze stap wordt niet teruggedraaid");
     return;}
-  const scheef=(a.verwacht||[]).find(v=>{
-    const r=HH.state.read().rules.find(x=>x.id===v.id);
-    return v.gewijzigd==null?!!r:(!r||(r.gewijzigd||0)!==v.gewijzigd);});
-  if(scheef){
-    L("undo-geweigerd","betrokken regel is inmiddels gewijzigd");
-    toast("De betrokken regel is inmiddels gewijzigd — niet teruggedraaid");return;}
   const weg=a.weg||[],uit=await HH.services.timer.restoreUndo({currentTimer:HH.state.read().running,
-    readCurrentTimer:()=>HH.state.read().running,rules:a.regels,remove:weg,restoreRunningId:a.herstelRunning,
-    waitForRules:rustig});
+    readCurrentTimer:()=>HH.state.read().running,kind:"timer",rules:a.regels,remove:weg,
+    restoreRunningId:a.herstelRunning,expectedRunning:a.verwachtRunning,
+    expected:a.verwacht,waitForRules:rustig,nowMs:Date.now(),nowIso:new Date().toISOString(),
+    bookingContext:{runningId:a.herstelRunning,today:today(),nowHM:nowHM()}});
   if(await meldTimerFout(uit,"Ongedaan maken is niet uitgevoerd"))return;
+  undoStack=undoStack.filter(item=>item!==a);
   const nextRules=mergeById(zonderIds(HH.state.read().rules,weg),uit.rules);
-  HH.state.commit({rules:nextRules,running:uit.currentTimerId?
-    (nextRules.find(x=>x.id===uit.currentTimerId)||null):null});
+  const delta={rules:nextRules,running:uit.currentTimerId?
+    (nextRules.find(x=>x.id===uit.currentTimerId)||null):null};
+  if(uit.dayEnds)delta.dayEnds=uit.dayEnds;
+  if(uit.dayAudit)delta.dayAudit=uit.dayAudit;
+  HH.state.commit(delta);
   liveId=null;HH.renderCoordinator.render("day");HH.app.render();announce();
   L("ongedaan","timer · "+(a.label||"actie"));
   toast("Ongedaan: "+(a.label||"timerwijziging")+" — "+
@@ -342,13 +363,8 @@ function toast(m){const t=$("toast");t.textContent=m;t.classList.add("on");
   clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove("on"),2600);}
 let syncOpen=false;
 function announce(){if(bc)try{bc.postMessage({from:TABID,timer:!!HH.state.read().running});}catch(e){}}
-if(bc)bc.onmessage=async e=>{
-  if(!e.data||e.data.from===TABID||!HH.state.read().db)return;
-  if(e.data.timer&&HH.state.read().running)
-    toast("Let op: een ander venster van hourhound beheert ook een timer — sluit dat venster");
-  const a=document.activeElement;
-  if(a&&/^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)){syncOpen=true;return;}
-  await herlaad();toast("Bijgewerkt vanuit een ander venster");};
+if(bc)bc.onmessage=e=>{
+  if(typeof ontvangVensterbericht==="function")return ontvangVensterbericht(e);};
 document.addEventListener("focusout",()=>{
   if(!syncOpen)return;syncOpen=false;
   setTimeout(()=>{const a=document.activeElement;

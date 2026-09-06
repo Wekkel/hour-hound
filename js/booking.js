@@ -172,7 +172,8 @@ async function bevestigParkeer(){
   const nowIso=new Date().toISOString();let uit;
   try{uit=await HH.services.admin.parkOverbooking({row:p.row,target:p.doel,i7Dossier:p.ind,
     commercialCode:p.com,rules:HH.state.read().rules,overbookings:HH.state.read().overbookings,sourceDate:boek.datum,
-    roundingMode:HH.state.read().roundingMode,id:uid(),nowIso,hoursOf:urenOf,waitForRules:rustig});}
+    roundingMode:HH.state.read().roundingMode,id:uid(),nowIso,hoursOf:urenOf,
+    summarize:sumVan,waitForRules:rustig});}
   catch(e){L("FOUT-overboeking-parkeren",String(e));toast("Parkeren mislukt — er is niets gewijzigd");return;}
   finally{bevestigParkeer.busy=false;$('pb-save').disabled=false;}
   if(meldAdminFout(uit,"Parkeren is niet uitgevoerd")){
