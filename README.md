@@ -94,3 +94,28 @@ Bij oplevering van Patch X zijn alle 162 browserloze controles geslaagd, inclusi
 foutpaden (update opnieuw proberen in een leesvenster en verversfout na importcommit);
 beide zijn gerepareerd met een falende tegenproef en een geslaagde regressietest.
 Echte browser-, offline- en service-worker-upgradeproeven zijn niet uitgevoerd.
+
+## Patch Y: sneller taken kiezen
+
+Nieuwe taak begint direct met zoeken in recente taken, dossiers, DVN en i7-codes.
+De eerste druk op N maakt de tijdknip; een zoekselectie vult diezelfde lopende regel
+in. Er zijn filters en afzonderlijke acties voor een nieuw dossier en Dossier volgt
+nog. Mislukte selecties blijven opnieuw te proberen; een selectie die later terugkomt
+kan geen inmiddels andere wizard verderzetten.
+
+De hoofdwerkbalk bevat Nieuwe taak, Pauze/Verder en Dag afronden. Telefoon,
+Onderbreking en de aparte DVN-ingang zijn verwijderd, evenals de globale T/O/V-acties.
+Historische soorten blijven leesbaar; R en de terugkeerstapel blijven beschikbaar.
+Een onvolledige timer krijgt een zichtbare actie Gegevens aanvullen zonder nieuwe
+tijdknip. De omschrijving toont blijvend de opslagstatus en bij fouten een retryknop.
+
+Registratietijd is de som van afzonderlijk afgeronde regels; Intapp-totaal volgt de
+gekozen boekingsafronding. Beide zijn nu apart benoemd. De declarabel/i7/DVN-breakdown
+blijft op registratiebasis. Tijdgaten zijn geen tekort tot acht uur; het apart getoonde
+tekort en de voortgang volgen Intapp. In het weekend wordt geen norm gesuggereerd.
+Historische uren en databaseversie 4 blijven ongewijzigd.
+
+De oplevering omvat 180 geslaagde browserloze controles, waarvan 18 nieuw voor Y.
+De i7-browsertest is aangepast aan de zoekroute, maar echte browsertests en visuele
+browsercontrole zijn niet uitgevoerd. `sw.js` blijft ongewijzigd; het nog openstaande
+cacheherstel uit fase X is geen onderdeel van Y. De verdere opschoning volgt in Z.

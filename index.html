@@ -57,6 +57,14 @@
       <div class="ntcell" id="nt-s-oms"><div class="ntlab">Omschrijving</div><div class="ntval" id="nt-v-oms">—</div><div class="ntsub" id="nt-x-oms"></div></div>
     </div>
     <div class="ntwiz" id="nt-wizard"></div>
+    <div class="waarschuw" id="l-incomplete" role="status">
+      <span>Timer loopt — gegevens aanvullen</span><div class="spacer"></div>
+      <button class="sm" id="b-complete">Gegevens aanvullen</button>
+    </div>
+    <div class="hint" id="l-save-line" aria-live="polite">
+      <span id="l-save-status"></span>
+      <button class="sm" id="b-save-retry" hidden>Opnieuw opslaan</button>
+    </div>
     <div class="fields" id="l-fields" style="display:none">
       <label>Dossier<input id="l-dossier" placeholder="nummer of naam" autocomplete="off"></label>
       <label>Werkcode<input id="l-code" placeholder="alleen bij i7 verplicht" autocomplete="off"></label>
@@ -81,12 +89,9 @@
   <div class="bar">
     <button class="go" id="b-switch">Nieuwe taak <kbd>N</kbd></button>
     <button class="back" id="b-back" style="display:none">Terug <kbd>R</kbd></button>
-    <button id="b-phone">Telefoon <kbd>T</kbd></button>
-    <button id="b-brk">Onderbreking <kbd>O</kbd></button>
-    <button id="b-volgt">Dossier volgt nog <kbd>V</kbd></button>
     <button id="b-dvn-rename" style="display:none">DVN-naam wijzigen</button>
     <button id="b-pause">Pauze <kbd>P</kbd></button>
-    <button id="b-end">Einde werkdag <kbd>E</kbd></button>
+    <button id="b-end">Dag afronden <kbd>E</kbd></button>
   </div>
 
   <section class="strip">
@@ -125,10 +130,12 @@
       <div class="marks"><span>0</span><span>2</span><span>4</span><span>6</span><span>8&nbsp;uur</span></div>
     </div>
     <div class="tot">
-      <span><b id="t-uren">0,0</b> <small id="t-norm-label">van 8,0 verantwoord</small></span>
-      <span id="t-voidwrap"><b id="t-void">0,0</b> <small>niet verantwoord</small></span>
+      <span><b id="t-uren">0,0</b> <small id="t-norm-label">uur registratietijd</small></span>
+      <span id="t-voidwrap"><b id="t-void">0,0</b> <small>tijdgaten</small></span>
       <span><b id="t-regels">0</b> <small>regels</small></span>
-      <span id="t-breakdown" class="breakdown">Declarabel 0,0 · i7 0,0 (DVN 0,0)</span>
+      <span><b id="t-intapp">0,0</b> <small>uur Intapp-totaal</small></span>
+      <span id="t-shortfall-wrap"><b id="t-shortfall">8,0</b> <small>nog tot 8 uur (Intapp)</small></span>
+      <span id="t-breakdown" class="breakdown">Registratie: Declarabel 0,0 · i7 0,0 (DVN 0,0)</span>
     </div>
   </section>
 </div>

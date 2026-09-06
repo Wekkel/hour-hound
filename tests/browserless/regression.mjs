@@ -1200,7 +1200,7 @@ test('weekenddagen vallen centraal buiten afsluitplicht en 8-uursaanvulling', ()
     'Een weekendtegel met uren mag niet melden dat de norm is gehaald');
   assertIncludes(src.views, '$("t-progress").style.display=isWerkdag?"":"none"',
     'Nu mag in het weekend geen 8-uursvoortgang tonen');
-  assertIncludes(src.views, '"uur verantwoord · weekend"',
+  assertIncludes(src.views, '"uur registratietijd · weekend"',
     'Nu moet weekenduren zonder 8-uursnorm labelen');
   assertIncludes(src.views, '$("d-fill").style.display=werkdag(HH.state.read().viewDate)?"":"none"',
     'De Dag-weergave mag de 8-uursaanvulactie in het weekend niet suggereren');

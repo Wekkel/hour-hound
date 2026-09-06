@@ -13,9 +13,16 @@ $("b-thema").onclick=async()=>{
   await HH.services.settings.save("thema",v);zetThema(v);toast("Thema: "+v);};
 $("b-switch").onclick=()=>HH.ui.newTask();
 $("b-back").onclick=terug;
-$("b-phone").onclick=()=>interrupt("telefoon","Telefoon");
-$("b-brk").onclick=()=>interrupt("onderbreking","Onderbreking");
-$("b-volgt").onclick=markeerVolgt;
+$("b-complete").onclick=async()=>{
+  if(!HH.state.read().running||HH.state.read().running.soort==="pauze")return;
+  try{await flushOmschr();}catch(error){toast("Bewaar eerst de omschrijving opnieuw");return;}
+  if(!HH.state.read().running)return;
+  ntWizard=ntNieuwState();ntWizard.draft=(HH.state.read().running.omschrijving||"").replace(VOOR,"").trim();
+  liveId=null;HH.app.render();ntFocus();
+};
+$("b-save-retry").onclick=async()=>{
+  try{await flushOmschr();}catch(error){toast("Omschrijving nog niet opgeslagen — probeer opnieuw");}
+};
 $("b-dvn-rename").onclick=()=>{const d=HH.state.read().running?dosOf(HH.state.read().running.dossierId):null;
   if(d&&d.voorlopig)vraagHernoemVoorlopig(d.id);};
 $("b-pause").onclick=pauze;
@@ -66,10 +73,7 @@ document.addEventListener("keydown",async e=>{
     await kiesTaak({dossierId:ind?ind.id:null,code:c.code});
     naStart();e.preventDefault();return;}
   if(k==="n"){await HH.ui.newTask();e.preventDefault();}
-  else if(k==="t"){await interrupt("telefoon","Telefoon");e.preventDefault();}
-  else if(k==="o"){await interrupt("onderbreking","Onderbreking");e.preventDefault();}
   else if(k==="r"){if(HH.state.read().stack.length)await terug();else toast("Niets geparkeerd");e.preventDefault();}
-  else if(k==="v"){await markeerVolgt();e.preventDefault();}
   else if(k==="p"){await pauze();e.preventDefault();}
   else if(k==="e"){await eindeWerkdag();e.preventDefault();}
   else if(k==="b"){HH.app.showTab("dag");openBoek();e.preventDefault();}

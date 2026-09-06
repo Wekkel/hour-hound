@@ -34,15 +34,18 @@ function renderRecent(){
     (i<5?"<kbd>"+(i+5)+"</kbd>":"")+"</button>").join("")||
     '<div class="hint">Importeer werkcodes.json onder Beheer.</div>';}
 function renderTot(){
-  const v=vandaagRegels(),t=totaal(v),g=gapHours(gapsFor(v,today()));
+  const v=vandaagRegels(),t=totaal(v),boek=simIntappTotaal(v),g=gapHours(gapsFor(v,today()));
+  $("t-intapp").textContent=uu(boek);
+  $("t-shortfall").textContent=uu(Math.max(0,Math.round((NORM-boek)*10)/10));
   $("t-uren").textContent=uu(t);$("t-void").textContent=uu(g);
   $("t-regels").textContent=v.filter(r=>r.soort!=="pauze").length;
   const b=nuBreakdown(v);
-  $("t-breakdown").textContent="Declarabel "+uu(b.declarabel)+" · i7 "+uu(b.i7)+
+  $("t-breakdown").textContent="Registratie: Declarabel "+uu(b.declarabel)+" · i7 "+uu(b.i7)+
     " (DVN "+uu(b.dvn)+")";
   $("t-voidwrap").className=g>0?"isbad":"";
   const isWerkdag=werkdag(today());
   $("t-progress").style.display=isWerkdag?"":"none";
-  $("t-norm-label").textContent=isWerkdag?"van 8,0 verantwoord":"uur verantwoord · weekend";
-  const pct=isWerkdag?Math.max(0,Math.min(1,t/NORM)):0;
+  $("t-norm-label").textContent=isWerkdag?"uur registratietijd (per regel afgerond)":"uur registratietijd · weekend";
+  $("t-shortfall-wrap").style.display=isWerkdag?"":"none";
+  const pct=isWerkdag?Math.max(0,Math.min(1,boek/NORM)):0;
   $("hond").style.left="calc("+(pct*100).toFixed(1)+"% - "+(pct*86).toFixed(0)+"px)";}

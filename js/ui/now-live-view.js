@@ -1,16 +1,28 @@
 "use strict";
 /* ---------- weergave: NU ---------- */
+function renderOpslagStatus(){
+  const status=omschrijvingBewaarStatus(),el=$("l-save-status");
+  el.textContent=status==="error"?"Omschrijving niet opgeslagen":
+    status==="pending"?"Omschrijving opslaan…":
+    (HH.state.read().running&&HH.state.read().running.soort!=="pauze"?"Omschrijving opgeslagen":"");
+  $("b-save-retry").hidden=status!=="error";
+}
 function renderLive(){
+  renderOpslagStatus();
   /* Een wizard hoort altijd bij precies de regel die op dit moment loopt. Iedere
      andere timeractie maakt de wizard daardoor vanzelf ongeldig. */
   if(ntWizard&&(!HH.state.read().running||ntWizard.id!==HH.state.read().running.id))ntWizard=null;
   const d=HH.state.read().running?dosOf(HH.state.read().running.dossierId):null;
+  const r=HH.state.read().running,aanvullen=!!r&&r.soort!=="pauze"&&!ntWizard&&
+    (!d||!(r.omschrijving||"").replace(VOOR,"").trim()||(isIndirect(d)&&!r.code)||codeFout(d,r));
+  $("l-incomplete").classList.toggle("on",aanvullen);
+  $("b-pause").innerHTML=r&&r.soort==="pauze"?"Verder <kbd>P</kbd>":"Pauze <kbd>P</kbd>";
   $("live").className="live"+(HH.state.read().running?" "+HH.state.read().running.soort:"");
   document.body.dataset.run=HH.state.read().running?HH.state.read().running.soort:"";
   $("l-fields").style.display=HH.state.read().running&&HH.state.read().running.soort!=="pauze"&&!ntWizard?"grid":"none";
   $("b-back").style.display=HH.state.read().stack.length&&!ntWizard?"":"none";
   $("b-dvn-rename").style.display=HH.state.read().running&&d&&d.voorlopig&&!ntWizard?"":"none";
-  if(HH.state.read().stack.length)$("b-back").innerHTML="Terug naar "+
+  if(HH.state.read().stack.length)$("b-back").innerHTML="Verder met "+
     esc(((dosOf(HH.state.read().stack[HH.state.read().stack.length-1].dossierId)||{}).naam||"vorige taak"))+" <kbd>R</kbd>";
 
   if(!HH.state.read().running){

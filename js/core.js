@@ -221,11 +221,13 @@ function rustig(ids){
    nooit later naar de globale running. pakOmschr() haalt een openstaande tekst op en
    annuleert de timer, zodat een taakwissel die tekst in dezelfde transactie meeneemt. */
 let omsWacht=null,omsVersie=0;
+function omschrijvingBewaarStatus(){return omsWacht?(omsWacht.fout?"error":"pending"):"saved";}
+function meldOmschrijvingStatus(){HH.renderCoordinator.render("saveStatus");}
 function bewaarOmschr(p){
   try{localStorage.setItem("hh-oms",JSON.stringify({id:p.id,tekst:p.tekst,versie:p.versie}));}catch(e){}}
 function nieuwOmschr(id,tekst,versie){
   const p={id,tekst,versie:versie||++omsVersie,t:null,poging:null};
-  omsVersie=Math.max(omsVersie,p.versie||0);omsWacht=p;bewaarOmschr(p);return p;}
+  omsVersie=Math.max(omsVersie,p.versie||0);omsWacht=p;bewaarOmschr(p);meldOmschrijvingStatus();return p;}
 function planOmschr(id,tekst){
   if(omsWacht)clearTimeout(omsWacht.t);
   const p=nieuwOmschr(id,tekst);
@@ -233,9 +235,11 @@ function planOmschr(id,tekst){
 function schrijfOms(p,stil){
   if(p.poging)return p.poging;
   const r=HH.state.read().rules.find(x=>x.id===p.id);
-  if(!r)return Promise.reject(new Error("Tijdregel voor omschrijving bestaat niet meer"));
+  if(!r){p.fout=true;meldOmschrijvingStatus();return Promise.reject(new Error("Tijdregel voor omschrijving bestaat niet meer"));}
+  p.fout=false;meldOmschrijvingStatus();
   const gewijzigd=Object.assign({},r,{omschrijving:p.tekst});
   const poging=saveRegel(gewijzigd).then(v=>{bevestigOmschr(p.id,p.versie);return v;},e=>{
+    if(omsWacht===p){p.fout=true;meldOmschrijvingStatus();}
     if(!stil&&omsWacht===p)toast("Opslaan omschrijving mislukt — probeer opnieuw");throw e;});
   p.poging=poging;
   poging.then(()=>{if(p.poging===poging)p.poging=null;},()=>{if(p.poging===poging)p.poging=null;});
@@ -249,7 +253,7 @@ function pakOmschr(id){
   return null;}
 function bevestigOmschr(id,versie){
   if(!omsWacht||omsWacht.id!==id||omsWacht.versie!==versie)return false;
-  const p=omsWacht;clearTimeout(p.t);omsWacht=null;
+  const p=omsWacht;clearTimeout(p.t);omsWacht=null;meldOmschrijvingStatus();
   try{const n=JSON.parse(localStorage.getItem("hh-oms")||"null");
     if(n&&n.id===id&&n.versie===versie)localStorage.removeItem("hh-oms");}catch(e){}
   return true;}

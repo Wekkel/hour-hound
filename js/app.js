@@ -2,7 +2,7 @@
 /* ---------- render en start ---------- */
 HH.storage.indexedDB.requireWriteLock();
 HH.renderCoordinator.register("live",renderLive).register("recent",renderRecent)
-  .register("totals",renderTot).register("openDays",renderOpenDagen)
+  .register("saveStatus",renderOpslagStatus).register("totals",renderTot).register("openDays",renderOpenDagen)
   .register("day",bouwDag).register("week",renderWeek).register("manage",renderBeheer);
 HH.app.assertReady();
 
