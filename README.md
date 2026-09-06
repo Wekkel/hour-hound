@@ -144,3 +144,54 @@ Bij oplevering zijn 200 browserloze controles geslaagd (20 nieuw voor Z). De nie
 tests zijn ook tegen de ongewijzigde Y-baseline uitgevoerd en tonen de ontbrekende
 service-afhandeling en herhaalde lineaire zoekactie. De hoofdagent heeft de diff
 beoordeeld, de tests aangescherpt en alle relevante tests zelfstandig uitgevoerd.
+
+## Patch X2: cacheherstel (na Z)
+
+Deze aanvulling voert het eerder apart gehouden cacheherstel uit, met expliciete
+toestemming om sw.js mee te leveren. De eerdere opmerkingen over het ontbrekende
+cacheherstel beschrijven de toestand vóór X2. De patch bouwt voort op alle patches
+tot en met Z; sw.js gaat van 0.1.20 naar 0.1.21.
+
+Navigatie en verplichte appbestanden komen uit de cache van de actieve release.
+Een ontbrekend verplicht bestand wordt niet stilzwijgend aangevuld uit een nieuwere
+netwerkrelease. Een mislukte installatie wordt afgewezen, zodat de bestaande worker
+actief kan blijven. Alleen oude Hour Hound-caches worden opgeruimd. HTTP-fouten
+worden niet opgeslagen als bruikbare netwerkbestanden.
+
+De bestaande updateknop blijft wachten op drafts en lopende writes. De patch wijzigt
+geen uren, IndexedDB-schema of backupschema. Publiceer alle bestanden van de beoogde
+release samen; het versienummer alleen controleert niet of een server tijdens een
+onvolledige publicatie nog oude bestanden met HTTP-status 200 teruggeeft.
+
+### Praktische controle na publicatie (nog niet uitgevoerd)
+
+1. Maak een JSON-back-up via de app. Publiceer de eerdere patches tot en met Z en
+   deze aanvulling als één complete release. Gebruik voor latere releases steeds een
+   nieuw, nog niet gebruikt VERSION in sw.js.
+2. Open de bestaande app online en gebruik de knop Update zodra die verschijnt.
+   Controleer daarna de versie en of de bestaande uren en dossiers aanwezig zijn.
+3. Zet de browser offline en herlaad de app. Controleer Nieuwe taak, Pauze/Verder en
+   het terugvinden van de ingevoerde gegevens na opnieuw openen.
+4. Test in een aparte testomgeving een update met een ontbrekend verplicht bestand:
+   de installatie moet mislukken, terwijl de bestaande versie blijft werken.
+5. Test een update met twee open vensters en een gewijzigde omschrijving. Herladen
+   mag pas volgen nadat de wijzigingen zijn opgeslagen; bij een opslagfout moet
+   opnieuw proberen mogelijk blijven.
+
+De bestaande Playwright-smoketests blokkeren service workers en bewijzen deze
+upgrade- en offlinegevallen dus niet. Hiervoor blijft een echte browserproef nodig.
+De installatie-foutafhandeling volgt de
+[waitUntil-semantiek](https://developer.mozilla.org/en-US/docs/Web/API/ExtendableEvent/waitUntil).
+
+Validatie: 215 browserloze controles geslaagd, inclusief 15 nieuwe tests die de
+werkelijke service-worker-callbacks uitvoeren met native Request/Response en een
+gesimuleerde CacheStorage. Dezelfde cachetests tegen Z: 4 geslaagd, 11 gefaald.
+De hoofdagent heeft de uiteindelijke tests geschreven en zelfstandig uitgevoerd;
+Sol Medium heeft de productiewijziging onafhankelijk beoordeeld. Echte browser-
+en service-worker-upgradeproeven zijn niet uitgevoerd wegens ontbrekende browser.
+
+Deploymentbeperking: deze cachenaam gaat uit van één Hour Hound-installatie per
+origin (protocol, host en poort). Meerdere Hour Hound-kopieën op verschillende
+paden van hetzelfde domein delen de cacheprefix en kunnen elkaars caches raken.
+Gebruik voor een tweede testinstallatie een aparte origin. Andere applicaties
+zonder de Hour Hound-cacheprefix worden bij activeren niet meer opgeruimd.

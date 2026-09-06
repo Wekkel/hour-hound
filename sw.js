@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.23"; // Patches. Astra overhaul
+const VERSION = "0.1.21"; // Patch X2 - consistent release cache
 
 const CACHE = "hourhound-" + VERSION;
 
@@ -55,16 +55,22 @@ const ASSETS = [
   "./js/ui/day-table-controller.js",
 ];
 
+const canonicalUrl = (url) => {
+  const parsed = new URL(url, location.href);
+  parsed.search = "";
+  parsed.hash = "";
+  return parsed.href;
+};
+
+const SHELL_URLS = new Set(ASSETS.map((asset) => canonicalUrl(asset)));
+
 self.addEventListener("install", (e) => {
   // Geen skipWaiting() → nieuwe worker blijft "waiting"
   // tot de gebruiker via de knop SKIP_WAITING stuurt.
   e.waitUntil(
     caches
       .open(CACHE)
-      .then((c) => c.addAll(ASSETS))
-      .catch((err) => {
-        console.error("[SW] Install failed:", err);
-      })
+      .then((c) => c.addAll(ASSETS.map((asset) => new Request(new URL(asset, location.href), {cache: "reload"}))))
   );
 });
 
@@ -73,7 +79,7 @@ self.addEventListener("activate", (e) => {
     (async () => {
       const keys = await caches.keys();
       await Promise.all(
-        keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))
+        keys.filter((k) => k.startsWith("hourhound-") && k !== CACHE).map((k) => caches.delete(k))
       );
       await self.clients.claim();
     })()
@@ -88,33 +94,44 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Navigaties: netwerk eerst → nieuwe versie komt sneller binnen
+  const shellRequest = req.mode === "navigate" || SHELL_URLS.has(canonicalUrl(req.url));
+
   if (req.mode === "navigate") {
     e.respondWith(
       (async () => {
         try {
-          const fresh = await fetch(req);
           const cache = await caches.open(CACHE);
-          cache.put("./index.html", fresh.clone());
-          return fresh;
+          return (await cache.match(canonicalUrl("./index.html"))) || Response.error();
         } catch (err) {
-          return (await caches.match("./index.html")) || Response.error();
+          return Response.error();
         }
       })()
     );
     return;
   }
 
-  // Overige bestanden: cache eerst, netwerk als fallback
   e.respondWith(
     (async () => {
-      const hit = await caches.match(req);
-      if (hit) return hit;
+      let cache;
+      try {
+        cache = await caches.open(CACHE);
+        const hit = await cache.match(shellRequest ? canonicalUrl(req.url) : req);
+        if (hit) return hit;
+        if (shellRequest) return Response.error();
+      } catch (err) {
+        if (shellRequest) return Response.error();
+        cache = null;
+      }
 
       try {
         const fresh = await fetch(req);
-        const cache = await caches.open(CACHE);
-        cache.put(req, fresh.clone());
+        if (cache && fresh && fresh.ok) {
+          try {
+            await cache.put(req, fresh.clone());
+          } catch (err) {
+            // A quota or storage error must not hide a usable network response.
+          }
+        }
         return fresh;
       } catch (err) {
         return Response.error();
