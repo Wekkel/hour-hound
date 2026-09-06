@@ -498,6 +498,61 @@
     });
   }
 
+  const dossierNumber=value=>String(value==null?"":value).trim();
+  const dossierNumberKey=value=>dossierNumber(value).toLowerCase();
+  const generatedDossierId=()=>"dos-"+Date.now().toString(36)+"-"+
+    Math.random().toString(36).slice(2,10);
+
+  /* Nieuwe dossiers en het vaste i7-dossier worden hier aangemaakt. De volledige
+     read/check/write vindt plaats binnen één IDB-transactie; gelijktijdige
+     aanroepen van deze routes zien daardoor steeds een verse snapshot. */
+  async function createDossier(input){
+    const spec=input||{},naam=String(spec.naam||"").trim();
+    if(!naam)return fail("name_required");
+    const nummer=dossierNumber(spec.nummer),numberKey=dossierNumberKey(nummer);
+    const requestedId=spec.id||null;
+    return atomic(spec,["dossiers"],[],(snapshot,writer)=>{
+      const dossiers=snapshot.dossiers||[];
+      if(dossiers.some(d=>requestedId&&d.id===requestedId))return fail("id_exists");
+      if(numberKey&&dossiers.some(d=>dossierNumberKey(d.nummer)===numberKey))
+        return fail("number_exists");
+      let id=requestedId;
+      if(!id){for(let attempt=0;attempt<12&&!id;attempt++){
+        const candidate=generatedDossierId();if(!dossiers.some(d=>d.id===candidate))id=candidate;}
+        if(!id)return fail("id_exists");}
+      const d={id,nummer:nummer||null,naam,lang:spec.lang||"nl",voorlopig:!nummer,
+        codes:Array.isArray(spec.codes)?copy(spec.codes):[],c:dossiers.length,used:
+        Number.isFinite(spec.used)?spec.used:1,isI7:false,archief:false,
+        gewijzigd:spec.nowMs||Date.now(),revision:1};
+      writer.put("dossiers",d);return ok({dossier:d});
+    });
+  }
+
+  async function ensureI7(input){
+    const spec=input||{};
+    return atomic(spec,["dossiers"],[],(snapshot,writer)=>{
+      const dossiers=snapshot.dossiers||[];
+      const marked=dossiers.find(d=>d.isI7);
+      if(marked)return ok({dossier:marked,noChange:true});
+      /* Oude imports gebruikten alleen de I7-prefix. Claim precies die bestaande
+         record, behoud de inhoud en verhoog de revisie voor deze wijziging. */
+      const legacy=dossiers.find(d=>/^I7/i.test(d.nummer||""));
+      if(legacy){const updated=replaceEntity(legacy,Object.assign({},legacy,{isI7:true}),spec.nowMs||Date.now());
+        writer.put("dossiers",updated);return ok({dossier:updated});}
+      const standard="I700000000",byNumber=dossiers.find(d=>
+        dossierNumberKey(d.nummer)===dossierNumberKey(standard));
+      if(byNumber)return fail("i7_number_occupied");
+      let id="d-i7";
+      if(dossiers.some(d=>d.id===id)){id=null;for(let attempt=0;attempt<12&&!id;attempt++){
+        const candidate=generatedDossierId();if(!dossiers.some(d=>d.id===candidate))id=candidate;}
+        if(!id)return fail("id_exists");}
+      const d={id,nummer:standard,naam:"Indirecte uren",lang:"nl",voorlopig:false,
+        codes:[],c:dossiers.length,used:999,isI7:true,archief:false,
+        gewijzigd:spec.nowMs||Date.now(),revision:1};
+      writer.put("dossiers",d);return ok({dossier:d});
+    });
+  }
+
   async function saveDossier(input){
     const dossier=input&&input.dossier;
     if(!dossier||!dossier.id)return fail("invalid_dossier");
@@ -565,5 +620,5 @@
   HH.services.admin=Object.freeze({assignDvnNumber,markDvnPosted,finalizeDvnI7,
     parkOverbooking,refreshOverbooking,completeOverbookings,finalizeOverbookingI7,
     setRegularBooking,bootstrapLegacyBookings,resolveBookingCorrection,
-    saveDossier,deleteDossier,saveDvnRename,clearTrackedData});
+    saveDossier,createDossier,ensureI7,deleteDossier,saveDvnRename,clearTrackedData});
 })(globalThis.HH);

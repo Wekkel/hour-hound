@@ -207,11 +207,6 @@ function mergeById(base,updates,key){
   return next;}
 const zonderIds=(base,ids,key)=>{const idKey=key||"id",weg=new Set(ids||[]);
   return (base||[]).filter(x=>!weg.has(x[idKey]));};
-function schrijfRegel(waarde){
-  const id=waarde.id,vorige=schrijfRij[id]||Promise.resolve();
-  const p=vorige.then(()=>put("regels",waarde),()=>put("regels",waarde));
-  schrijfRij[id]=p.then(()=>{},()=>{});
-  return p;}
 function rustig(ids){
   return Promise.all((ids||[]).filter(Boolean)
     .map(id=>schrijfRij[id]||Promise.resolve()));}
@@ -380,7 +375,17 @@ document.addEventListener("focusout",()=>{
     herlaad();},200);});
 
 /* ---------- model ---------- */
-const dosOf=id=>HH.state.read().dossiers.find(d=>d.id===id);
+// State mutations replace the dossier array; retain first-match semantics.
+let dosIndexBron=null,dosIndex=new Map();
+const dosOf=id=>{
+  const ds=HH.state.read().dossiers;
+  if(ds!==dosIndexBron){
+    dosIndex=new Map();
+    ds.forEach(d=>{if(!dosIndex.has(d.id))dosIndex.set(d.id,d);});
+    dosIndexBron=ds;
+  }
+  return dosIndex.get(id);
+};
 const i7=()=>HH.state.read().dossiers.find(d=>d.isI7);
 const actief=()=>HH.state.read().dossiers.filter(d=>!d.archief);
 const isDvn=dvnDomain.isDvn;

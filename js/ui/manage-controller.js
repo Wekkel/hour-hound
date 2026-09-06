@@ -112,5 +112,6 @@ $("b-adddos").onclick=async()=>{
   const naam=$("b-naam").value.trim();if(!naam){toast("Naam is verplicht");return;}
   const nr=$("b-nr").value.trim();
   if(nummerBezet(nr,null)){toast("Dat dossiernummer bestaat al");return;}
-  await makeDossier(naam,nr||null,$("b-lang").value);
+  try{await makeDossier(naam,nr||null,$("b-lang").value);}
+  catch(error){toast("Dossier niet toegevoegd — "+String(error.message||error));return;}
   $("b-nr").value="";$("b-naam").value="";HH.app.render();toast("Dossier toegevoegd");};

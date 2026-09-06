@@ -232,12 +232,15 @@ async function koppelRegel(r,op){
   if(HH.state.read().running&&HH.state.read().running.id===nw.id)liveId=null;
   return{regel:nw,dossier:opgeslagen.dossier};}
 async function makeDossier(naam,nummer,lang){
-  const d={id:uid(),nummer:nummer||null,naam:naam||"Zonder naam",lang:lang||"nl",
-    voorlopig:!nummer,codes:[],c:HH.state.read().dossiers.length,used:1,isI7:false,archief:false,
-    gewijzigd:Date.now()};
-  await put("dossiers",d);HH.state.upsert("dossiers",d);
-  L("dossier-nieuw","dos"+idKort(d.id)+(nummer?"":" · VOORLOPIG")+
-    (logOms?" · "+kort(naam):""));
+  const uit=await HH.services.admin.createDossier({id:uid(),naam,nummer,lang,nowMs:Date.now()});
+  if(!uit||!uit.ok){
+    const meldingen={name_required:"Naam is verplicht",number_exists:"Dat dossiernummer bestaat al",
+      id_exists:"Dossier-ID is al in gebruik — probeer opnieuw"};
+    throw new Error(meldingen[uit&&uit.error]||"Dossier is niet opgeslagen");
+  }
+  const d=uit.dossier;HH.state.upsert("dossiers",d);
+  L("dossier-nieuw","dos"+idKort(d.id)+(d.nummer?"":" · VOORLOPIG")+
+    (logOms?" · "+kort(d.naam):""));
   return d;}
 
 /* De stapel wordt niet meer apart weggeschreven: hij gaat als stackNa mee in dezelfde

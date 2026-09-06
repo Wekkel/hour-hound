@@ -179,13 +179,10 @@ async function laadWerkcodes(){
   toast("Werkcodelijst geladen uit werkcodes.json — "+rij.goed.length+" codes");
   return true;}
 async function zorgVoorI7(){
-  const ds=await getAll("dossiers");
-  if(ds.some(d=>d.isI7))return;
-  const g=ds.find(d=>/^I7/i.test(d.nummer||""));
-  if(g){g.isI7=true;g.gewijzigd=Date.now();await put("dossiers",g);return;}
-  await put("dossiers",{id:"d-i7",nummer:"I700000000",naam:"Indirecte uren",lang:"nl",
-    voorlopig:false,codes:[],c:ds.length,used:999,isI7:true,archief:false,
-    gewijzigd:Date.now()});}
+  const uit=await HH.services.admin.ensureI7({nowMs:Date.now()});
+  if(!uit||!uit.ok){toast("I7-dossier niet aangemaakt — er is niets gewijzigd");return null;}
+  if(uit.dossier)HH.state.upsert("dossiers",uit.dossier);
+  return uit.dossier||null;}
 
 function instellingenDelta(meta){return{codeUsage:meta.codeGebruik||{},
   booked:meta.geboekt||{},bookingHistory:bookingDomain.normalizeHistory(meta.bookingHistory),

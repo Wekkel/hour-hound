@@ -119,3 +119,28 @@ De oplevering omvat 180 geslaagde browserloze controles, waarvan 18 nieuw voor Y
 De i7-browsertest is aangepast aan de zoekroute, maar echte browsertests en visuele
 browsercontrole zijn niet uitgevoerd. `sw.js` blijft ongewijzigd; het nog openstaande
 cacheherstel uit fase X is geen onderdeel van Y. De verdere opschoning volgt in Z.
+
+## Patch Z: dossieraanmaak en gerichte opschoning
+
+Dossieraanmaak in Beheer en het i7-startdossier lopen via de administratieve service met één
+atomaire lees/controle/schrijftransactie. Een bezet ID wordt niet overschreven en
+nieuwe dossiernummers worden opnieuw tegen de opgeslagen dossiers gecontroleerd.
+Gelijktijdige i7-aanvragen hergebruiken hetzelfde dossier. Bij een mislukte aanmaak
+blijft de invoer in Beheer staan; geheugen en succesmelding volgen pas na opslag.
+De oude, ongebruikte schrijfRegel-helper is verwijderd. Bewuste transacties voor
+migratie, import en timerwijzigingen blijven behouden.
+
+Dossierzoeken gebruikt een afgeleide index die wordt vernieuwd bij vervanging van
+de dossierlijst. Een lokale microbenchmark met 5.000 dossiers en 10.000 zoekacties
+per ronde ging van circa 230 ms naar 2–5 ms. Dit meet de zoekfunctie, niet de totale
+reactietijd van de app. Gedrag bij wijzigen, verwijderen en importeren is afgedekt.
+
+Databaseversie 4 en backupschema 11 blijven behouden. Er is geen datamigratie.
+Echte browser-, visuele, offline- en service-worker-upgradeproeven zijn niet
+uitgevoerd; de praktische validatie van Z staat daarom nog open. Het cacheherstel
+uit X blijft apart: sw.js is niet gewijzigd en zit niet in deze patch.
+
+Bij oplevering zijn 200 browserloze controles geslaagd (20 nieuw voor Z). De nieuwe
+tests zijn ook tegen de ongewijzigde Y-baseline uitgevoerd en tonen de ontbrekende
+service-afhandeling en herhaalde lineaire zoekactie. De hoofdagent heeft de diff
+beoordeeld, de tests aangescherpt en alle relevante tests zelfstandig uitgevoerd.
