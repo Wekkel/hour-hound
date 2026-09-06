@@ -7,7 +7,7 @@
    automatisch uit deze regel.
    ============================================================ */
 
-const VERSION = "0.1.23"; // Patch w - Astra overhaul
+const VERSION = "0.1.23"; // Patches. Astra overhaul
 
 const CACHE = "hourhound-" + VERSION;
 
