@@ -8,7 +8,6 @@ const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.resolve(process.argv[2]||path.join(here,'../..'));
 const wizard=fs.readFileSync(path.join(root,'js/wizard.js'),'utf8');
 const noop=()=>{};
-const tick=()=>new Promise(resolve=>setImmediate(resolve));
 const deferred=()=>{let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};};
 
 function harness(options={}){
@@ -43,28 +42,16 @@ function harness(options={}){
       if(!r)return null;Object.assign(r,op);return{regel:r,dossier:r.dossierId?dossiers.find(d=>d.id===r.dossierId):null};}
   });
   vm.runInContext(wizard,context,{filename:path.join(root,'js/wizard.js')});
-  const realNtFocus=context.ntFocus;
   context.ntRender=()=>{calls.render++;};context.ntFocus=wat=>{calls.focus.push(wat||'default');};
   function resetWizard(extra={}){context.ntWizard=Object.assign(context.ntNieuwState(),extra);return context.ntWizard;}
-  function mountSearch(){
-    const html=context.ntHtml();
-    const input=el('nt-search-q',{_inWizard:true,value:context.ntWizard.query});
-    const search=[...html.matchAll(/data-ntsearch="(\d+)"/g)].map(m=>({dataset:{ntsearch:m[1]},onclick:null}));
-    const filters=[...html.matchAll(/data-ntfilter="([^"]+)"/g)].map(m=>({dataset:{ntfilter:m[1]},onclick:null}));
-    const dvn=html.includes('data-ntdvnnew="1"')?{dataset:{ntdvnnew:'1'},onclick:null}:null;
-    const fresh=html.includes('data-ntnewroute="1"')?{dataset:{ntnewroute:'1'},onclick:null}:null;
-    box.querySelectorAll=selector=>selector==='[data-ntsearch]'?search:selector==='[data-ntfilter]'?filters:[];
-    box.querySelector=selector=>selector==='[data-ntdvnnew]'?dvn:selector==='[data-ntnewroute]'?fresh:null;
-    context.ntBind();return{html,input,search,filters,dvn,fresh};
-  }
-  return{context,state,calls,resetWizard,mountSearch,el,realNtFocus};
+  return{context,state,calls,resetWizard,el};
 }
 
 const tests=[];const test=(name,fn)=>tests.push([name,fn]);
 
 test('N cuts once and metadata selection updates that same running rule',async()=>{
   const h=harness();await h.context.nieuweTaak();
-  assert.equal(h.calls.start.length,1);assert.equal(h.context.ntWizard.step,'search');assert.equal(h.context.ntWizard.id,'run:new');
+  assert.equal(h.calls.start.length,1);assert.equal(h.context.ntWizard.step,'kind');assert.equal(h.context.ntWizard.id,'run:new');
   await h.context.ntKiesDossier('ordinary',false);
   assert.equal(h.calls.link.length,1);assert.equal(h.calls.link[0].id,'run:new');assert.equal(h.state.running.id,'run:new');assert.equal(h.context.ntWizard.step,'omschrijving');
 });
@@ -77,7 +64,7 @@ test('double selection while save is pending performs one mutation',async()=>{
 
 test('failed save releases busy and permits retry',async()=>{
   let attempt=0;const h=harness({link:async(r,op)=>{attempt++;if(attempt===1)throw Error('disk');Object.assign(r,op);return{regel:r};}});h.resetWizard();
-  await h.context.ntKiesDossier('ordinary',false);assert.equal(h.context.ntWizard.busy,false);assert.equal(h.context.ntWizard.step,'search');
+  await h.context.ntKiesDossier('ordinary',false);assert.equal(h.context.ntWizard.busy,false);assert.equal(h.context.ntWizard.step,'kind');
   await h.context.ntKiesDossier('ordinary',false);assert.equal(attempt,2);assert.equal(h.context.ntWizard.step,'omschrijving');
 });
 
@@ -95,7 +82,7 @@ test('running replacement, wizard replacement, or Escape during await cannot adv
 
 test('i7 selection requires a current real code and lands on the i7 dossier',async()=>{
   const h=harness();h.resetWizard();
-  await h.context.ntKiesI7('missing');assert.equal(h.calls.link.length,0);assert.equal(h.context.ntWizard.step,'search');
+  await h.context.ntKiesI7('missing');assert.equal(h.calls.link.length,0);assert.equal(h.context.ntWizard.step,'kind');
   await h.context.ntKiesI7('I7:101');assert.equal(h.calls.link.length,1);assert.equal(h.state.running.dossierId,'i7');assert.equal(h.state.running.code,'I7:101');assert.equal(h.context.ntWizard.kind,'i7');assert.equal(h.context.ntWizard.step,'omschrijving');
   const absent=harness({dossiers:[{id:'ordinary',nummer:'123',naam:'Gewone zaak'}]});absent.resetWizard();await absent.context.ntKiesI7('I7:101');assert.equal(absent.calls.link.length,0);assert.equal(absent.context.ntWizard.kind,null);
 });
@@ -107,36 +94,7 @@ test('existing DVN selection reaches commercial metadata through the coupling ad
   assert.equal(h.state.running.dossierId,'dvn');assert.equal(h.state.running.code,'I7:704');assert.equal(h.context.ntWizard.step,'omschrijving');
 });
 
-test('recent ordinary task keeps its optional colon code and ordinary kind',async()=>{
-  const key='ordinary:ABC:09';const task={k:key,label:'Recent',dossierId:'ordinary',code:'W:12',oms:'memo'};
-  const h=harness({tasks:[task]});h.resetWizard();await h.context.ntKiesTaak(key);
-  assert.equal(h.calls.link[0].op.code,'W:12');assert.equal(h.context.ntWizard.kind,'gewoon');assert.equal(h.context.ntWizard.step,'omschrijving');
-});
-
-test('bound click uses the rendered result, preserves colon keys, and ignores a second busy click',async()=>{
-  const gate=deferred(),task={k:'recent:key:with:colons',label:'Recent',dossierId:'ordinary',code:null,oms:'memo'};
-  const h=harness({tasks:[task],link:async(r,op)=>{await gate.promise;Object.assign(r,op);return{regel:r};}});h.resetWizard({filter:'recent'});
-  const ui=h.mountSearch();assert.match(ui.html,/data-ntsearch="0"/);assert.equal(typeof ui.search[0].onclick,'function');
-  h.context.ntWizard.query='now matches nothing';
-  ui.search[0].onclick();ui.search[0].onclick();assert.equal(h.calls.link.length,1);assert.equal(h.calls.link[0].op.omschrijving,'memo');gate.resolve();await tick();await tick();
-  assert.equal(h.context.ntWizard.step,'omschrijving');assert.ok(h.calls.focus.length>0);
-});
-
-test('bound Enter follows the highlighted search result and direct search focus selects the query end',async()=>{
-  const task={k:'kbd:key:7',label:'Keyboard task',dossierId:'ordinary',code:null,oms:'typed'};const h=harness({tasks:[task]});h.resetWizard({filter:'recent',query:'Keyboard'});
-  const ui=h.mountSearch();let prevented=0;ui.input.onkeydown({key:'Enter',preventDefault(){prevented++;}});await tick();
-  assert.equal(prevented,1);assert.equal(h.calls.link[0].op.omschrijving,'typed');assert.equal(h.context.ntWizard.step,'omschrijving');
-  h.resetWizard({query:'abc'});const q=h.el('nt-search-q',{value:'abc',focus(){h.context.document.activeElement=this;},setSelectionRange(a,b){this.selectionStart=a;this.selectionEnd=b;}});h.realNtFocus();
-  assert.equal(h.context.document.activeElement,q);assert.deepEqual([q.selectionStart,q.selectionEnd],[3,3]);
-});
-
-test('search filters and new-DVN action are wired to the search state',async()=>{
-  const h=harness();h.resetWizard();const ui=h.mountSearch();const dvnFilter=ui.filters.find(x=>x.dataset.ntfilter==='dvn');
-  dvnFilter.onclick();assert.equal(h.context.ntWizard.filter,'dvn');assert.equal(h.context.ntWizard.hi,0);
-  ui.dvn.onclick();await tick();assert.equal(h.context.ntWizard.kind,'volgt');assert.equal(h.context.ntWizard.step,'volgt');
-});
-
 let failed=0;
 for(const [name,fn] of tests){try{await fn();console.log('PASS '+name);}catch(error){failed++;console.error('FAIL '+name+'\n  '+(error&&error.stack||error));}}
-console.log(`${tests.length-failed}/${tests.length} Phase Y search behavior checks passed (${root})`);
+console.log(`${tests.length-failed}/${tests.length} task-selection safety checks passed (${root})`);
 process.exitCode=failed?1:0;

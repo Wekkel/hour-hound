@@ -5,8 +5,8 @@
    metadata van die reeds lopende regel. Daardoor kan invoer nooit de tijdknip
    uitstellen.                                                                  */
 function ntNieuwState(){
-  return{id:HH.state.read().running?HH.state.read().running.id:null,step:"search",kind:null,hi:0,query:"",
-    newNr:"",newNaam:"",filter:"all",dvnNaam:"",dvnHi:-1,i7q:"",draft:"",descHi:-1,
+  return{id:HH.state.read().running?HH.state.read().running.id:null,step:"kind",kind:null,hi:0,query:"",
+    newNr:"",newNaam:"",dvnNaam:"",dvnHi:-1,i7q:"",draft:"",descHi:-1,
     codeOpen:false,codeHi:0};}
 const ntRauw=()=>ntWizard&&ntWizard.draft!=null?ntWizard.draft:
   (HH.state.read().running?(HH.state.read().running.omschrijving||"").replace(VOOR,"").trim():"");
@@ -18,7 +18,7 @@ function ntSoort(){
   return["—","nog niet gekozen"];}
 function ntActiefVak(){
   if(!ntWizard)return"";
-  if(ntWizard.step==="search")return"dos";
+  if(ntWizard.step==="kind")return"soort";
   if(ntWizard.step==="dossier"||ntWizard.step==="nieuw"||ntWizard.step==="volgt")return"dos";
   if(ntWizard.step==="i7")return"code";
   return"oms";}
@@ -82,61 +82,21 @@ async function ntVoerSelectieUit(schrijf,pasToe){
   }catch(error){toast("Taakgegevens niet opgeslagen — probeer opnieuw");}
   finally{w.busy=false;}
 }
-function ntSearchRows(q){
-  const lo=schoon(q).toLowerCase(),filter=ntWizard&&ntWizard.filter||"all";
-  const hit=x=>!lo||x.toLowerCase().includes(lo),out=[];
-  // Recente taken blijven bereikbaar wanneer er veel dossiers en codes zijn.
-  if(filter==="all"||filter==="recent")takenVandaag()
-    .filter(t=>!HH.state.read().running||t.k!==taakKey(HH.state.read().running))
-    .filter(t=>hit(taakLabel(t)+" "+(t.oms||"")+" "+(t.code||""))).slice(0,8)
-    .forEach(t=>out.push({t:"taak",k:t.k,label:taakLabel(t),sub:t.oms||"geen omschrijving"}));
-  if(filter==="all"||filter==="dos"||filter==="dvn")actief()
-    .filter(d=>filter!=="dvn"||d.dvn||d.voorlopig)
-    .filter(d=>hit((d.nummer||"")+" "+d.naam))
-    .sort((a,b)=>(b.used||0)-(a.used||0)||a.naam.localeCompare(b.naam)).slice(0,12)
-    .forEach(d=>out.push({t:"dos",id:d.id,label:(d.nummer?d.nummer+" · ":"")+d.naam,
-      sub:d.dvn||d.voorlopig?"DVN dossier":(d.isI7?"i7-dossier":"dossier")}));
-  if(filter==="all"||filter==="i7")ntI7Codes(q).slice(0,10)
-    .forEach(c=>out.push({t:"i7code",code:c.code,label:c.naam,sub:"i7 · "+c.code}));
-  return out;
-}
-async function ntKiesTaak(k){
-  const t=takenVandaag().find(x=>x.k===k);if(!t)return;
-  return ntVoerSelectieUit(r=>koppelRegel(r,{dossierId:t.dossierId,code:t.code||null,
-    omschrijving:t.oms||"",telUsed:true}),w=>{
-    const d=dosOf(t.dossierId);
-    w.draft=(t.oms||"").replace(VOOR,"").trim();w.step="omschrijving";
-    w.kind=d&&d.voorlopig?"volgt":(d&&d.isI7?"i7":"gewoon");w.codeOpen=!!t.code;
-  });
-}
-function ntKiesZoekResultaat(row){
-  if(!row)return;
-  if(row.t==="dos")return ntKiesDossier(row.id,false);
-  if(row.t==="i7code")return ntKiesI7(row.code);
-  if(row.t==="taak")return ntKiesTaak(row.k);
-}
 function ntHtml(){
   if(!ntWizard||!HH.state.read().running)return"";
   const t=ntWizard.step;
-  if(t==="search"){
-    const rows=ntSearchRows(ntWizard.query),filters=[
-      ["all","Alles"],["recent","Recente taken"],["dos","Dossiers"],["i7","i7-codes"],["dvn","DVN"]];
-    return '<span class="nttimer">timer loopt</span><div class="ntq">Welke taak?</div>'+
-      '<input class="ntfield" id="nt-search-q" aria-label="Zoek een taak" autocomplete="off" value="'+
-      esc(ntWizard.query)+'" placeholder="Dossiernummer, naam, werkcode of recente taak">'+
-      '<div class="ntfilters">'+filters.map(([key,label])=>'<button aria-pressed="'+
-        ((ntWizard.filter||"all")===key)+'" data-ntfilter="'+key+'">'+label+'</button>').join("")+'</div>'+
-      '<div class="ntlist" id="nt-search-list">'+(rows.length?rows.map((x,i)=>
-        '<button type="button" class="ntitem'+(i===ntWizard.hi?" hi":"")+'" data-ntsearch="'+i+'">'+
-        '<span class="nr">'+esc(x.t==="i7code"?x.code:x.t==="taak"?"Recente taak":
-          (dosOf(x.id).nummer||"DVN"))+'</span><span class="nm">'+esc(x.label)+
-        '</span><span class="meta">'+esc(x.sub)+'</span></button>').join(""):
-        '<div class="ntnotice">Geen resultaten. Pas je zoektekst aan of maak een dossier.</div>')+'</div>'+
-      '<div class="ntfilters"><button data-ntnewroute="1">Nieuw dossier</button>'+
-        '<button data-ntdvnnew="1">Dossier volgt nog</button></div>'+
-      '<div class="nthelp"><span><kbd>↑</kbd>/<kbd>↓</kbd> kiezen · <kbd>Enter</kbd> bevestigen</span>'+
-        '<span><kbd>Esc</kbd> sluiten — timer loopt door</span></div>';
-  }
+  if(t==="kind")return '<span class="nttimer">timer loopt</span>'+ 
+    '<div class="ntq">Wat voor taak?</div>'+ 
+    '<div class="nthint">Kies eerst het soort werk.</div>'+ 
+    '<div class="ntcats">'+[
+      ["gewoon","Dossier","Declarabel · zoek of maak een dossier"],
+      ["i7","i7","Indirecte uren · kies een werkcode"],
+      ["volgt","DVN","Dossiernummer volgt · Commercieel automatisch"]
+    ].map((x,i)=>'<button type="button" class="ntcat'+(i===ntWizard.hi?" hi":"")+
+      '" data-ntkind="'+x[0]+'"><span class="k">'+(i+1)+'</span><div class="n">'+x[1]+
+      '</div><div class="d">'+x[2]+'</div></button>').join("")+'</div>'+ 
+    '<div class="nthelp"><span><kbd>←</kbd>/<kbd>→</kbd> kiezen · <kbd>Enter</kbd> bevestigen</span>'+ 
+      '<span><kbd>Esc</kbd> sluiten — timer loopt door</span></div>';
 
   if(t==="dossier"){
     const rows=ntGewoneDossiers(ntWizard.query),p=splitsDossier(schoon(ntWizard.query));
@@ -233,7 +193,9 @@ function ntFocus(wat){
   if(!ntWizard)return;
   setTimeout(()=>{
     if(!ntWizard)return;
-    if(ntWizard.step==="search"){const q=$("nt-search-q");if(q){q.focus();q.setSelectionRange(q.value.length,q.value.length);}return;}
+    if(ntWizard.step==="kind"){
+      const bs=[...$("nt-wizard").querySelectorAll("[data-ntkind]")];
+      (bs[Math.max(0,Math.min(ntWizard.hi,bs.length-1))]||bs[0])?.focus();return;}
     let id=wat==="code"?"nt-code":null;
     if(!id)id=ntWizard.step==="dossier"?"nt-dos-q":ntWizard.step==="nieuw"?
       (schoon(ntWizard.newNr)?"nt-new-naam":"nt-new-nr"):
@@ -255,7 +217,7 @@ function ntRender(){
      geopend i7-scherm na import ten onrechte "geen werkcodes" tonen. */
   const codeSig=HH.state.read().codes.map(c=>c.code+"\u001f"+c.naam+"\u001f"+(c.favoriet?1:0)).join("\u001e");
   const sig=[ntWizard.id,ntWizard.step,ntWizard.hi,ntWizard.query,ntWizard.newNr,
-    ntWizard.newNaam,ntWizard.filter,ntWizard.dvnNaam,ntWizard.dvnHi,ntWizard.i7q,ntWizard.descHi,
+    ntWizard.newNaam,ntWizard.dvnNaam,ntWizard.dvnHi,ntWizard.i7q,ntWizard.descHi,
     ntWizard.codeOpen?1:0,ntWizard.codeHi,codeSig].join("|");
   if(box.dataset.sig===sig){ntRenderSamenvatting();return;}
   box.dataset.sig=sig;box.innerHTML=ntHtml();ntRenderSamenvatting();ntBind();
@@ -271,8 +233,9 @@ function ntRender(){
       if(bewaar.start!=null&&terug.setSelectionRange){const n=terug.value.length;
         terug.setSelectionRange(Math.min(bewaar.start,n),Math.min(bewaar.end,n));}}}}
 async function ntWisIdentiteit(){
-  if(!HH.state.read().running)return null;
-  return await koppelRegel(HH.state.read().running,{dossierId:null,code:null,omschrijving:ntRauw()});}
+  return ntVoerSelectieUit(r=>koppelRegel(r,{dossierId:null,code:null,omschrijving:ntRauw()}),w=>{
+    w.kind=null;w.step="kind";w.hi=0;w.descHi=-1;w.codeOpen=false;
+  });}
 async function ntKiesSoort(k){
   const ind=k==="i7"?i7():null;
   if(k==="i7"&&!ind){toast("Het i7-dossier ontbreekt");return;}
@@ -403,40 +366,33 @@ async function ntKlaar(){
   toast("Taakgegevens gereed — timer loopt door");}
 async function ntTerug(){
   if(!ntWizard||ntWizard.busy)return;
-  if(ntWizard.step==="search"){ntWizard=null;HH.app.render();
+  if(ntWizard.step==="kind"){ntWizard=null;HH.app.render();
     toast("Invoer gesloten — de nieuwe timer loopt door");return;}
   if(ntWizard.step==="nieuw")ntWizard.step="dossier";
   else if(ntWizard.step==="omschrijving")
     ntWizard.step=ntWizard.kind==="i7"?"i7":(ntWizard.kind==="volgt"?"volgt":"dossier");
-  else ntWizard.step="search";
+  else return ntWisIdentiteit();
   ntWizard.hi=0;ntWizard.descHi=-1;ntWizard.codeOpen=false;ntRender();ntFocus();}
 function ntBind(){
   if(!ntWizard)return;
   const box=$("nt-wizard");
-  const searchRows=ntSearchRows(ntWizard.query),w=ntWizard,sq=$("nt-search-q");
-  if(sq){
-    sq.oninput=e=>{if(w.busy)return;w.query=e.target.value;w.hi=0;ntRender();};
-    sq.onkeydown=e=>{
+  const w=ntWizard;
+  box.querySelectorAll("[data-ntkind]").forEach((button,i)=>{
+    button.onfocus=()=>{if(w!==ntWizard||w.busy)return;w.hi=i;
+      box.querySelectorAll("[data-ntkind]").forEach((x,j)=>x.classList.toggle("hi",i===j));
+      ntRenderSamenvatting();};
+    button.onclick=()=>w===ntWizard&&!w.busy?ntKiesSoort(button.dataset.ntkind):undefined;
+    button.onkeydown=e=>{
       if(w!==ntWizard||w.busy)return;
-      if(e.key==="ArrowDown"||e.key==="ArrowUp"){
-        if(!searchRows.length)return;e.preventDefault();
-        w.hi=(w.hi+(e.key==="ArrowDown"?1:-1)+searchRows.length)%searchRows.length;
-        ntRender();ntFocus();return;
-      }
-      if(e.key==="Escape"){e.preventDefault();return ntTerug();}
-      if(e.key==="Enter"){e.preventDefault();return ntKiesZoekResultaat(searchRows[w.hi]);}
-    };
-  }
-  box.querySelectorAll("[data-ntsearch]").forEach(button=>{
-    const row=searchRows[Number(button.dataset.ntsearch)];
-    button.onclick=()=>w===ntWizard?ntKiesZoekResultaat(row):undefined;
-  });
-  box.querySelectorAll("[data-ntfilter]").forEach(button=>button.onclick=()=>{
-    if(w!==ntWizard||w.busy)return;w.filter=button.dataset.ntfilter;w.hi=0;ntRender();ntFocus();
-  });
-  const newDossier=box.querySelector("[data-ntnewroute]"),newDvn=box.querySelector("[data-ntdvnnew]");
-  if(newDossier)newDossier.onclick=()=>{if(w===ntWizard&&!w.busy)ntOpenNieuw();};
-  if(newDvn)newDvn.onclick=()=>w===ntWizard?ntKiesSoort("volgt"):undefined;
+      const bs=[...box.querySelectorAll("[data-ntkind]")];
+      if(e.key==="ArrowRight"||e.key==="ArrowDown"||e.key==="ArrowLeft"||e.key==="ArrowUp"){
+        e.preventDefault();e.stopPropagation();const d=e.key==="ArrowRight"||e.key==="ArrowDown"?1:-1;
+        w.hi=(i+d+bs.length)%bs.length;bs[w.hi].focus();return;}
+      if(/^[123]$/.test(e.key)){
+        e.preventDefault();e.stopPropagation();return ntKiesSoort(bs[Number(e.key)-1].dataset.ntkind);}
+      if(e.key==="Enter"||e.key===" "){e.preventDefault();e.stopPropagation();return ntKiesSoort(button.dataset.ntkind);}
+      if(e.key==="Escape"){e.preventDefault();e.stopPropagation();return ntTerug();}
+    };});
   const dq=$("nt-dos-q");
   if(dq){
     dq.oninput=e=>{ntWizard.query=e.target.value;ntWizard.hi=0;ntRender();};

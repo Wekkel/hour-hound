@@ -360,12 +360,6 @@ tr.needsreview td{box-shadow:inset 3px 0 0 var(--amber)}
 #dp-lines td:nth-child(2){white-space:normal;overflow-wrap:anywhere}
 #dvn-done>summary{cursor:pointer;font-weight:500;padding:.35rem 0}
 
-/* Patch Y: direct zoeken en blijvende invoerstatus. */
-.ntfilters{display:flex;flex-wrap:wrap;gap:.35rem;margin:.6rem 0}
-.ntfilters button{font-size:13px;padding:.4rem .65rem}
-.ntfilters button[aria-pressed="true"]{background:var(--warm);border-color:var(--moss)}
-#nt-search-list button.ntitem{width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;white-space:normal}
-#nt-search-list button.ntitem:last-child{border-bottom:0}
-#nt-search-list .meta{white-space:normal;overflow-wrap:anywhere}
+/* Blijvende invoerstatus. */
 #l-save-line{display:flex;align-items:center;gap:.5rem;margin-top:.5rem;flex-wrap:wrap}
 #l-save-line button[hidden]{display:none}

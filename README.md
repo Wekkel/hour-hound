@@ -183,6 +183,33 @@ upgrade- en offlinegevallen dus niet. Hiervoor blijft een echte browserproef nod
 De installatie-foutafhandeling volgt de
 [waitUntil-semantiek](https://developer.mozilla.org/en-US/docs/Web/API/ExtendableEvent/waitUntil).
 
+## Patch AA: drie duidelijke Nieuwe-taakroutes
+
+Nieuwe taak begint weer met drie afzonderlijke keuzes: Dossier, i7 en DVN. Elke
+keuze opent alleen de bijbehorende invoerroute. De gezamenlijke zoeklijst met
+dossiers, i7-codes, recente taken en DVN-items is verwijderd, omdat daarin te
+gemakkelijk de verkeerde taaksoort werd gekozen.
+
+Dossier toont uitsluitend gewone en inmiddels van een nummer voorziene dossiers.
+i7 koppelt het vaste indirecte-urendossier en vraagt daarna om een werkcode. DVN
+begint zonder dossierkoppeling en maakt of hergebruikt pas in de volgende stap een
+voorlopig dossier; Commercieel blijft daarbij automatisch. De toetsen 1, 2 en 3
+kiezen respectievelijk Dossier, i7 en DVN. Escape gaat één stap terug.
+
+De timer start nog steeds meteen wanneer Nieuwe taak wordt gekozen. De categorie en
+metadata worden daarna op diezelfde lopende regel opgeslagen. De wijziging raakt
+geen bestaande uren, dossiers, database- of backupschema's.
+
+`sw.js` is niet opgenomen. Verhoog bij publicatie het versienummer daarin van
+0.1.21 naar een nieuw, nog niet gebruikt nummer, zodat de gewijzigde JavaScript- en
+CSS-bestanden als één release worden geïnstalleerd.
+
+Bij oplevering zijn 220 browserloze controles geslaagd, waarvan negen gericht op
+de drie taakroutes, teruggaan, opslagfouten en dubbelklikken. Dezelfde negen tests
+falen tegen de vorige versie. De bestaande Playwright-test voor i7 is aangepast aan
+de nieuwe eerste keuze, maar niet uitgevoerd omdat in de testomgeving geen browser
+beschikbaar is.
+
 Validatie: 215 browserloze controles geslaagd, inclusief 15 nieuwe tests die de
 werkelijke service-worker-callbacks uitvoeren met native Request/Response en een
 gesimuleerde CacheStorage. Dezelfde cachetests tegen Z: 4 geslaagd, 11 gefaald.

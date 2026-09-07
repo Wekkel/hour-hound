@@ -1,7 +1,7 @@
 {
   "scripts": {
     "test": "npm run test:browserless && npm run test:e2e",
-    "test:browserless": "node tests/browserless/regression.mjs && node tests/browserless/phase-v-mutations.mjs && node tests/browserless/phase-v-locks.mjs && node tests/browserless/phase-v-admin.mjs && node tests/browserless/phase-w.mjs && node tests/browserless/phase-x-update.mjs && node tests/browserless/phase-x-io.mjs && node tests/browserless/phase-y-ui.mjs && node tests/browserless/phase-y-search.mjs && node tests/browserless/phase-z-core.mjs && node tests/browserless/phase-z-admin.mjs && node tests/browserless/phase-x-cache.mjs",
+    "test:browserless": "node tests/browserless/regression.mjs && node tests/browserless/phase-v-mutations.mjs && node tests/browserless/phase-v-locks.mjs && node tests/browserless/phase-v-admin.mjs && node tests/browserless/phase-w.mjs && node tests/browserless/phase-x-update.mjs && node tests/browserless/phase-x-io.mjs && node tests/browserless/phase-y-ui.mjs && node tests/browserless/phase-y-search.mjs && node tests/browserless/phase-z-core.mjs && node tests/browserless/phase-z-admin.mjs && node tests/browserless/phase-x-cache.mjs && node tests/browserless/phase-aa-new-task.mjs",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

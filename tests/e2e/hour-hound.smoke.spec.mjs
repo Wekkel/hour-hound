@@ -588,9 +588,9 @@ test('N-wizard eist een i7-code en bewaart de lokale werklijst na herladen', asy
 
   await page.locator('#b-switch').click();
   await expect(page.locator('#nt-wizard')).toHaveClass(/on/);
-  await expect(page.locator('#nt-search-q')).toBeFocused();
-  await page.locator('#nt-wizard [data-ntfilter="i7"]').click();
-  await expect(page.locator('#nt-search-q')).toBeVisible();
+  await expect(page.locator('#nt-wizard [data-ntkind="gewoon"]')).toBeFocused();
+  await page.locator('#nt-wizard [data-ntkind="i7"]').click();
+  await expect(page.locator('#nt-i7-q')).toBeFocused();
   await expect(page.locator('#nt-oms')).toHaveCount(0);
   const zonderCode=await page.evaluate(async()=>{
     const db=await new Promise((resolve,reject)=>{const q=indexedDB.open('hourhound',4);
@@ -600,8 +600,8 @@ test('N-wizard eist een i7-code en bewaart de lokale werklijst na herladen', asy
   });
   expect(zonderCode.code).toBeNull();
 
-  await page.locator('#nt-search-q').fill('ADM');
-  await page.locator('#nt-wizard [data-ntsearch]').filter({hasText:'ADM'}).click();
+  await page.locator('#nt-i7-q').fill('ADM');
+  await page.locator('#nt-wizard [data-nti7="ADM"]').click();
   await expect(page.locator('#nt-oms')).toBeVisible();
   await page.locator('#nt-oms').fill('interne administratie');
   await page.locator('#nt-oms').press('Enter');
