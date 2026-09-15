@@ -7,7 +7,6 @@
     throw new Error("HH-lagen ontbreken vóór services/admin.js");
   const gateway=HH.storage.indexedDB,dvn=HH.domain.dvn,over=HH.domain.overbooking,
     booking=HH.domain.booking;
-  const PREFIX=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
   const ok=effects=>Object.assign({ok:true},effects||{});
   const fail=(error,details)=>Object.assign({ok:false,error},details||{});
   const copy=value=>JSON.parse(JSON.stringify(value||{}));
@@ -15,8 +14,6 @@
     ?input.waitForRules(ids):Promise.resolve();
   const hours=(rules,hoursOf)=>Math.round((rules||[])
     .reduce((sum,rule)=>sum+(+hoursOf(rule)||0),0)*10)/10;
-  const cleanDescription=(value,fallback)=>
-    ((value||"").replace(PREFIX,"").trim())||fallback;
   const byId=(rows,id)=>(rows||[]).find(row=>row.id===id)||null;
   const entityMatches=(current,expected)=>!!current&&!!expected&&current.id===expected.id&&
     (gateway.revisionOf(current)||gateway.revisionOf(expected)?
@@ -239,14 +236,14 @@
     if(!target)delete updated.dvnTo;
     updated=replaceEntity(actual,updated,input.nowMs);
     const desired=expectedRules.map(rule=>Object.assign({},rule,{code:null,
-      omschrijving:cleanDescription(rule.omschrijving,dossier.naam)})),
+      omschrijving:dvn.resolvedDescription(rule.omschrijving,rule.datum)})),
       merged=mergeRules(rules,expectedRules,desired,input.nowMs);
     if(!merged.ok)return merged;
     const updatedRules=merged.rules,stack=snapshot.meta.stack||[],
       stackChanged=stack.some(item=>item.dossierId===actual.id);
     const updatedStack=stack.map(item=>item.dossierId!==actual.id?item:
       Object.assign({},item,{code:null,
-        omschrijving:cleanDescription(item.omschrijving,dossier.naam)}));
+        omschrijving:dvn.resolvedDescription(item.omschrijving,item.datum)}));
     writer.put("dossiers",updated);updatedRules.forEach(rule=>writer.put("regels",rule));
     if(stackChanged)writer.stores.meta.put(updatedStack,"stack");
     return ok({dossier:updated,rules:updatedRules,stack:updatedStack,stackChanged,
@@ -350,7 +347,7 @@
     const row=input.row,target=input.target,indirect=input.i7Dossier;
     const rowTargets=row&&Array.isArray(row.dosIds)?row.dosIds:[];
     if(!row||rowTargets.length!==1||!target||rowTargets[0]!==target.id||
-      dvn.isIndirect(target)||dvn.isDvn(target)||!target.nummer||!row.fp)
+      dvn.isIndirect(target)||(!target.nummer&&!target.dvnResolvedNr)||!row.fp)
       return fail("invalid_target");
     if(!indirect)return fail("i7_missing");
     if(!input.commercialCode)return fail("commercial_code_missing");
@@ -364,19 +361,24 @@
       source.length!==ids.length||source.some(rule=>!rule.eind||rule.dossierId!==actualTarget.id||
         rule.id===(snapshot.meta.running||null)))
       return fail("source_changed");
+    if(actualTarget.dvnTo&&!dvn.resolvedTarget(actualTarget,snapshot.dossiers))return fail("invalid_target");
     const rows=input.summarize(source);
     if(rows.length!==1||rows[0].fp!==row.fp)return fail("source_changed");
     if(ids.some(id=>over.openForRule(id,snapshot.overboekingen||[])))return fail("already_parked");
+    const targetNumber=dvn.resolvedNumber(actualTarget,snapshot.dossiers)||actualTarget.nummer||"";
+    const targetInfo=dvn.resolvedTarget(actualTarget,snapshot.dossiers)||actualTarget;
+    if(dvn.isIndirect(targetInfo)||((row.nummer||"")!==targetNumber)||((row.naam||"")!==(targetInfo.naam||"")))
+      return fail("source_changed");
     const record={id:input.id,status:"waiting",revision:1,targetDossierId:actualTarget.id,
-      targetNumberSnapshot:actualTarget.nummer||"",targetNameSnapshot:actualTarget.naam||"",
+      targetNumberSnapshot:targetNumber,targetNameSnapshot:targetInfo.naam||"",
       sourceDate:input.sourceDate,sourceRuleIds:ids,sourceFingerprint:row.fp,
       sourceFingerprints:[row.fp],rondModeSnapshot:input.roundingMode,
       sourceSnapshot:source.map(rule=>ruleSnapshot(rule,input.hoursOf)),
       targetLines:[{werkcode:row.code||"",omschrijving:row.oms||"",uren:row.u}],
       description:row.oms||"",hours:row.u,i7DossierId:actualIndirect.id,
       i7NumberSnapshot:actualIndirect.nummer||"",i7Code:input.commercialCode,
-      temporaryDescription:"Tijdelijk i7 voor "+HH.domain.time.schoon(row.nummer)+" · "+
-        HH.domain.time.schoon(row.naam)+" · "+HH.domain.time.schoon(row.oms),
+      temporaryDescription:"Tijdelijk i7 voor "+HH.domain.time.schoon(targetNumber)+" · "+
+        HH.domain.time.schoon(targetInfo.naam)+" · "+HH.domain.time.schoon(row.oms),
       parkedAt:input.nowIso,updatedAt:input.nowIso,
       audit:[{type:"op-i7-geboekt-geparkeerd",t:input.nowIso}]};
     const history=booking.normalizeHistory(snapshot.meta.bookingHistory),temporary=
@@ -404,10 +406,14 @@
     const targets=[...new Set(rules.map(rule=>rule.dossierId))];
     if(targets.length!==1)return fail("multiple_targets");
     const target=(actualInput.dossiers||[]).find(dossier=>dossier.id===targets[0]);
-    if(!target||dvn.isIndirect(target)||dvn.isDvn(target)||!target.nummer)
+    if(!target||dvn.isIndirect(target)||(!target.nummer&&!target.dvnResolvedNr))
       return fail("invalid_target");
+    if(target.dvnTo&&!dvn.resolvedTarget(target,actualInput.dossiers))return fail("invalid_target");
+    const targetNumber=dvn.resolvedNumber(target,actualInput.dossiers)||target.nummer||"",
+      targetInfo=dvn.resolvedTarget(target,actualInput.dossiers)||target;
+    if(dvn.isIndirect(targetInfo)||!targetNumber)return fail("invalid_target");
     const updated=replaceRecord(actualRecord,Object.assign({},actualRecord,{targetDossierId:target.id,
-      targetNumberSnapshot:target.nummer||"",targetNameSnapshot:target.naam||"",
+      targetNumberSnapshot:targetNumber,targetNameSnapshot:targetInfo.naam||"",
       sourceSnapshot:rules.map(rule=>ruleSnapshot(rule,input.hoursOf)),
       targetLines:current.lines,sourceFingerprints:current.rows.map(row=>row.fp),
       sourceFingerprint:current.rows.length===1?current.rows[0].fp:"",
@@ -434,7 +440,10 @@
     if(actualRecords.some(record=>over.state(record,context)!=="waiting"))return fail("queue_changed");
     const targets=[...new Set(actualRecords.map(record=>record.targetDossierId))],
       target=byId(actualInput.dossiers,targets[0]);
-    if(targets.length!==1||!target||!target.nummer)return fail("invalid_target");
+    if(target&&target.dvnTo&&!dvn.resolvedTarget(target,actualInput.dossiers))return fail("invalid_target");
+    const effectiveTarget=target&& (dvn.resolvedTarget(target,actualInput.dossiers)||target),
+      effectiveNumber=target&&dvn.resolvedNumber(target,actualInput.dossiers)||target&&target.nummer||"";
+    if(targets.length!==1||!target||dvn.isIndirect(effectiveTarget)||!effectiveNumber)return fail("invalid_target");
     let booked=copy(snapshot.meta.geboekt),updates=[],history=booking.normalizeHistory(
       snapshot.meta.bookingHistory);
     actualRecords.forEach(record=>{

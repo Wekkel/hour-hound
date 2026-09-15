@@ -42,6 +42,14 @@
       dvnIntappAudit:auditAdd(dossier,"controle-nodig",{reden:why},o.auditAt),
       gewijzigd:o.modifiedAt});
   }
+  function resolvedDescription(value,date){
+    const text=String(value||"").trim(),old=/^(\d{2}\.\d{2}\.\d{4}) · .*? · ([\s\S]*)$/.exec(text);
+    const stamp=/^\d{4}-\d{2}-\d{2}$/.test(date||"")?HH.domain.time.dmy(date):old&&old[1];
+    const body=old?old[2].trim():text;
+    if(!body)return "";
+    if(!stamp||body===stamp||body.startsWith(stamp+" "))return body;
+    return stamp+" "+body;
+  }
   function intappInfo(dossier,options){
     const o=Object.assign({dossiers:[],i7Dossier:null,fallbackI7Name:""},options||{}),
       ind=o.i7Dossier;
@@ -61,5 +69,5 @@
   }
 
   HH.domain.dvn=Object.freeze({isDvn,isFinalI7,isIndirect,rulesFor,resolvedTarget,
-    resolvedNumber,intappState,auditAdd,markNeedsCheck,intappInfo});
+    resolvedNumber,resolvedDescription,intappState,auditAdd,markNeedsCheck,intappInfo});
 })(globalThis.HH);

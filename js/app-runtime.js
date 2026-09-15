@@ -23,6 +23,9 @@
     const tabs=byId("tabs");
     if(tabs)[...tabs.children].forEach(button=>
       button.setAttribute("aria-pressed",button.dataset.v===value));
+    /* De open-dagenbanner staat buiten de tabpanelen en moet bij iedere
+       navigatie de actuele gedeelde dagstatus tonen. */
+    HH.renderCoordinator.render("openDays");
     /* De recentelijst wordt opnieuw gemeten nadat Nu zichtbaar is. */
     if(value==="nu")HH.renderCoordinator.render("recent");
     if(value==="dag")HH.renderCoordinator.render("day");

@@ -57,6 +57,16 @@ async function sluitWerkdag(datum){
   if(!list.length){toast("Geen regels op "+dmy(datum));return false;}
   const keuze=await dagAfsluitKeuze(datum);
   if(!keuze)return false;
+  /* Een andere overgang kan de dag hebben gesloten terwijl deze sheet open
+     stond. Controleer de gedeelde dagstatus opnieuw voordat dezelfde dagmutatie
+     wordt aangeboden; de service weigert terecht, maar de UI moet het verouderde
+     venster zelf afhandelen. */
+  const actueleStatus=dagSluitStatus(datum);
+  if(actueleStatus.gesloten){
+    HH.app.render(["day","openDays"]);
+    toast("Deze werkdag is al afgesloten om "+actueleStatus.eind);
+    return false;
+  }
   if(keuze.actie==="day"){
     HH.state.commit({viewDate:datum});HH.app.showTab("dag");HH.renderCoordinator.render("openDays");return false;}
   const eind=keuze.eind.trim();
@@ -108,4 +118,3 @@ async function sluitWerkdag(datum){
   finally{sluitWerkdag.busy=false;
     [$("d-fill"),$("dc-fill"),$("dc-nofill")].filter(Boolean).forEach(button=>button.disabled=false);
     HH.renderCoordinator.render("day");}}
-

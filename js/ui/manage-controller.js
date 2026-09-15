@@ -4,6 +4,16 @@ async function bewaarBeheerDossier(next){
   if(meldAdminFout(uit,"Dossierwijziging is niet opgeslagen"))return false;
   HH.state.upsert("dossiers",uit.dossier);return true;}
 $("booking-corrections").addEventListener("click",async e=>{
+  const copyButton=e.target.closest("[data-booking-copy]");
+  if(copyButton){
+    const key=copyButton.dataset.bookingCopy,split=key.lastIndexOf("|"),
+      correction=bookingCorrectionMap.get(key.slice(0,split)),
+      row=correction&&correction.currentOptions[Number(key.slice(split+1))],
+      field=copyButton.dataset.bookingField;
+    if(!row||!["targetNumber","hours","code","description"].includes(field))return;
+    await kopieer(field==="hours"?uu(row.hours):String(row[field]||""),copyButton,copyButton.innerHTML);
+    return;
+  }
   const button=e.target.closest("[data-booking-resolve]");if(!button)return;
   const correction=bookingCorrectionMap.get(button.dataset.bookingResolve);if(!correction)return;
   if(!confirm("Bevestig dat deze wijziging of verwijdering in Intapp is gecontroleerd en afgehandeld."))return;

@@ -59,9 +59,10 @@
        het ontbrekende aantal uren als i7/Diversen toegevoegd, onafhankelijk van gaten
        in de kloktijdlijn. Bij 8,0 uur of meer wordt niets toegevoegd. De automatische
        regel wordt ingetrokken als de dag heropent.
-   B6. Een gewone dossierregel die tijdelijk niet in Intapp kan worden geboekt, mag
+   B6. Een dossierregel met een definitief nummer (ook na DVN) die tijdelijk niet
+       in Intapp kan worden geboekt, mag
        na handmatige boeking op i7 · Commercieel in een aparte overboekingswachtrij.
-       Dat is geen DVN en geen echte dossierboeking. De latere boeking op het doel-
+       Parkeren is geen echte dossierboeking. De latere boeking op het doel-
        dossier maakt alleen de wachtrijregel af; de eerdere i7-boeking blijft staan.
    B7. Een afgeronde overboeking blijft als dossierboeking herkenbaar via de inhouds-
        vingerafdruk van haar bronregels. Een latere inhouds- of afrondingswijziging
@@ -497,7 +498,10 @@ function sumVanData(lijst,dossierRows,roundingMode,overbookingRows,history){
   return bookingDomain.aggregateIntapp(lijst,{
     roundingMode:roundingMode||HH.state.read().roundingMode,
     runningId:HH.state.read().running?HH.state.read().running.id:null,today:today(),nowHM:nowHM(),
-    getDossier:dossier,getIntappInfo:info,getCodeName:(d,c)=>{if(!c)return"";
+    getDossier:dossier,getIntappInfo:info,
+    getDescription:(r,d)=>isDvn(d)&&!isIndirect(d)&&dvnDomain.resolvedNumber(d,ds)?
+      dvnDomain.resolvedDescription(r.omschrijving,r.datum):r.omschrijving||"",
+    getCodeName:(d,c)=>{if(!c)return"";
       const codes=d&&isIndirect(d)?HH.state.read().codes:(d&&d.codes||[]);
       const found=codes.find(x=>x.code===c);return found?found.naam:c;},
     hasCodeError:(d,r)=>codeFout(d,r),

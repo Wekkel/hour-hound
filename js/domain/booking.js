@@ -142,15 +142,15 @@
   }
   function aggregateIntapp(rules,options){
     const o=Object.assign({roundingMode:"groep",getDossier:()=>null,
-      getIntappInfo:()=>({nummer:"",naam:"",status:""}),getCodeName:(d,c)=>c||"",
+      getIntappInfo:()=>({nummer:"",naam:"",status:""}),getDescription:r=>r.omschrijving||"",getCodeName:(d,c)=>c||"",
       hasCodeError:()=>false,getBoundaryId:()=>""},options||{});
     const groups={};
     (rules||[]).filter(r=>r.soort!=="pauze").forEach(r=>{
       const dossier=o.getDossier(r.dossierId),info=o.getIntappInfo(dossier)||{};
       const nummer=info.nummer||"",naam=info.naam||"",boundary=o.getBoundaryId(r)||"";
-      const key=nummer+"|"+(r.code||"")+"|"+(r.omschrijving||"")+"|"+boundary;
+      const description=o.getDescription(r,dossier),key=nummer+"|"+(r.code||"")+"|"+description+"|"+boundary;
       if(!groups[key])groups[key]={k:key,nummer,naam,
-        code:o.getCodeName(dossier,r.code),oms:r.omschrijving||"",min:0,hand:0,los:0,
+        code:o.getCodeName(dossier,r.code),oms:description,min:0,hand:0,los:0,
         dosIds:[],bron:[],dvnStatus:info.status||"",
         mist:(!dossier)||o.hasCodeError(dossier,r)||!(r.omschrijving||"").trim()};
       const group=groups[key];

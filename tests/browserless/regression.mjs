@@ -608,7 +608,7 @@ test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => 
   assertEq(assigned.dossier.dvnIntappStatus,'needs_check',
     'Nummerwijziging na posted moet controle nodig maken');
   assertEq(assigned.rules[0].code,null,'Oude verplichte DVN-code moet worden gewist');
-  assertEq(assigned.rules[0].omschrijving,'Werk','DVN-voorvoegsel moet exact verdwijnen');
+  assertEq(assigned.rules[0].omschrijving,'25.08.2026 Werk','DVN-projectnaam verdwijnt maar de werkdatum blijft');
   assertEq(assigned.dossier.dvnIntappAudit.at(-1).reden,'dossiernummer aangepast',
     'Nummerwijziging moet traceerbaar blijven');
 
@@ -740,7 +740,7 @@ test('administratieve services blokkeren ongeldige transities vóór IndexedDB',
   assertEq(finalDvn.error,'number_exists','Een genummerde DVN mag niet naar definitief i7');
   const invalidPark=await service.parkOverbooking({row:{dosIds:[linked.id],fp:'fp',bron:[]},
     target:linked,i7Dossier:{id:'i7',isI7:true},commercialCode:'COM'});
-  assertEq(invalidPark.error,'invalid_target','Een DVN mag niet als gewone blokkade worden geparkeerd');
+  assertEq(invalidPark.error,'source_changed','Een genummerde DVN zonder bronregels mag niet worden geparkeerd');
   const done={id:'o',status:'done',sourceRuleIds:[]};
   const finish=await service.finalizeOverbookingI7({overbooking:done,i7Dossier:{id:'i7'},
     commercialCode:'COM'});
@@ -1016,6 +1016,7 @@ test('DVN-domein houdt classificatie, resolutie en audit puur', () => {
 test('overboekingsdomein bewaakt afgeleide en terminale status puur', () => {
   const context={};vm.createContext(context);
   vm.runInContext(src.hh,context,{filename:'js/hh.js'});
+  vm.runInContext(src.dvnDomain,context,{filename:'js/domain/dvn.js'});
   vm.runInContext(src.overbookingDomain,context,{filename:'js/domain/overbooking.js'});
   const api=context.HH.domain.overbooking,doel={id:'d1',nummer:'304000001',naam:'Doel'},
     regel={id:'r1',dossierId:doel.id,gewijzigd:10},

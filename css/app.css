@@ -363,3 +363,12 @@ tr.needsreview td{box-shadow:inset 3px 0 0 var(--amber)}
 /* Blijvende invoerstatus. */
 #l-save-line{display:flex;align-items:center;gap:.5rem;margin-top:.5rem;flex-wrap:wrap}
 #l-save-line button[hidden]{display:none}
+
+/* Intapp: afzonderlijke velden met eigen kopieeractie. */
+.booking-field{display:grid;gap:.45rem;margin:.65rem 0;padding:.75rem;
+  border:1px solid var(--line);border-radius:9px;background:var(--paper);min-width:0}
+.booking-field .cap{display:block}
+.booking-value{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}
+.booking-field button{justify-self:start}
+#bk-copy:disabled{background:var(--line);border-color:var(--line);color:var(--soft);
+  cursor:default;opacity:.65;box-shadow:none}

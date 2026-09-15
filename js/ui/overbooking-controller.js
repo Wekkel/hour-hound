@@ -5,10 +5,11 @@ function openOverboekPost(targetId){
   if(!os.length){toast("Geen open regels voor dit dossier");return;}
   if(os.some(o=>overboekingState(o)==="needs_check")){
     toast("Controleer eerst de gewijzigde items");return;}
-  const d=dosOf(targetId);if(!d||!d.nummer){toast("Het doeldossier heeft geen bruikbaar nummer");return;}
+  const d0=dosOf(targetId),d=dvnResolvedDoel(d0)||d0;
+  if(!d||(d0.dvnTo&&!dvnResolvedDoel(d0))||isIndirect(d)||!(dvnResolvedNummer(d0)||d.nummer)){toast("Het doeldossier heeft geen bruikbaar nummer");return;}
   overboekPostIds=os.map(o=>o.id);$("op-status").textContent="Wacht op dossierboeking";
   $("op-meta").innerHTML='<div><span class="cap">Boeken op actuele Intapp-datum</span><strong>'+esc(kortDag(today()))+
-    '</strong></div><div><span class="cap">Doeldossier</span><strong>'+esc(d.nummer+' · '+d.naam)+'</strong></div>';
+    '</strong></div><div><span class="cap">Doeldossier</span><strong>'+esc((dvnResolvedNummer(d0)||d.nummer)+' · '+d.naam)+'</strong></div>';
   let regels="",totaal=0;os.forEach(o=>overboekingLijnen(o).forEach(x=>{totaal+=+x.uren||0;
     regels+='<tr><td class="mono">'+esc(kortDag(o.sourceDate))+'</td><td class="mono">'+esc(x.werkcode||'—')+'</td><td>'+esc(x.omschrijving||'')+
       '</td><td class="mono" style="text-align:right">'+uu(+x.uren||0)+'</td></tr>';}));

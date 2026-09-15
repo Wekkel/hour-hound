@@ -53,11 +53,13 @@
         result.push("summary_changed");
     }
     const target=o.dossiers.find(dossier=>dossier.id===record.targetDossierId);
-    if(!target)result.push("target_missing");
+    if(!target||(target.dvnTo&&!HH.domain.dvn.resolvedTarget(target,o.dossiers)))result.push("target_missing");
     else{
-      if((target.nummer||"")!==(record.targetNumberSnapshot||""))
+      const effective=HH.domain.dvn.resolvedTarget(target,o.dossiers)||target,
+        number=HH.domain.dvn.resolvedNumber(target,o.dossiers);
+      if((number||"")!==(record.targetNumberSnapshot||""))
         result.push("target_number_changed");
-      if((target.naam||"")!==(record.targetNameSnapshot||""))
+      if((effective.naam||"")!==(record.targetNameSnapshot||""))
         result.push("target_name_changed");
     }
     return[...new Set(result)];

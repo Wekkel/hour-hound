@@ -222,3 +222,40 @@ origin (protocol, host en poort). Meerdere Hour Hound-kopieën op verschillende
 paden van hetzelfde domein delen de cacheprefix en kunnen elkaars caches raken.
 Gebruik voor een tweede testinstallatie een aparte origin. Andere applicaties
 zonder de Hour Hound-cacheprefix worden bij activeren niet meer opgeruimd.
+
+
+## Patch AB — feedback 15 september 2026
+
+- Boekingscorrecties tonen dossiernummer, uren, eventuele werkcode en omschrijving
+  als afzonderlijke velden. De huidige waarden hebben eigen kopieerknoppen;
+  het eerdere boekingsbewijs blijft onveranderd zichtbaar.
+- Bij een opgelost DVN vervangt `04.09.2026 omschrijving` het oude voorvoegsel
+  met datum én dossiernaam. Ook eerder van hun datum ontdane DVN-regels krijgen
+  bij het samenstellen van de boeking de werkdatum terug. Bronregels worden niet
+  bij het installeren herschreven. Een afwijkende eerder bevestigde tekst blijft
+  daarom terecht een expliciete correctie; bevestigingen worden niet stil aangepast.
+- Tijdelijk boeken toont drie kopieervelden: het i7-dossiernummer, uren en de
+  tijdelijke omschrijving met het echte doeldossiernummer en de dossiernaam.
+  Genummerde voormalige DVN's, ook gekoppeld aan een bestaand dossier, ondersteunen
+  parkeren, controleren en later afhandelen. Een ontbrekend doeldossier blokkeert
+  de actie. De eerdere i7-bevestiging blijft in de historie staan.
+- Na de laatste boeking of parkeeractie verschijnt een voltooiingsscherm. Kopiëren
+  is uitgeschakeld, ook via het toetsenbord. Dit geldt ook bij heropenen van een
+  volledig verwerkte dag en bij afronden via de hele lijst.
+- Tabnavigatie ververst de algemene melding over open dagen. Een afsluitvenster
+  controleert na bevestiging opnieuw of de dag intussen al is gesloten. De bestaande
+  transactiecontrole blijft dubbele afsluitingen en aanvullingen blokkeren.
+
+Validatie: 242 geslaagde controles via `npm run test:browserless`, met uitvoerende regressies voor de
+kopieeracties, voltooiing, verouderde afsluitvensters en de parkeerketen. De nieuwe
+regressies zijn ook tegen de vorige baseline uitgevoerd. Visuele browsertests en
+het installeren van de PWA-update zijn in deze omgeving niet uitgevoerd.
+
+Geen wijziging van databaseversie 4, back-upschema 11 of `sw.js`. Verhoog bij
+publicatie zelf de serviceworker-cacheversie naar een nog niet gebruikte waarde.
+Alle patchbestanden moeten samen worden gepubliceerd.
+
+Een regel die eerder handmatig op i7 is ingevoerd maar in Hour Hound als gewone
+boeking is bevestigd, wordt niet automatisch als geparkeerd herkend. Die eerdere
+bevestiging moet op basis van de werkelijke Intapp-invoer worden hersteld; deze
+patch raadt niet welke bestaande boekingen dat betreft.

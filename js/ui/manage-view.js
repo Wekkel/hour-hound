@@ -5,9 +5,17 @@ function alleBookingSnapshots(){
   const out=[],rules=HH.state.read().rules,dates=[...new Set(rules.map(r=>r.datum))];
   dates.forEach(date=>sumVanData(rules.filter(r=>r.datum===date)).forEach(row=>
     out.push(bookingSnapshotVan(row,date))));return out;}
-function bookingRegelHtml(s){return !s?'<span class="hint">Regels verwijderd</span>':
-  '<span class="mono">'+esc(dmy(s.date))+' · '+esc(s.targetNumber||'—')+' · '+
-  esc(s.code||'—')+' · '+uu(s.hours)+' u</span><br>'+esc(s.description||'');}
+function bookingRegelHtml(s,copyKey){
+  if(!s)return '<span class="hint">Regels verwijderd</span>';
+  const field=(label,value,key)=>'<div class="booking-field"><span class="cap">'+label+
+    '</span><div class="booking-value">'+esc(value)+(copyKey!=null?'</div><button class="sm ghost" data-booking-copy="'+
+      esc(copyKey)+'" data-booking-field="'+key+'">Kopieer '+label.toLowerCase()+'</button>':'</div>')+'</div>';
+  return '<div class="hint">Werkdatum '+esc(dmy(s.date))+'</div>'+
+    field('Dossier',s.targetNumber||'—','targetNumber')+
+    field('Uren',uu(s.hours),'hours')+
+    (s.code?field('Werkcode',s.code,'code'):'')+
+    field('Omschrijving',s.description||'','description');
+}
 function renderBookingCorrections(){
   const el=$("booking-corrections");if(!el)return;
   const corrections=bookingCorrectionsFor(alleBookingSnapshots());bookingCorrectionMap=new Map(corrections.map(c=>[c.receiptId,c]));
@@ -17,9 +25,10 @@ function renderBookingCorrections(){
   if(!corrections.length){el.innerHTML=notice+'<div class="hint">Geen boekingscorrecties.</div>';return;}
   el.innerHTML=notice+corrections.map(c=>'<div class="dvncard needs_check">'+
     '<div class="dvnhead"><strong>Gewijzigd na boeken</strong><span class="tag warn">controle nodig</span></div>'+
+    '<p class="hint">Controleer de eerdere boeking in Intapp en verwerk de huidige gegevens. Bevestig hieronder pas nadat de correctie is uitgevoerd.</p>'+
     '<div class="cols"><div><span class="cap">Eerder bevestigd</span><div style="margin-top:.35rem">'+
-    (c.beforeSnapshots||[c.before]).map(bookingRegelHtml).join("<hr>")+'</div></div><div><span class="cap">Huidig</span><div style="margin-top:.35rem">'+
-    (c.currentOptions.length?c.currentOptions.map(bookingRegelHtml).join('<hr>'):
+    (c.beforeSnapshots||[c.before]).map(s=>bookingRegelHtml(s)).join("<hr>")+'</div></div><div><span class="cap">Huidig</span><div style="margin-top:.35rem">'+
+    (c.currentOptions.length?c.currentOptions.map((s,i)=>bookingRegelHtml(s,c.receiptId+'|'+i)).join('<hr>'):
       '<span class="hint">Regels verwijderd</span>')+'</div></div></div>'+
     '<div class="bar mini"><button class="sm go" data-booking-resolve="'+esc(c.receiptId)+
     '">Correctie in Intapp afgehandeld</button></div></div>').join("");}
