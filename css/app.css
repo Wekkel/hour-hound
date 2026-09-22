@@ -372,3 +372,20 @@ tr.needsreview td{box-shadow:inset 3px 0 0 var(--amber)}
 .booking-field button{justify-self:start}
 #bk-copy:disabled{background:var(--line);border-color:var(--line);color:var(--soft);
   cursor:default;opacity:.65;box-shadow:none}
+
+/* Beheer: dossieroverzicht en afhandeling binnen het bestaande venster. */
+.manage-nav,.manage-tools{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:.7rem}
+.manage-nav button[aria-pressed="true"]{background:var(--ink);color:var(--card)}
+.manage-tools input{flex:1;min-width:160px}
+.manage-row{display:flex;align-items:center;gap:.6rem;border-top:1px solid var(--line);padding:.65rem 0}
+.manage-row>div{flex:1;min-width:0;overflow-wrap:anywhere}
+.manage-row>button{flex:none}
+#manage-flow:not([hidden]){display:flex;flex-direction:column;height:min(740px,calc(100dvh - 150px));min-height:280px}
+.manage-flow-head{display:flex;flex-wrap:wrap;align-items:center;gap:.5rem;padding-bottom:.55rem;border-bottom:1px solid var(--line)}
+.manage-flow-head strong{flex:1;min-width:140px;overflow-wrap:anywhere}
+.manage-flow-body{overflow-y:auto;min-height:0;flex:1;padding:.65rem .15rem}
+.manage-flow-body select{max-width:100%;display:block;margin:.3rem 0 .75rem}
+.manage-flow-body .booking-field{padding:.5rem .6rem;margin:.45rem 0}
+.manage-flow-foot{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.45rem;padding-top:.6rem;border-top:1px solid var(--line);flex-shrink:0}
+#manage-flow button:disabled{opacity:.5;cursor:default}
+#manage-work [hidden],#v-beheer>[hidden]{display:none!important}

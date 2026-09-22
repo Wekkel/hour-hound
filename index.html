@@ -200,21 +200,26 @@
 
 <!-- ===== BEHEER ===== -->
 <div class="view" id="v-beheer">
-  <section>
-    <h2>Boekingscorrecties</h2>
-    <div class="hint" style="margin-bottom:.55rem">Gewijzigde of verwijderde regels blijven hier naast de eerder bevestigde Intapp-inhoud staan. Rond een correctie pas af nadat Intapp is gecontroleerd.</div>
-    <div id="booking-corrections"></div>
+  <nav class="manage-nav" aria-label="Beheeronderdelen">
+    <button data-manage-section="work" aria-pressed="true">Werkvoorraad</button>
+    <button data-manage-section="dossiers" aria-pressed="false">Dossiers</button>
+    <button data-manage-section="settings" aria-pressed="false">Instellingen en back-up</button>
+  </nav>
+  <section id="manage-work">
+    <div id="manage-overview">
+      <h2>Acties per dossier</h2>
+      <div class="manage-tools">
+        <input id="manage-search" type="search" placeholder="Zoek dossier of nummer" aria-label="Zoek dossier of nummer">
+        <select id="manage-filter" aria-label="Filter dossiers"><option value="open">Open acties</option><option value="all">Alle dossiers</option><option value="done">Zonder open acties</option></select>
+      </div>
+      <div id="manage-scope" hidden><span id="manage-scope-text"></span> <button class="sm ghost" data-manage-clear-scope>Alle datums</button></div>
+      <div id="manage-count" class="hint" aria-live="polite"></div>
+      <div id="manage-worklist"></div>
+    </div>
+    <div id="manage-flow" hidden></div>
   </section>
-  <section>
-    <h2>DVN naar Intapp</h2>
-    <div class="hint" style="margin-bottom:.55rem">Beheer is de enige plek voor DVN-dossiernummers en de Intapp-afhandeling. Ken het echte nummer toe en boek daarna in Intapp, of kies Naar definitief i7 als er bewust geen dossiernummer meer komt. Latere wijzigingen zetten een afgehandelde DVN terug naar controle nodig.</div>
-    <div id="dvn-intapp"></div>
-  </section>
-  <section>
-    <h2>Nog over te boeken naar dossier</h2>
-    <div class="hint" style="margin-bottom:.55rem">Gewone dossierregels die tijdelijk als i7 · Commercieel zijn geboekt. Boek ze later op het echte dossier op de actuele Intapp-datum. De eerdere i7-boeking blijft bewust staan. Als er geen dossierboeking meer komt, kies je Naar definitief i7.</div>
-    <div id="overboek-intapp"></div>
-  </section>
+  <div hidden aria-hidden="true"><div id="booking-corrections"></div><div id="dvn-intapp"></div><div id="overboek-intapp"></div></div>
+  <div id="manage-dossiers" hidden>
   <section>
     <h2>Dossiers</h2>
     <div id="b-list"></div>
@@ -225,6 +230,8 @@
       <button id="b-adddos">Toevoegen</button>
     </div>
   </section>
+  </div>
+  <div id="manage-settings" hidden>
   <section>
     <h2>Bibliotheek en back-up</h2>
     <div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
@@ -262,6 +269,7 @@
       alleen als je daar expliciet voor kiest. Het logboek zit nooit in een back-up.
       Regels worden onbeperkt bewaard: blader onder Dag naar elke datum.</div>
   </section>
+  </div>
 </div>
 
 </main>

@@ -32,19 +32,20 @@ const isAfgehandeld=row=>isAfgehandeldOp(row,boek.datum);
 function dagBoekStatus(rows,datum){
   const aantalGeboekt=rows.filter(row=>isDossierGeboektOp(row,datum)).length;
   const aantalGeparkeerd=rows.filter(row=>isGeparkeerdOp(row,datum)).length;
-  const correcties=rows.filter(row=>isCorrectieOp(row,datum)).length;
+  const correcties=rows.filter(row=>!isAfgehandeldOp(row,datum)&&isCorrectieOp(row,datum)).length;
   return{geboekt:aantalGeboekt,geparkeerd:aantalGeparkeerd,
     open:Math.max(0,rows.length-aantalGeboekt-aantalGeparkeerd),
     correcties,
     klaar:rows.length>0&&rows.every(row=>isAfgehandeldOp(row,datum))};}
 function kanParkeren(row){
-  if(!row||isAfgehandeld(row)||!Array.isArray(row.dosIds)||row.dosIds.length!==1)return false;
+  if(!row||isAfgehandeld(row)||isCorrectieOp(row,boek.datum)||!Array.isArray(row.dosIds)||row.dosIds.length!==1)return false;
   const d=dosOf(row.dosIds[0]);
   if(d&&d.dvnTo&&!dvnResolvedDoel(d))return false;
   const target=dvnResolvedDoel(d)||d;
   return !!d&&!isIndirect(d)&&!!target&&!isIndirect(target)&&!!dvnResolvedNummer(d);
 }
 async function zetGeboekt(row,aan){
+  if(!row||(aan&&isCorrectieOp(row,boek.datum)))return false;
   const nowIso=new Date().toISOString();
   try{const uit=await HH.services.admin.setRegularBooking({snapshot:rowSnapshotOp(row,boek.datum),
     fingerprint:row.fp,enabled:aan,receiptId:uid(),resolutionId:uid(),nowIso,
@@ -60,7 +61,7 @@ async function zetGeboekt(row,aan){
 function boekStat(){
   const el=$("d-boekstat");if(!el)return;
   const datum=HH.state.read().viewDate,rs=sumRows(),status=dagBoekStatus(rs,datum);
-  const verwerkt=status.klaar&&dagSluitStatus(datum).gesloten,btn=$("d-boek");
+  const verwerkt=status.klaar,btn=$("d-boek");
   btn.classList.toggle("is-disabled",verwerkt);
   btn.setAttribute("aria-disabled",verwerkt?"true":"false");
   btn.title=verwerkt?(status.geparkeerd?
@@ -79,12 +80,7 @@ async function kopieer(tekst,btn,label){
   catch(e){toast("Kopiëren mislukt — het venster moet actief zijn");return false;}}
 function openBoek(){
   const rs=sumRows(),datum=HH.state.read().viewDate,status=dagBoekStatus(rs,datum);
-  if(status.correcties){toast("Gewijzigd na boeken — handel eerst de correcties onder Beheer af");
-    HH.app.showTab("beheer");return;}
   if(!rs.length){toast("Niets te boeken op deze dag");return;}
-  if(status.klaar&&dagSluitStatus(datum).gesloten){
-    toast(status.geparkeerd?"Alle regels van deze dag zijn al geboekt of geparkeerd in Intapp":
-      "Deze dag is al geboekt in Intapp");return;}
   const probs=controleer(),blok=probs.filter(x=>x.blok);
   if(blok.length){toonBlokkade(blok,"boekvenster");return;}
   const waar=probs.filter(x=>!x.blok);
@@ -92,7 +88,7 @@ function openBoek(){
     waar.slice(0,6).map(x=>"• "+x.tekst).join("\n")+(waar.length>6?"\n• …":"")+
     "\n\nDoorgaan met boeken?"))return;
   boek={aan:true,i:0,rows:rs,datum:HH.state.read().viewDate,lijst:false,completion:false};
-  const eerste=rs.findIndex(x=>!isAfgehandeld(x));
+  const eerste=rs.findIndex(x=>!isAfgehandeld(x)&&!isCorrectieOp(x,datum));
   boek.i=eerste<0?0:eerste;boek.completion=eerste<0;
   $("boek").classList.add("on");tekenBoek();
   L("boekvenster",rs.length+" regels · "+uu(rs.reduce((s,x)=>s+x.u,0))+" u");}
@@ -103,19 +99,21 @@ function boekGa(n){
 function volgendeOpen(){
   const n=boek.rows.length;
   for(let s=1;s<=n;s++){const j=(boek.i+s)%n;
-    if(!isAfgehandeld(boek.rows[j])){boek.i=j;tekenBoek();return true;}}
+    if(!isAfgehandeld(boek.rows[j])&&!isCorrectieOp(boek.rows[j],boek.datum)){boek.i=j;tekenBoek();return true;}}
   return false;}
 function tekenBoek(){
   if(boek.completion&&!boek.lijst){
-    $("bk-titel").textContent="Boeken in Intapp · klaar";
-    $("bk-tel").innerHTML='<span class="pill ok">Alle regels verwerkt</span>';
+    const status=dagBoekStatus(boek.rows,boek.datum),open=status.open-status.correcties;
+    $("bk-titel").textContent=status.correcties?"Boeken in Intapp · Correcties afronden":"Boeken in Intapp · klaar";
+    $("bk-tel").innerHTML='<span class="pill ok">'+status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd · "+open+" open · "+status.correcties+" correcties</span>";
     $("bk-kaart").className="kaart gedaan";
-    $("bk-kaart").innerHTML='<div class="hint ok"><strong>Deze dag is volledig verwerkt.</strong><br>Alle regels zijn geboekt of tijdelijk niet boekbaar gemaakt.</div>';
+    $("bk-kaart").innerHTML='<div class="hint ok"><strong>De open regels zijn verwerkt.</strong><br>'+status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd"+(status.correcties?" · "+status.correcties+" correcties wachten in Beheer":"")+".</div>";
     $("bk-lijst").style.display="none";$("bk-kaart").style.display="block";
     $("bk-copy").disabled=true;$("bk-copy").setAttribute("aria-disabled","true");
     $("bk-park").style.display="none";$("bk-done").className="go";
     $("bk-prev").disabled=true;$("bk-next").disabled=true;$("bk-toggle").disabled=false;
-    $("bk-done").innerHTML="Alles verwerkt · sluiten";$("bk-done").title="Sluit dit venster";return;
+    $("bk-done").innerHTML=status.correcties?"Correcties bekijken":"Alles verwerkt · sluiten";
+    $("bk-done").title=status.correcties?"Open de correcties in Beheer":"Sluit dit venster";return;
   }
   $("bk-prev").disabled=false;$("bk-next").disabled=false;$("bk-toggle").disabled=false;
   const rs=boek.rows,x=rs[boek.i];if(!x)return;
@@ -131,10 +129,10 @@ function tekenBoek(){
   $("bk-lijst").style.display=boek.lijst?"block":"none";
   const g=isDossierGeboekt(x),p=isGeparkeerd(x),c=isCorrectieOp(x,boek.datum);
   $("bk-kaart").className="kaart"+(g||p?" gedaan":"");
-  $("bk-copy").disabled=!!(g||p);$("bk-copy").setAttribute("aria-disabled",g||p?"true":"false");
+  $("bk-copy").disabled=!!(g||p||c);$("bk-copy").setAttribute("aria-disabled",g||p||c?"true":"false");
   $("bk-kaart").innerHTML=
     '<div class="rij"><span class="nr">'+esc(x.nummer||"—")+"</span>"+
-    '<button class="sm ghost" id="bk-nrcopy"'+(g||p?' disabled aria-disabled="true"':'')+' title="Dossiernummer kopiëren">kopieer</button>'+ 
+    '<button class="sm ghost" id="bk-nrcopy"'+(g||p||c?' disabled aria-disabled="true"':'')+' title="Dossiernummer kopiëren">kopieer</button>'+ 
     '<span class="uu">'+uu(x.u)+"</span></div>"+
     '<div class="rij"><span class="nm">'+esc(x.naam||"geen dossier")+"</span>"+
     (x.dvnStatus?'<span class="tag dvn">DVN dossier</span>':"")+
@@ -154,19 +152,19 @@ function tekenBoek(){
       (r.dvnStatus?'<span class="tag dvn">DVN dossier</span>':"")+
       '<span class="bo">'+esc(r.oms||"(leeg)")+"</span>"+
       '<span class="bu">'+uu(r.u)+"</span>"+
-      '<button class="sm ghost" data-copy="'+i+'"'+(rg||rp?' disabled aria-disabled="true"':'')+'>kopieer</button>'+ 
+      '<button class="sm ghost" data-copy="'+i+'"'+(rg||rp||rc?' disabled aria-disabled="true"':'')+'>kopieer</button>'+ 
       (rp?'<span class="pill wait">geparkeerd</span>':
         (rc?'<button class="sm warn" data-correctie="'+i+'">correctie bekijken</button>':
         '<input type="checkbox" data-done="'+i+'"'+(rg?" checked":"")+
         ' style="width:auto;min-width:0" title="Staat in Intapp">'))+
-      (!rg&&!rp&&kanParkeren(r)?'<button class="sm ghost warn" data-park="'+i+'">tijdelijk niet boekbaar</button>':"")+
+      (!rg&&!rp&&!rc&&kanParkeren(r)?'<button class="sm ghost warn" data-park="'+i+'">tijdelijk niet boekbaar</button>':"")+ 
       '</div>';});
   $("bk-lijst").innerHTML=h;
-  const allesKlaar=klaar.length>=rs.length;
+  const allesKlaar=rs.every(isAfgehandeld);
   $("bk-done").classList.toggle("go",allesKlaar);
-  $("bk-done").innerHTML=(allesKlaar?"Alles geboekt &#183; sluiten":
+  $("bk-done").innerHTML=(c?"Correctie bekijken":allesKlaar?"Alles verwerkt &#183; sluiten":
     (g||p?"Volgende openstaande":"Geboekt &#183; volgende"))+' <kbd>&#9166;</kbd>';
-  $("bk-done").title=allesKlaar?"Alle regels staan in Intapp — sluit dit venster":
+  $("bk-done").title=c?"Open deze correctie in Beheer":allesKlaar?"Alle regels staan in Intapp — sluit dit venster":
     (g||p?"Ga naar de volgende openstaande regel":"Markeer als geboekt en ga verder");
   $("bk-park").style.display=kanParkeren(x)?"":"none";}
 
@@ -217,7 +215,7 @@ async function bevestigParkeer(){
 }
 async function kopieerHuidig(){
   if(boek.completion)return;
-  const x=boek.rows[boek.i];if(!x||isAfgehandeld(x))return;
+  const x=boek.rows[boek.i];if(!x||isAfgehandeld(x)||isCorrectieOp(x,boek.datum))return;
   await kopieer(schoon(x.oms),$("bk-copy"),'Kopieer omschrijving <kbd>C</kbd>');
   L("boek-kopieer","regel "+(boek.i+1)+" van "+boek.rows.length);}
 $("bk-close").onclick=sluitBoek;
@@ -229,11 +227,14 @@ $("bk-copy").onclick=kopieerHuidig;
 $("bk-park").onclick=()=>openParkeer(boek.rows[boek.i]);
 $("bk-done").onclick=async()=>{
   const x=boek.rows[boek.i];if(!x)return;
-  if(boek.completion){sluitBoek();return;}
-  if(boek.rows.every(isAfgehandeld)){
-    sluitBoek();toast("Alle regels van deze dag zijn geboekt of geparkeerd");return;}
-  if(isCorrectieOp(x,boek.datum)){sluitBoek();HH.app.showTab("beheer");
-    toast("Handel de wijziging af bij Boekingscorrecties");return;}
+  if(boek.completion){
+    const status=dagBoekStatus(boek.rows,boek.datum);sluitBoek();
+    if(status.correcties){if(typeof openBeheerVoorDag==="function")openBeheerVoorDag(boek.datum);else HH.app.showTab("beheer");}
+    return;}
+  if(isCorrectieOp(x,boek.datum)){sluitBoek();if(typeof openBeheerVoorDag==="function")openBeheerVoorDag(boek.datum,x);else HH.app.showTab("beheer");
+    toast("Controleer de getoonde wijziging in Intapp");return;}
+  if(boek.rows.every(r=>isAfgehandeld(r)||isCorrectieOp(r,boek.datum))){
+    boek.completion=true;boek.lijst=false;tekenBoek();return;}
   if(!isAfgehandeld(x)){if(!await zetGeboekt(x,true))return;}
   if(!volgendeOpen()){
     boek.completion=true;tekenBoek();
@@ -241,24 +242,24 @@ $("bk-done").onclick=async()=>{
   boekStat();};
 $("bk-lijst").addEventListener("click",async e=>{
   const c=e.target.closest("[data-copy]");
-  if(c){const i=+c.dataset.copy;if(boek.completion||!boek.rows[i]||isAfgehandeld(boek.rows[i]))return;boek.i=i;
+  if(c){const i=+c.dataset.copy;if(boek.completion||!boek.rows[i]||isAfgehandeld(boek.rows[i])||isCorrectieOp(boek.rows[i],boek.datum))return;boek.i=i;
     await kopieer(schoon(boek.rows[i].oms),c,"kopieer");
     L("boek-kopieer","regel "+(i+1)+" van "+boek.rows.length);return;}
   const d=e.target.closest("[data-done]");
   if(d){const i=+d.dataset.done;boek.i=i;
     if(await zetGeboekt(boek.rows[i],d.checked)){
-      boek.completion=boek.rows.every(isAfgehandeld);
+      boek.completion=boek.rows.every(r=>isAfgehandeld(r)||isCorrectieOp(r,boek.datum));
       tekenBoek();boekStat();
     }
     return;}
   const p=e.target.closest("[data-park]");
   if(p){boek.i=+p.dataset.park;openParkeer(boek.rows[boek.i]);return;}
   const correction=e.target.closest("[data-correctie]");
-  if(correction){sluitBoek();HH.app.showTab("beheer");return;}
+  if(correction){const i=+correction.dataset.correctie,x=boek.rows[i];sluitBoek();if(typeof openBeheerVoorDag==="function")openBeheerVoorDag(boek.datum,x);else HH.app.showTab("beheer");return;}
   const r=e.target.closest("[data-i]");
   if(r){boek.i=+r.dataset.i;boek.lijst=false;tekenBoek();}});
 $("bk-kaart").addEventListener("click",async e=>{
-  if(e.target.id==="bk-nrcopy"){if(boek.completion)return;const x=boek.rows[boek.i];if(!x||isAfgehandeld(x))return;
+  if(e.target.id==="bk-nrcopy"){if(boek.completion)return;const x=boek.rows[boek.i];if(!x||isAfgehandeld(x)||isCorrectieOp(x,boek.datum))return;
     await kopieer(schoon(x.nummer),e.target,"kopieer");}});
 function boekKeys(e){
   const k=e.key.toLowerCase();

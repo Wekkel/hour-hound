@@ -259,3 +259,35 @@ Een regel die eerder handmatig op i7 is ingevoerd maar in Hour Hound als gewone
 boeking is bevestigd, wordt niet automatisch als geparkeerd herkend. Die eerdere
 bevestiging moet op basis van de werkelijke Intapp-invoer worden hersteld; deze
 patch raadt niet welke bestaande boekingen dat betreft.
+
+## Patch AC — dossierwerkvoorraad en boeken vanuit Dag
+
+Beheer opent met een compacte werkvoorraad per dossier, een zoekveld en filters.
+DVN-koppelingen volgen de opgeslagen dossieridentiteit; gelijke namen of hetzelfde
+i7-nummer voegen verschillende zaken niet samen. Ontbrekende of tegenstrijdige
+koppelingen blijven zichtbaar onder ‘Toewijzing controleren’. Tellingen betreffen
+open acties: één correctie met meerdere regels blijft één actie.
+
+‘Afhandelen’ opent de dossierwizard met afzonderlijke kopieervelden voor dossier,
+uren, werkcode en omschrijving. Eerdere bevestigingen staan ingeklapt. Bij een
+correctie met meerdere regels wordt de bevestiging pas na de laatste regel
+opgeslagen. ‘Later doen’ verandert niets aan de boekingsstatus. Dossiergegevens
+en instellingen/back-up hebben eigen onderdelen binnen Beheer.
+
+Een correctie blokkeert niet langer de overige boekingen van dezelfde dag.
+Vanuit het boekvenster leiden correcties naar de betrokken datum in Beheer.
+Een verwerkte dag krijgt ook zonder dagafsluiting een grijze boekknop. Het
+voltooiingsscherm onderscheidt geboekt, geparkeerd en nog te corrigeren;
+kopiëren van reeds verwerkte regels blijft uitgeschakeld.
+
+Bestaande bronregels, boekingsbewijzen en opslagformaten worden niet gemigreerd.
+Hour Hound kan niet controleren wat daadwerkelijk in Intapp staat: bestaande
+bevestigingen moeten bij twijfel met Intapp worden vergeleken.
+
+Publiceer alle gewijzigde bestanden samen bovenop patch AB. `sw.js` is bewust
+niet inbegrepen of gewijzigd; verhoog zelf de cacheversie bij publicatie.
+Visuele browsertests en installatie van de PWA-update zijn niet uitgevoerd.
+
+Validatie AC: `npm run test:browserless` slaagt met 272 controles, waaronder
+30 nieuwe uitvoerende controles voor groepering, wizard, opslag en dagboeken.
+Die 30 controles falen tegen de AB-baseline en slagen met AC.

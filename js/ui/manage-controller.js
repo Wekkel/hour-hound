@@ -125,3 +125,98 @@ $("b-adddos").onclick=async()=>{
   try{await makeDossier(naam,nr||null,$("b-lang").value);}
   catch(error){toast("Dossier niet toegevoegd — "+String(error.message||error));return;}
   $("b-nr").value="";$("b-naam").value="";HH.app.render();toast("Dossier toegevoegd");};
+
+function sluitBeheerFlow(){
+  if(beheerUi.busy)return;
+  beheerUi.group=null;beheerUi.taskKey=null;beheerUi.error="";renderBeheerWerk();
+  window.scrollTo&&window.scrollTo(0,beheerUi.scroll);
+}
+async function bevestigBeheerTaak(){
+  if(beheerUi.busy||!beheerShown)return;
+  const shown=beheerShown,current=beheerWerkData().flatMap(g=>g.tasks).find(t=>t.key===shown.key);
+  if(!current||beheerTaakSignature(current)!==beheerTaakSignature(shown)){
+    beheerUi.error="De gegevens zijn gewijzigd. Controleer de opnieuw getoonde actie.";renderBeheerWerk();return;
+  }
+  if(beheerUi.line<shown.lines.length-1){beheerUi.seen.push(beheerUi.line);beheerUi.line++;renderBeheerFlow();return;}
+  if(Array.from({length:Math.max(0,shown.lines.length-1)},(_,i)=>i).some(i=>!beheerUi.seen.includes(i)))return;
+  beheerUi.busy=true;beheerUi.error="";renderBeheerFlow();
+  try{
+    if(shown.type==="inspect"){beheerUi.section="dossiers";return;}
+    if(shown.type==="number"){await kenNummerToe(shown.dossierId);return;}
+    if(shown.type==="overcheck"){await verversOverboeking(shown.record.id);return;}
+    const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString(),s=HH.state.read();let out;
+    if(shown.type==="correction"){
+      if(!confirm("Zijn alle getoonde wijzigingen of verwijderingen in Intapp afgehandeld?"))return;
+      out=await HH.services.admin.resolveBookingCorrection({receiptId:shown.correction.receiptId,
+        currentKeys:shown.correction.currentOptions.map(bookingSemanticKey),resolutionId:uid(),nowIso,
+        aggregateRows:sumVanData,snapshotRow:bookingSnapshotVan,validateRules:valideerBoekData});
+    }else if(shown.type==="book"){
+      out=await HH.services.admin.setRegularBooking({snapshot:shown.snapshot,fingerprint:shown.fingerprint,enabled:true,
+        receiptId:uid(),resolutionId:uid(),nowIso,rules:s.rules,aggregateRows:sumVanData,snapshotRow:bookingSnapshotVan,
+        validateRules:valideerBoekData,waitForRules:rustig});
+    }else if(shown.type==="legacy"){
+      if(!confirm("Bevestig dat de bestaande Intapp-boeking volledig is gecontroleerd en gecorrigeerd; de uren zijn niet nogmaals toegevoegd."))return;
+      out=await HH.services.admin.markDvnPosted({dossier:dosOf(shown.dossierId),dossiers:s.dossiers,rules:s.rules,snapshots:shown.lines,
+        legacyReviewed:true,hoursOf:urenOf,nowMs,nowIso,aggregateRows:sumVanData,snapshotRow:bookingSnapshotVan,validateRules:valideerBoekData});
+    }else if(shown.type==="overpost"){
+      out=await HH.services.admin.completeOverbookings({ids:[shown.record.id],overbookings:[shown.record],rules:s.rules,dossiers:s.dossiers,
+        summarize:sumVan,roundingMode:s.roundingMode,booked:s.booked,hoursOf:urenOf,nowIso,bookedDate:today()});
+    }
+    if(!out||!out.ok){beheerUi.error="Opslaan is niet gelukt. De actie blijft open. "+(out&&adminFoutTekst[out.error]||"Controleer de gegevens en probeer opnieuw.");return;}
+    const delta={bookingHistory:out.history};
+    if(out.booked)delta.booked=out.booked;
+    if(out.dossier)delta.dossiers=mergeById(s.dossiers,[out.dossier]);
+    if(out.overbookings)delta.overbookings=mergeById(s.overbookings,out.overbookings);
+    HH.state.commit(delta);beheerUi.taskKey=null;beheerUi.signature="";beheerUi.seen=[];announce();boekStat();
+  }catch(error){beheerUi.error="Opslaan mislukt. Er is geen bevestiging gegeven; probeer opnieuw.";}
+  finally{beheerUi.busy=false;renderBeheerWerk();}
+}
+$("v-beheer").addEventListener("click",async e=>{
+  if(e.target.closest("[data-manage-clear-scope]")){if(beheerUi.busy)return;beheerUi.scopeDate=null;renderBeheerWerk();return;}
+  const section=e.target.closest("[data-manage-section]");if(section){if(beheerUi.busy)return;beheerUi.section=section.dataset.manageSection;renderBeheerWerk();return;}
+  const open=e.target.closest("[data-manage-open]");if(open){
+    const g=beheerGroups.find(x=>x.id===open.dataset.manageOpen);if(!g)return;
+    beheerUi.group=g.id;beheerUi.dossierIds=g.dossierIds.slice();beheerUi.title=(g.number?g.number+" · ":"")+g.name;
+    beheerUi.taskKey=null;beheerUi.signature="";beheerUi.error="";beheerUi.scroll=window.scrollY||0;renderBeheerWerk();return;
+  }
+  if(e.target.closest("[data-manage-back]")){sluitBeheerFlow();return;}
+  if(beheerUi.busy)return;
+  const copy=e.target.closest("[data-manage-copy]");if(copy){const s=beheerShown&&beheerShown.lines[beheerUi.line],key=copy.dataset.manageCopy;
+    if(s&&["hours","targetNumber","code","description"].includes(key))await kopieer(key==="hours"?uu(s.hours):String(s[key]||""),copy,copy.innerHTML);return;}
+  if(e.target.closest("[data-manage-prev]")){beheerUi.line=Math.max(0,beheerUi.line-1);renderBeheerFlow();return;}
+  if(e.target.closest("[data-manage-later]")){
+    const group=beheerGroups.find(g=>g.id===beheerUi.group),tasks=group?group.tasks:[],i=tasks.findIndex(t=>t.key===beheerUi.taskKey);
+    if(tasks.length<2){sluitBeheerFlow();return;}
+    beheerUi.taskKey=tasks[(i+1)%tasks.length].key;beheerUi.error="";renderBeheerFlow();return;
+  }
+  if(e.target.closest("[data-manage-final]")){
+    const task=beheerShown;if(!task)return;beheerUi.busy=true;
+    try{if(task.type==="number")await maakDvnDefinitiefI7(task.dossierId);else if(task.record)await maakOverboekingDefinitiefI7(task.record.id);}
+    finally{beheerUi.busy=false;renderBeheerWerk();}return;
+  }
+  if(e.target.closest("[data-manage-confirm]"))await bevestigBeheerTaak();
+});
+$("v-beheer").addEventListener("input",e=>{if(e.target.id==="manage-search"){beheerUi.query=e.target.value;renderBeheerWerk();}});
+$("v-beheer").addEventListener("change",e=>{
+  if(beheerUi.busy)return;
+  if(e.target.id==="manage-filter"){beheerUi.filter=e.target.value;renderBeheerWerk();}
+  if(e.target.id==="manage-task"){beheerUi.taskKey=e.target.value;beheerUi.error="";renderBeheerFlow();}
+});
+HH.ui.manageKeyboard=e=>{
+  if(HH.state.read().tab!=="beheer"||!beheerUi.group||beheerUi.section!=="work")return false;
+  if(e.key==="Escape"){e.preventDefault();sluitBeheerFlow();}
+  return true;
+};
+
+function openBeheerVoorDag(datum,row){
+  beheerUi.section="work";beheerUi.scopeDate=datum;beheerUi.query="";beheerUi.filter="open";
+  beheerUi.group=null;beheerUi.taskKey=null;beheerUi.signature="";beheerUi.error="";
+  $("manage-search").value="";$("manage-filter").value="open";
+  HH.app.showTab("beheer");renderBeheerWerk();
+  const ids=row?new Set(bookingBronIds(row)):null;
+  const groups=beheerGroups.filter(g=>g.tasks.some(t=>t.type==="correction"&&(!ids||
+    (t.correction.beforeSnapshots||[t.correction.before]).concat(t.correction.currentOptions).some(s=>bookingBronIds(s).some(id=>ids.has(id))))));
+  if(groups.length===1){const g=groups[0];beheerUi.group=g.id;beheerUi.dossierIds=g.dossierIds.slice();
+    beheerUi.taskKey=g.tasks.find(t=>t.type==="correction"&&(!ids||(t.correction.beforeSnapshots||[t.correction.before]).concat(t.correction.currentOptions).some(s=>bookingBronIds(s).some(id=>ids.has(id))))).key;
+    renderBeheerWerk();}
+}

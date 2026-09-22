@@ -763,3 +763,7 @@ function dvnHeeftBoekCorrecties(d){
     !rows.some(row=>bookingDomain.semanticEqual(item.snapshot,row)));}
 
 const legeBookingHistory=bookingDomain.emptyHistory;
+
+/* UI-adapters voor dossierwerkvoorraad en gedeeld boekingsbewijs. */
+const bookingBronIds=bookingDomain.rowSourceIds;
+const bookingBewijsVoor=bookingDomain.evidenceForSnapshot;

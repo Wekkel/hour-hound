@@ -47,6 +47,7 @@ $("open-days").addEventListener("click",async e=>{
 document.addEventListener("keydown",async e=>{
   const modal=HH.ui.modals.blocksGlobalKeyboard();
   if(modal){if(modal==="boek")HH.ui.bookingKeys(e);return;}
+  if(HH.ui.manageKeyboard&&HH.ui.manageKeyboard(e))return;
   if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="z"&&!e.shiftKey){
     const t=e.target;
     if(!(/^(INPUT|TEXTAREA)$/.test(t.tagName)&&t.value!==t.defaultValue)){

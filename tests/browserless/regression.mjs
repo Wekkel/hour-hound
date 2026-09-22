@@ -1590,11 +1590,11 @@ test('Patch T koppelt alle urenberekeningen expliciet aan de UI-adapters', () =>
     'Overboeking verversen moet urenOf expliciet injecteren');
 });
 
-test('Patch T maakt een afgesloten en verwerkte dag herkenbaar inactief', () => {
+test('Patch AC maakt een verwerkte dag onafhankelijk van afsluiten herkenbaar inactief', () => {
   assertIncludes(src.booking,'function dagBoekStatus(rows,datum)',
     'Dagboekstatus moet datum-expliciet en onafhankelijk van een oud wizardvenster zijn');
-  assertIncludes(src.booking,'status.klaar&&dagSluitStatus(datum).gesloten',
-    'Alleen een afgesloten én volledig verwerkte dag mag inactief worden');
+  assertIncludes(src.booking,'const verwerkt=status.klaar',
+    'Volledig verwerkte dagen zijn ook zonder afsluiting inactief');
   assertIncludes(src.booking,'btn.classList.toggle("is-disabled",verwerkt)',
     'De dagknop moet een zichtbare inactieve status krijgen');
   assertIncludes(src.booking,'btn.setAttribute("aria-disabled",verwerkt?"true":"false")',
@@ -1608,7 +1608,7 @@ test('Patch T maakt een afgesloten en verwerkte dag herkenbaar inactief', () => 
 });
 
 test('DVN kan bewust en traceerbaar naar definitief i7', () => {
-  assertIncludes(src.html, 'Naar definitief i7', 'Beheer moet de bewuste eindactie uitleggen');
+  assertIncludes(src.views, 'Naar definitief i7', 'Beheer moet de bewuste eindactie uitleggen');
   assertIncludes(src.timer, 'async function maakDvnDefinitiefI7', 'Definitief-i7-transactie ontbreekt');
   assertIncludes(src.admin, 'dvnDisposition:"final_i7"',
     'Terminale DVN-dispositie moet worden opgeslagen');
@@ -1624,7 +1624,7 @@ test('Patch H houdt gewone blokkade los van DVN en echte boekstatus', () => {
   assertIncludes(src.storage, 'd.createObjectStore("overboekingen"', 'Aparte IndexedDB-wachtrij ontbreekt');
   assertIncludes(src.storage, 'const DB_NAME="hourhound",DB_VERSION=4',
     'Databaseversie moet de wachtrij-store aanmaken');
-  assertIncludes(src.html, 'Nog over te boeken naar dossier', 'Beheer mist de overboekingswerkvoorraad');
+  assertIncludes(src.views, 'Van tijdelijk i7 naar dossier', 'Beheer mist de overboekingswerkvoorraad');
   assertIncludes(src.html, 'Tijdelijk niet boekbaar', 'Dagwizard mist de parkeeractie');
   assertIncludes(src.html, 'Op i7 geboekt · parkeren', 'Expliciete tijdelijke i7-bevestiging ontbreekt');
   assertIncludes(src.admin, 'atomic(input,["regels","dossiers","overboekingen"],["running","bookingHistory"]',

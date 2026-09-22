@@ -376,7 +376,7 @@ async function slaDvnNummerOp(){
     toast("Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.");return;}
   const warn=[];
   if(bestaand)warn.push('Nummer '+nr+' hoort al bij "'+bestaand.naam+'". Deze DVN blijft eigen regels houden, maar Intapp gebruikt dat bestaande dossier.');
-  warn.push(rs.length+' regel(s) blijven intern aan deze DVN gekoppeld. Het datum/werknaam-voorvoegsel verdwijnt en de i7-werkcode wordt gewist.');
+  warn.push(rs.length+' regel(s) blijven intern aan deze DVN gekoppeld. De DVN-naam verdwijnt uit de omschrijving, de werkdatum blijft behouden en de i7-werkcode wordt gewist.');
   if(!confirm(warn.join("\n\n")+"\n\nDoorgaan?"))return;
   const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
   try{
