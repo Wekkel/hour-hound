@@ -88,12 +88,15 @@ const adminFoutTekst={invalid_dvn:"Deze DVN is niet meer beschikbaar",
   correction_required:"Deze regel is gewijzigd na boeken; handel de correctie af onder Beheer",
   number_required:"Vul eerst een dossiernummer in",
   target_is_dvn:"Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.",
+  target_is_i7:"Dit nummer hoort bij i7. Vul een gewoon dossiernummer in.",
   number_exists:"Deze DVN heeft al een dossiernummer en kan niet naar definitief i7",
   timer_running:"Stop eerst alle betrokken timers",
   commercial_code_missing:"Werkcode Commercieel ontbreekt — herstel werkcodes.json onder Beheer",
+  i7_code_mismatch:"Werkcode Commercieel is gewijzigd — controleer de i7-werklijst en probeer opnieuw",
   invalid_target:"De bronregels moeten bij één gewoon dossier met nummer horen",
   i7_missing:"Het i7-dossier ontbreekt",source_changed:"De bronregels zijn intussen gewijzigd",
   source_missing:"Niet alle bronregels bestaan nog",already_parked:"Deze regels zijn al geparkeerd",
+  already_booked:"Deze uren zijn in Hour Hound al als dossierboeking bevestigd. Controleer de invoer in Intapp.",
   not_open:"Deze wachtrijregel is niet meer open",
   multiple_targets:"De bronregels horen nu bij verschillende dossiers",
   queue_changed:"De wachtrij is gewijzigd — open de boekingswizard opnieuw",
@@ -107,6 +110,9 @@ const dagRegelFoutTekst={rule_missing:"De tijdregel ontbreekt",
   invalid_start:"Ongeldige starttijd",invalid_end:"Ongeldige eindtijd",
   end_before_start:"De eindtijd ligt vóór de starttijd",
   stored_rule_requires_end:"Een opgeslagen regel moet een eindtijd hebben",
+  work_code_required:"Een i7- of DVN-regel heeft een geldige werkcode nodig",
+  i7_code_required:"De i7-werkcode ontbreekt of staat niet meer in de actuele werklijst",
+  i7_code_mismatch:"Een DVN-regel moet de actuele werkcode Commercieel hebben",
   running_start_future:"De starttijd van een lopende regel kan niet in de toekomst liggen",
   start_future:"De starttijd ligt in de toekomst",not_today:"Alleen een regel van vandaag kan lopen",
   day_limit:"Dat zou meer dan 24,0 uur op één dag maken",
@@ -127,6 +133,8 @@ function meldDagRegelFout(result,fallback){
 const timerFoutTekst={blocked:"Rond eerst het herstelvenster af",
   timer_changed:"De lopende timer is intussen gewijzigd",
   timer_missing:"Er loopt geen timer meer",dossier_missing:"Het dossier bestaat niet meer",
+  i7_code_required:"Kies eerst een geldige i7-werkcode",
+  i7_code_mismatch:"Een DVN-regel moet de werkcode Commercieel hebben",
   invalid_recovery:"De herstelkeuze past niet meer bij de open regels",
   invalid_undo:"De opgeslagen toestand kan niet veilig worden hersteld",
   rule_changed:"De betrokken regel is intussen gewijzigd",
@@ -138,8 +146,6 @@ const timerFoutTekst={blocked:"Rond eerst het herstelvenster af",
   write_failed:"Timeractie mislukt — er is niets gewijzigd"};
 async function meldTimerFout(result,fallback){
   if(result&&result.ok)return false;
-  if(result&&result.error&&!Object.prototype.hasOwnProperty.call(timerFoutTekst,result.error))
-    return false;
   const message=timerFoutTekst[result&&result.error]||fallback||"Timeractie niet uitgevoerd";
   L("FOUT-timer",(result&&result.error||"onbekend")+
     (result&&result.cause?" · "+result.cause:""));toast(message);

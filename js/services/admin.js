@@ -30,6 +30,16 @@
   const atomic=(input,stores,metaKeys,prepare)=>gateway.atomicWrite({stores,
     metaKeys:metaKeys||[],operationId:input.operationId,completedAt:input.nowIso},prepare);
   const sameIds=(a,b)=>a.length===b.length&&a.every(id=>b.includes(id));
+  function commercialCode(codes){
+    return (codes||[]).find(item=>/commerc/i.test(item.naam||""))||
+      (codes||[]).find(item=>(item.code||"").endsWith("-704"))||null;
+  }
+  function validI7Code(code,codes,commercialOnly){
+    if(!code||(codes||[]).every(item=>item.code!==code))return false;
+    if(!commercialOnly)return true;
+    const commercial=commercialCode(codes);
+    return !!commercial&&commercial.code===code;
+  }
   function mergeRules(current,expected,desired,nowMs){
     const results=[];
     for(const wanted of desired){
@@ -206,6 +216,7 @@
     const inputTarget=(input.dossiers||[]).find(item=>item.id!==dossier.id&&
       (item.nummer||"").toLowerCase()===number.toLowerCase());
     if(inputTarget&&inputTarget.voorlopig)return fail("target_is_dvn");
+    if(inputTarget&&dvn.isIndirect(inputTarget))return fail("target_is_i7");
     const expectedRules=(input.rules||[]).filter(rule=>rule.dossierId===dossier.id);
     await waitFor(input,expectedRules.map(rule=>rule.id));
     return atomic(input,["dossiers","regels"],["stack"],(snapshot,writer)=>{
@@ -215,6 +226,7 @@
     const lower=number.toLowerCase(),target=(snapshot.dossiers||[]).find(item=>item.id!==actual.id&&
       (item.nummer||"").toLowerCase()===lower)||null;
     if(target&&target.voorlopig)return fail("target_is_dvn");
+    if(target&&dvn.isIndirect(target))return fail("target_is_i7");
     const rules=(snapshot.regels||[]).filter(rule=>rule.dossierId===actual.id),
       ids=rules.map(rule=>rule.id),expectedIds=expectedRules.map(rule=>rule.id);
     if(!sameIds(ids,expectedIds))return fail("source_changed");
@@ -312,13 +324,14 @@
     if(!input.commercialCode)return fail("commercial_code_missing");
     const expected=dvn.rulesFor(dossier,input.rules||[]);
     await waitFor(input,expected.map(rule=>rule.id));
-    return atomic(input,["dossiers","regels"],["running","stack"],(snapshot,writer)=>{
+    return atomic(input,["dossiers","regels","codes"],["running","stack"],(snapshot,writer)=>{
     const actual=byId(snapshot.dossiers,dossier.id);
     if(!entityMatches(actual,dossier)||!dvn.isDvn(actual)||dvn.isFinalI7(actual))return fail("invalid_dvn");
     if(dvn.resolvedNumber(actual,snapshot.dossiers||[]))return fail("number_exists");
     const rules=dvn.rulesFor(actual,snapshot.regels||[]);
     if(!sameIds(rules.map(r=>r.id),expected.map(r=>r.id)))return fail("source_changed");
     if((snapshot.meta.running||null)&&rules.some(rule=>rule.id===snapshot.meta.running))return fail("timer_running");
+    if(!validI7Code(input.commercialCode,snapshot.codes,true))return fail("i7_code_mismatch");
     const total=hours(rules,input.hoursOf);
     let updated=Object.assign({},actual,{voorlopig:false,archief:true,dvn:true,
       dvnOriginalName:dossier.dvnOriginalName||dossier.naam,dvnDisposition:"final_i7",
@@ -349,21 +362,27 @@
     if(!row||rowTargets.length!==1||!target||rowTargets[0]!==target.id||
       dvn.isIndirect(target)||(!target.nummer&&!target.dvnResolvedNr)||!row.fp)
       return fail("invalid_target");
-    if(!indirect)return fail("i7_missing");
+    if(!indirect||!indirect.isI7)return fail("i7_missing");
     if(!input.commercialCode)return fail("commercial_code_missing");
     const ids=(row.bron||[]).map(item=>item.id).filter(Boolean);
     if(!ids.length)return fail("source_changed");
     await waitFor(input,ids);
-    return atomic(input,["regels","dossiers","overboekingen"],["running","bookingHistory"],(snapshot,writer)=>{
+    return atomic(input,["regels","dossiers","overboekingen","codes"],["running","bookingHistory","geboekt"],(snapshot,writer)=>{
     const actualTarget=byId(snapshot.dossiers,target.id),actualIndirect=byId(snapshot.dossiers,indirect.id),
       source=ids.map(id=>byId(snapshot.regels,id)).filter(Boolean);
     if(!entityMatches(actualTarget,target)||!entityMatches(actualIndirect,indirect)||
+      !actualIndirect.isI7||
       source.length!==ids.length||source.some(rule=>!rule.eind||rule.dossierId!==actualTarget.id||
         rule.id===(snapshot.meta.running||null)))
       return fail("source_changed");
+    if(!validI7Code(input.commercialCode,snapshot.codes,true))return fail("i7_code_mismatch");
     if(actualTarget.dvnTo&&!dvn.resolvedTarget(actualTarget,snapshot.dossiers))return fail("invalid_target");
     const rows=input.summarize(source);
     if(rows.length!==1||rows[0].fp!==row.fp)return fail("source_changed");
+    const history=booking.normalizeHistory(snapshot.meta.bookingHistory),
+      existing=booking.evidence(history).some(item=>rowIds(item.snapshot).some(id=>ids.includes(id))),
+      oldBooked=((snapshot.meta.geboekt||{})[input.sourceDate]||[]).includes(row.fp);
+    if(existing||oldBooked)return fail("already_booked");
     if(ids.some(id=>over.openForRule(id,snapshot.overboekingen||[])))return fail("already_parked");
     const targetNumber=dvn.resolvedNumber(actualTarget,snapshot.dossiers)||actualTarget.nummer||"";
     const targetInfo=dvn.resolvedTarget(actualTarget,snapshot.dossiers)||actualTarget;
@@ -381,8 +400,7 @@
         HH.domain.time.schoon(targetInfo.naam)+" · "+HH.domain.time.schoon(row.oms),
       parkedAt:input.nowIso,updatedAt:input.nowIso,
       audit:[{type:"op-i7-geboekt-geparkeerd",t:input.nowIso}]};
-    const history=booking.normalizeHistory(snapshot.meta.bookingHistory),temporary=
-      booking.bookingSnapshot({nummer:actualIndirect.nummer||"",naam:actualIndirect.naam||"",
+    const temporary=booking.bookingSnapshot({nummer:actualIndirect.nummer||"",naam:actualIndirect.naam||"",
         code:input.commercialCode,oms:record.temporaryDescription,u:row.u,bron:source},input.sourceDate,
         {roundingMode:input.roundingMode,sources:record.sourceSnapshot});
     history.receipts.push(receipt(input.receiptId||("over-i7-"+input.id),"overbooking_i7",
@@ -471,15 +489,16 @@
   async function finalizeOverbookingI7(input){
     const record=input.overbooking,indirect=input.i7Dossier;
     if(!over.isOpen(record))return fail("not_open");
-    if(!indirect)return fail("i7_missing");
+    if(!indirect||!indirect.isI7)return fail("i7_missing");
     if(!input.commercialCode)return fail("commercial_code_missing");
     const ids=over.sourceIds(record),expectedRules=ids.map(id=>byId(input.rules,id)).filter(Boolean);
     await waitFor(input,ids);
-    return atomic(input,["overboekingen","regels","dossiers"],["running","geboekt","bookingHistory"],
+    return atomic(input,["overboekingen","regels","dossiers","codes"],["running","geboekt","bookingHistory"],
       (snapshot,writer)=>{
     const actualRecord=byId(snapshot.overboekingen,record.id),actualIndirect=byId(snapshot.dossiers,indirect.id);
     if(!recordMatches(actualRecord,record)||!over.isOpen(actualRecord)||
-      !entityMatches(actualIndirect,indirect))return fail("not_open");
+      !entityMatches(actualIndirect,indirect)||!actualIndirect.isI7)return fail("not_open");
+    if(!validI7Code(input.commercialCode,snapshot.codes,true))return fail("i7_code_mismatch");
     const actualInput=Object.assign({},input,{rules:snapshot.regels||[]}),
       current=currentOverbooking(actualRecord,actualInput),rules=current.rules;
     if(rules.length!==ids.length)return fail("source_missing");

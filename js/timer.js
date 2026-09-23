@@ -173,7 +173,16 @@ async function koppelRegel(r,op){
   if(op.nieuweCode)nw.code=op.nieuweCode;
   /* Sluitstuk: welke route hier ook binnenkomt, een indirecte regel krijgt altijd een
      geldige code en een voorlopig dossier altijd de vaste code.                */
-  if(dosK&&isIndirect(dosK))nw.code=codeVoor(dosK,nw.code);
+  if(dosK&&isIndirect(dosK)){
+    nw.code=codeVoor(dosK,nw.code);
+    const codeKnown=!!nw.code&&HH.state.read().codes.some(c=>c.code===nw.code);
+    if(!codeKnown){
+      toast(dosK.voorlopig||dvnDefinitiefI7(dosK)?
+        "Werkcode Commercieel ontbreekt in de i7-werklijst — herstel werkcodes.json eerst":
+        "Kies een geldige i7-werkcode voordat je deze regel koppelt");
+      return null;
+    }
+  }
   if(op.omschrijving!==undefined)nw.omschrijving=op.omschrijving;
   nw.omschrijving=prefixVoor(dosK,nw.datum,nw.omschrijving||"");
   nw.gewijzigd=Date.now();
@@ -184,11 +193,23 @@ async function koppelRegel(r,op){
   let opgeslagen;
   try{
     await rustig([r.id]);
-    opgeslagen=await HH.storage.indexedDB.atomicWrite({stores:["regels","dossiers"],
+    opgeslagen=await HH.storage.indexedDB.atomicWrite({stores:["regels","dossiers","codes"],
       metaKeys:["codeGebruik"]},(snapshot,writer)=>{
       const current=(snapshot.regels||[]).find(x=>x.id===r.id),
         merged=HH.storage.indexedDB.mergeRule(current,r,nw,Date.now());
       if(!merged.ok)return merged;
+      const assigned=merged.rule.dossierId?
+        snapshot.dossiers.find(item=>item.id===merged.rule.dossierId)||maak:null;
+      if(assigned&&dvnDomain.isIndirect(assigned)){
+        const selected=merged.rule.code||null,known=!!selected&&
+          (snapshot.codes||[]).some(item=>item.code===selected);
+        if(!known)return{ok:false,error:"i7_code_required"};
+        if(assigned.voorlopig||dvnDomain.isFinalI7(assigned)){
+          const commercial=(snapshot.codes||[]).find(item=>/commerc/i.test(item.naam||""))||
+            (snapshot.codes||[]).find(item=>(item.code||"").endsWith("-704"));
+          if(!commercial||selected!==commercial.code)return{ok:false,error:"i7_code_mismatch"};
+        }
+      }
       const gateway=HH.storage.indexedDB,updates=new Map(),nowMs=Date.now();
       if(dosK){
         const actual=snapshot.dossiers.find(d=>d.id===dosK.id),before=dosOf(dosK.id);
@@ -216,7 +237,12 @@ async function koppelRegel(r,op){
       return Object.assign({},merged,{dossier:updates.get(dosId)||null,
         oldDossier:current.dossierId!==dosId?updates.get(current.dossierId)||null:null,codeUsage:usage});
     });
-    if(!opgeslagen||!opgeslagen.ok){toast("De tijdregel is intussen op hetzelfde veld gewijzigd");return null;}
+    if(!opgeslagen||!opgeslagen.ok){
+      toast(opgeslagen&&opgeslagen.error==="i7_code_required"?
+        "i7-werkcode is gewijzigd — kies een geldige werkcode opnieuw":
+        (opgeslagen&&opgeslagen.error==="i7_code_mismatch"?
+          "Werkcode Commercieel is gewijzigd — herstel de i7-werklijst eerst":
+          "De tijdregel is intussen op hetzelfde veld gewijzigd"));return null;}
   }catch(e){L("FOUT-koppelen",String(e));
     toast("Koppelen mislukt — er is niets gewijzigd: "+e);
     return null;}
@@ -253,10 +279,12 @@ const parkeerLijst=()=>{const st=HH.state.read().stack.slice();
 async function interrupt(soort,label){
   ntWizard=null;
   if(HH.state.read().running&&HH.state.read().running.soort===soort){await terug();return;}
-  const ind=i7(),nieuw=await startViaService({dossierId:ind?ind.id:null,omschrijving:"",
+  const nieuw=await startViaService({dossierId:null,omschrijving:"",
     soort:soort,stackNa:parkeerLijst()},"interrupt");
   if(!nieuw)return;
-  naStart();
+  /* An interruption used to create a code-less rule on i7 and ask for its code
+     afterward. Start it unassigned, then let the task wizard collect a valid route. */
+  ntWizard=ntNieuwState();liveId=null;HH.app.render();ntFocus();
   L("onderbreking",soort+" · stapel "+HH.state.read().stack.length);
   toast(label+" loopt — druk R of dezelfde toets om terug te keren");}
 async function terug(){
@@ -346,6 +374,32 @@ async function maakDvnDefinitiefI7(id){
 function dvnDossierVoorNummer(nr,id){
   const n=(nr||"").trim().toLowerCase();
   return n?HH.state.read().dossiers.find(x=>x.id!==id&&(x.nummer||"").toLowerCase()===n):null;}
+function updateDvnNumberMatch(){
+  const dlg=$("dvnnum"),number=$("dn-num"),name=$("dn-name"),warn=$("dn-warn");
+  if(!dlg||!number||!name||!warn)return null;
+  const target=dvnDossierVoorNummer(number.value,dlg.dataset.id),own=dlg.dataset.dnOwnName||"";
+  if(target&&isIndirect(target)){
+    name.value=own;name.readOnly=false;dlg.dataset.dnMatchId="";
+    warn.textContent='Dit nummer hoort bij het i7- of indirecte dossier "'+target.naam+
+      '". Kies een regulier dossiernummer voor Intapp.';warn.classList.add("on");
+    return target;
+  }
+  if(target){
+    if(dlg.dataset.dnMatchId!==target.id&&name.value!==target.naam&&
+        !dlg.dataset.dnMatchId)dlg.dataset.dnOwnName=name.value;
+    name.value=target.naam;name.readOnly=true;dlg.dataset.dnMatchId=target.id;
+    warn.textContent='Nummer hoort bij bestaand dossier "'+target.naam+
+      '". De DVN-regels blijven hier gekoppeld; Intapp gebruikt dit bestaande dossier.';
+    warn.classList.add("on");return target;
+  }
+  name.readOnly=false;name.value=own;dlg.dataset.dnMatchId="";
+  warn.textContent="";warn.classList.remove("on");return null;
+}
+if($("dn-num"))$("dn-num").addEventListener("input",()=>updateDvnNumberMatch());
+if($("dn-name"))$("dn-name").addEventListener("input",()=>{
+  const dlg=$("dvnnum"),name=$("dn-name");
+  if(dlg&&!name.readOnly)dlg.dataset.dnOwnName=name.value;
+});
 function openDvnNummerSheet(id){
   const d=dosOf(id);if(!d||!isDvn(d))return Promise.resolve(false);
   const dlg=$("dvnnum");if(!dlg)return Promise.resolve(false);
@@ -354,9 +408,11 @@ function openDvnNummerSheet(id){
   $("dn-status").textContent=d.voorlopig?"nummer ontbreekt":(typeof dvnStatusTekst==="function"?dvnStatusTekst(d):"DVN");
   $("dn-num").value=d.nummer||d.dvnResolvedNr||info.nummer||"";
   $("dn-name").value=d.dvnTo?(dosOf(d.dvnTo)||{}).naam||d.naam:d.naam;
+  dlg.dataset.dnOwnName=d.naam;dlg.dataset.dnMatchId="";
   $("dn-meta").innerHTML='<b>'+esc(d.naam)+'</b><br>'+rs.length+' regel(s) · '+
     uu(rs.reduce((s,r)=>s+urenOf(r),0))+' uur';
-  $("dn-warn").classList.remove("on");$("dn-warn").textContent="";
+  $("dn-name").readOnly=false;$("dn-warn").classList.remove("on");$("dn-warn").textContent="";
+  updateDvnNumberMatch();
   dlg.classList.add("on");dlg.setAttribute("aria-hidden","false");
   setTimeout(()=>$("dn-num").focus(),0);
   return new Promise(resolve=>{dlg._resolve=resolve;});}
@@ -371,6 +427,10 @@ async function slaDvnNummerOp(){
   const nr=($("dn-num").value||"").trim(),naam=($("dn-name").value||"").trim()||d.naam;
   if(!nr){toast("Vul het dossiernummer in");$("dn-num").focus();return;}
   const bestaand=dvnDossierVoorNummer(nr,d.id);
+  if(bestaand&&isIndirect(bestaand)){
+    updateDvnNumberMatch();toast("Dit nummer hoort bij een i7- of indirect dossier — kies een regulier dossiernummer");
+    $("dn-num").focus();return;
+  }
   const rs=HH.state.read().rules.filter(r=>r.dossierId===d.id);
   if(bestaand&&bestaand.voorlopig){
     toast("Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.");return;}

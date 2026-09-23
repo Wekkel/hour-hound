@@ -50,8 +50,10 @@ function loadController(h){vm.runInContext(read('js/ui/manage-controller.js'),h.
 function closestTarget(selector){return{closest:q=>q===selector?{}:null};}
 
 function transactionalDB(seed={}){
-  const names=['regels','dossiers','meta','overboekingen'],rows={};
-  for(const name of names)rows[name]=new Map(name==='meta'?Object.entries(seed.meta||{}):(seed[name]||[]).map(v=>[v.id,clone(v)]));
+  const names=['regels','dossiers','meta','overboekingen','codes'],rows={};
+  for(const name of names)rows[name]=new Map(name==='meta'?Object.entries(seed.meta||{}):
+    (name==='codes'?(seed.codes===undefined?[{code:'COM',naam:'Commercieel'}]:seed.codes):(seed[name]||[]))
+      .map(v=>[v.id||v.code,clone(v)]));
   let queue=Promise.resolve(),writes=0;
   return{rows,get writes(){return writes;},transaction(requested,mode){
     const stores=Array.isArray(requested)?requested:[requested];let release;

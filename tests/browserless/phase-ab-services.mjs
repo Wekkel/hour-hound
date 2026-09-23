@@ -17,9 +17,10 @@ const equal=(actual,expected,message)=>assert(actual===expected,
 // The gateway sees the same asynchronous request/transaction behavior it sees in a browser:
 // reads complete later, writes stay private until commit, and aborts publish nothing.
 function transactionalDB(seed={}){
-  const names=['regels','dossiers','meta','overboekingen'],rows={};
+  const names=['regels','dossiers','meta','overboekingen','codes'],rows={};
   for(const name of names)rows[name]=new Map(name==='meta'?Object.entries(seed.meta||{}):
-    (seed[name]||[]).map(value=>[value.id,clone(value)]));
+    (name==='codes'?(seed.codes===undefined?[{code:'COM',naam:'Commercieel'}]:seed.codes):
+      (seed[name]||[])).map(value=>[value.id||value.code,clone(value)]));
   let queue=Promise.resolve(),writes=0;
   return{rows,get writes(){return writes;},transaction(requested,mode){
     const stores=Array.isArray(requested)?requested:[requested];let release;
@@ -146,6 +147,77 @@ test('assignDvnNumber preserves the source date in rules and stack',async()=>{
   assert(out.ok,`assign failed: ${out.error}`);
   equal(out.rules[0].omschrijving,'15.09.2026 Work','rule date was discarded');
   equal(out.stack[0].omschrijving,'15.09.2026 Work','stack date was discarded');
+});
+
+
+test('DVN number cannot link to the i7 dossier',async()=>{
+  const target={id:'new-dvn',nummer:null,naam:'New DVN',voorlopig:true,dvn:true,revision:1},
+    rule=makeRule(target),h=load({dossiers:[target,i7],regels:[rule],overboekingen:[],meta:{}});
+  const out=await h.HH.services.admin.assignDvnNumber({dossier:target,dossiers:[target,i7],rules:[rule],
+    number:i7.nummer,name:'New DVN',nowIso,nowMs:2});
+  equal(out.error,'target_is_i7','i7 number accepted as a billable target');
+  equal(h.db.writes,0,'i7 target rejection wrote data');
+});
+test('temporary parking requires the actual i7 dossier',async()=>{
+  const target={...canonical},fake={id:'fake',nummer:'000000123',naam:'Other matter',revision:1},
+    rule=makeRule(target),h=load({dossiers:[target,fake,i7],regels:[rule],overboekingen:[],meta:{}}),
+    input=common(h.HH,[target,fake]),row=input.summarize([rule])[0];
+  const out=await h.HH.services.admin.parkOverbooking({...input,row,target,i7Dossier:fake,
+    sourceDate:date,id:'bad-park'});
+  equal(out.error,'i7_missing','ordinary dossier accepted as temporary i7 target');
+  equal(h.db.writes,0,'invalid temporary target wrote data');
+});
+
+
+test('parking refuses a source already confirmed on its target',async()=>{
+  const target={...canonical},rule=makeRule(target),dossiers=[target,i7],
+    row=summarize(load({dossiers,regels:[rule],overboekingen:[],meta:{}}).HH,dossiers)([rule])[0];
+  for(const mode of ['receipt','legacy']){
+    const receipt={id:'already',channel:'day',confirmedAt:nowIso,
+      snapshot:{date,sourceIds:[rule.id],sources:[{id:rule.id,dossierId:target.id}],
+        targetNumber:target.nummer,description:rule.omschrijving,hours:1}};
+    const meta=mode==='receipt'?{bookingHistory:{version:1,receipts:[receipt],resolutions:[]}}:
+      {geboekt:{[date]:[row.fp]}};
+    const h=load({dossiers,regels:[rule],overboekingen:[],meta}),input=common(h.HH,dossiers),
+      current=input.summarize([rule])[0];
+    const out=await h.HH.services.admin.parkOverbooking({...input,row:current,target,i7Dossier:i7,
+      sourceDate:date,id:'park-'+mode});
+    equal(out.error,'already_booked',mode+' previously booked source was parked');
+    equal(h.db.writes,0,mode+' rejected parking wrote data');
+  }
+});
+
+test('provisionele DVN kan alleen naar de actuele opgeslagen Commercieel-code',async()=>{
+  const target={id:'dvn',nummer:null,naam:'DVN',voorlopig:true,dvn:true,revision:1},
+    rule={...makeRule(target),id:'dvn-rule',code:'OLD'},
+    h=load({dossiers:[target,i7],regels:[rule],codes:[{code:'OTHER',naam:'Andere'}],meta:{stack:[]}});
+  const out=await h.HH.services.admin.finalizeDvnI7({dossier:target,dossiers:[target,i7],
+    rules:[rule],stack:[],runningId:null,commercialCode:'COM',hoursOf:()=>1,nowMs:2,nowIso});
+  equal(out.error,'i7_code_mismatch','DVN finalisatie accepteerde verwijderde Commercieel-code');
+  equal(h.db.rows.dossiers.get(target.id).voorlopig,true,'afgewezen finalisatie veranderde DVN');
+  equal(h.db.rows.regels.get(rule.id).code,'OLD','afgewezen finalisatie wijzigde tijdcode');
+  equal(h.db.writes,0,'afgewezen finalisatie schreef data');
+});
+test('tijdelijk parkeren vereist actuele opgeslagen Commercieel-code',async()=>{
+  const target={...canonical},rule=makeRule(target),dossiers=[target,i7],
+    h=load({dossiers,regels:[rule],overboekingen:[],codes:[{code:'OTHER',naam:'Andere'}],meta:{}}),
+    input=common(h.HH,dossiers),row=input.summarize([rule])[0];
+  const out=await h.HH.services.admin.parkOverbooking({...input,row,target,i7Dossier:i7,
+    sourceDate:date,id:'stale-code'});
+  equal(out.error,'i7_code_mismatch','parkeren accepteerde een niet-opgeslagen Commercieel-code');
+  equal(h.db.writes,0,'afgewezen parking schreef data');
+});
+test('overboeking-finalisatie weigert verdwenen i7-code zonder writes',async()=>{
+  const target={...canonical},rule=makeRule(target),dossiers=[target,i7],
+    record={id:'waiting',status:'waiting',revision:1,sourceRuleIds:[rule.id],
+      sourceSnapshot:[{id:rule.id}]},
+    h=load({dossiers,regels:[rule],overboekingen:[record],codes:[{code:'OTHER',naam:'Andere'}],meta:{}});
+  const out=await h.HH.services.admin.finalizeOverbookingI7({overbooking:record,i7Dossier:i7,
+    rules:[rule],dossiers,commercialCode:'COM',summarize:()=>[],hoursOf:()=>1,
+    roundingMode:'groep',nowMs:2,nowIso});
+  equal(out.error,'i7_code_mismatch','overboeking-finalisatie accepteerde stale code');
+  equal(h.db.rows.regels.get(rule.id).dossierId,target.id,'afwijzing verplaatste de regel naar i7');
+  equal(h.db.writes,0,'afwijzing schreef data');
 });
 
 let failed=0;

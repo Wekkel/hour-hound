@@ -182,7 +182,8 @@ function openParkeer(row){
   const doel=dosOf(row.dosIds[0]);parkBoek={row,doel,ind,com};
   const resolved=dvnResolvedDoel(doel)||doel;
   $("pb-target").textContent=(dvnResolvedNummer(doel)||resolved.nummer||"—")+" · "+resolved.naam;
-  $("pb-i7").textContent=(ind.nummer||"—")+" · "+ind.naam+" · "+codeNaam(ind,com);
+  $("pb-i7").textContent=(ind.nummer||"—")+" · "+ind.naam;
+  $("pb-code").textContent=codeNaam(ind,com);
   $("pb-hours").textContent=uu(row.u)+" u";
   $("pb-oms").textContent=tijdelijkI7Omschrijving(row,doel);
   $("pb-source").innerHTML=(row.bron||[]).map(b=>{const r=HH.state.read().rules.find(x=>x.id===b.id);
@@ -206,7 +207,7 @@ async function bevestigParkeer(){
   catch(e){L("FOUT-overboeking-parkeren",String(e));toast("Parkeren mislukt — er is niets gewijzigd");return;}
   finally{bevestigParkeer.busy=false;$('pb-save').disabled=false;}
   if(meldAdminFout(uit,"Parkeren is niet uitgevoerd")){
-    if(uit&&uit.error==="source_changed")sluitParkeer();return;}
+    if(uit&&(uit.error==="source_changed"||uit.error==="already_booked"))sluitParkeer();return;}
   const o=uit.overbooking;HH.state.upsert("overbookings",o);
   HH.state.commit({bookingHistory:uit.history});
   L("overboeking-geparkeerd","regels "+bronIdsVan(o).length+" · "+uu(o.hours)+" u");
@@ -279,6 +280,8 @@ $("pb-target-copy").onclick=()=>parkBoek&&kopieer(schoon(dvnResolvedNummer(parkB
   $("pb-target-copy"),"kopieer nummer");
 $("pb-i7-copy").onclick=()=>parkBoek&&kopieer(schoon(parkBoek.ind&&parkBoek.ind.nummer),
   $("pb-i7-copy"),"kopieer nummer");
+$("pb-code-copy").onclick=()=>parkBoek&&kopieer(schoon(codeNaam(parkBoek.ind,parkBoek.com)),
+  $("pb-code-copy"),"kopieer werkcode");
 $("pb-hours-copy").onclick=()=>parkBoek&&kopieer(uu(parkBoek.row.u),
   $("pb-hours-copy"),"kopieer uren");
 $("pb-save").onclick=bevestigParkeer;

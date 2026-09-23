@@ -87,12 +87,6 @@ if($("dvnnum")){
   $("dn-x").onclick=()=>sluitDvnNummerSheet(false);
   $("dn-cancel").onclick=()=>sluitDvnNummerSheet(false);
   $("dn-save").onclick=slaDvnNummerOp;
-  $("dn-num").addEventListener("input",()=>{
-    const d=dosOf($("dvnnum").dataset.id),b=dvnDossierVoorNummer($("dn-num").value,d&&d.id);
-    const w=$("dn-warn");
-    if(b){w.textContent='Dit nummer bestaat al bij "'+b.naam+'". Opslaan koppelt deze DVN voor Intapp aan dat dossier, zonder de DVN-regels te verplaatsen.';w.classList.add("on");}
-    else{w.textContent="";w.classList.remove("on");}
-  });
   document.addEventListener("keydown",e=>{
     if(!$("dvnnum").classList.contains("on"))return;
     if(e.key==="Escape"){e.preventDefault();sluitDvnNummerSheet(false);}

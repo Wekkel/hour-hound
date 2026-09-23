@@ -90,7 +90,7 @@ function persistentDB(seed={}){
 const date='2026-09-01';
 const rule={id:'r',datum:date,start:'09:00',eind:'10:00',dossierId:'d',omschrijving:'Oud',code:null,uren:1,urenHand:false,soort:'werk',gewijzigd:1};
 const dossier={id:'d',nummer:'123',naam:'Test',codes:[]};
-const i7dos={id:'i7',naam:'i7',isI7:true,codes:[{code:'ADM',naam:'Administratie'}]};
+const i7dos={id:'i7',naam:'i7',isI7:true,codes:[{code:'PRAK-701',naam:'Administratie'}]};
 const checks=[];
 checks.push(['draft plus codewijziging behoudt beide velden',async()=>{
  const {context:c,setState}=evaluateCorePure();vm.runInContext(src.timer,c);
@@ -100,8 +100,8 @@ checks.push(['draft plus codewijziging behoudt beide velden',async()=>{
  const final=db.rows.regels.get('r');assertEq(final.omschrijving,'Nieuw','Omschrijving verloren');assertEq(final.code,'X','Code verloren');
 }]);
 checks.push(['dubbele aanvulling blijft maximaal acht uur',async()=>{
- const HH=evaluateDayRules();const db=persistentDB({regels:[rule],dossiers:[dossier,i7dos],meta:{dagEinde:{[date]:'17:00'},dagAudit:{}}});HH.storage.indexedDB.use(db);
- const input={date,isWorkday:true,dayEnds:{[date]:'17:00'},dayAudit:{},rules:[rule],dossiers:[dossier,i7dos],i7Dossier:i7dos,code:'ADM',currentTotal:1,nowMs:2,nowIso:date+'T17:00:00Z',bookingContext:{dossiers:[dossier,i7dos],roundingMode:'groep'}};
+ const HH=evaluateDayRules();const db=persistentDB({regels:[rule],dossiers:[dossier,i7dos],codes:[{code:'PRAK-701',naam:'Praktijkorganisatie'}],meta:{dagEinde:{[date]:'17:00'},dagAudit:{}}});HH.storage.indexedDB.use(db);
+ const input={date,isWorkday:true,dayEnds:{[date]:'17:00'},dayAudit:{},rules:[rule],dossiers:[dossier,i7dos],i7Dossier:i7dos,code:'PRAK-701',currentTotal:1,nowMs:2,nowIso:date+'T17:00:00Z',bookingContext:{dossiers:[dossier,i7dos],roundingMode:'groep'}};
  await Promise.all([HH.services.dayRules.autoFillDay({...input,id:'a'}),HH.services.dayRules.autoFillDay({...input,id:'b'})]);
  const total=[...db.rows.regels.values()].reduce((s,r)=>s+(r.uren||0),0);assertEq(total,8,'Dubbele of ontbrekende aanvulling');
 }]);
@@ -148,8 +148,8 @@ checks.push(['nieuwe taak slaagt tijdens een omschrijvingssave',async()=>{
  assertEq(db.rows.regels.get('r').omschrijving,'Nieuwe tekst','Timer sluiten verloor net opgeslagen omschrijving');assertEq(db.rows.meta.get('running'),'nieuw','Nieuwe taak niet gestart');
 }]);
 checks.push(['afsluiten en aanvullen rollen samen terug en slagen samen',async()=>{
- const HH=evaluateDayRules(),r={...rule,eind:null},db=persistentDB({regels:[r],dossiers:[dossier,i7dos],meta:{running:'r',stack:[{dossierId:'d'}]}});HH.storage.indexedDB.use(db);
- const input={currentTimer:r,runningId:'r',closedRule:{...r,eind:'10:00',uren:1},rules:[r],dossiers:[dossier,i7dos],date,end:'10:00',dayEnds:{},dayAudit:{},stack:[{dossierId:'d'}],fill:true,isWorkday:true,i7Dossier:i7dos,code:'ADM',autoFillId:'aanvul',batchId:'batch',operationId:'close-one',nowMs:2,nowIso:date+'T10:00:00Z'};
+ const HH=evaluateDayRules(),r={...rule,eind:null},db=persistentDB({regels:[r],dossiers:[dossier,i7dos],codes:[{code:'PRAK-701',naam:'Praktijkorganisatie'}],meta:{running:'r',stack:[{dossierId:'d'}]}});HH.storage.indexedDB.use(db);
+ const input={currentTimer:r,runningId:'r',closedRule:{...r,eind:'10:00',uren:1},rules:[r],dossiers:[dossier,i7dos],date,end:'10:00',dayEnds:{},dayAudit:{},stack:[{dossierId:'d'}],fill:true,isWorkday:true,i7Dossier:i7dos,code:'PRAK-701',autoFillId:'aanvul',batchId:'batch',operationId:'close-one',nowMs:2,nowIso:date+'T10:00:00Z'};
  db.failNextWrite();let failed=false;try{const out=await HH.services.dayRules.closeDay(input);failed=!out.ok;}catch{failed=true;}
  assert(failed,'Injected failure must be reported');assertEq(db.rows.regels.get('r').eind,null,'Timer half afgesloten');assertEq(db.rows.meta.get('running'),'r','Pointer half gestopt');assert(!db.rows.meta.get('dagEinde')?.[date],'Dag half afgesloten');assert(!db.rows.regels.has('aanvul'),'Aanvulling bleef na abort');
  const out=await HH.services.dayRules.closeDay(input);assert(out.ok,'Retry failed '+out.error);
@@ -169,9 +169,9 @@ checks.push(['heropenen bewaart geboekte automatische uren',async()=>{
 }]);
 checks.push(['aanvulling volgt groepsgewijs Intapp-totaal',async()=>{
  const {context:c,setState}=evaluateCorePure();const a={...rule,eind:'09:01',uren:0.1},b={...a,id:'b',start:'10:00',eind:'10:01'};
- setState({alle:[a,b],dossiers:[dossier,i7dos]});const db=persistentDB({regels:[a,b],dossiers:[dossier,i7dos],meta:{dagEinde:{[date]:'17:00'}}});c.HH.storage.indexedDB.use(db);
+ setState({alle:[a,b],dossiers:[dossier,i7dos]});const db=persistentDB({regels:[a,b],dossiers:[dossier,i7dos],codes:[{code:'PRAK-701',naam:'Praktijkorganisatie'}],meta:{dagEinde:{[date]:'17:00'}}});c.HH.storage.indexedDB.use(db);
  const totalForRules=vm.runInContext('simIntappTotaal',c);assertEq(totalForRules([a,b]),0.1,'Fixture moet gegroepeerd0.1 zijn');
- const out=await c.HH.services.dayRules.autoFillDay({date,isWorkday:true,dayEnds:{[date]:'17:00'},rules:[a,b],dossiers:[dossier,i7dos],i7Dossier:i7dos,code:'ADM',currentTotal:0.1,totalForRules,id:'fill',nowMs:2,nowIso:date+'T17:00:00Z'});
+ const out=await c.HH.services.dayRules.autoFillDay({date,isWorkday:true,dayEnds:{[date]:'17:00'},rules:[a,b],dossiers:[dossier,i7dos],i7Dossier:i7dos,code:'PRAK-701',currentTotal:0.1,totalForRules,id:'fill',nowMs:2,nowIso:date+'T17:00:00Z'});
  assert(out.ok,'Aanvullen mislukt');assertEq(out.rule.uren,7.9,'Verkeerde afrondingsbasis voor aanvulling');
 }]);
 checks.push(['dossier koppelen behoudt actuele naam en telt gebruik atomair',async()=>{
@@ -191,8 +191,8 @@ checks.push(['dageditor bewaart nieuwe dossiernaam bij toevoegen werkcode',async
  assertEq(saved.naam,'Nieuw','Dageditor overschreef dossiernaam');assertEq(saved.codes[0].code,'X','Werkcode niet toegevoegd');assertEq(saved.revision,3,'Dossierrevisie ontbreekt');
 }]);
 checks.push(['herhaalde actie-ID schrijft niet opnieuw en vraagt actuele reload',async()=>{
- const HH=evaluateDayRules(),db=persistentDB({regels:[rule],dossiers:[dossier,i7dos],meta:{}});HH.storage.indexedDB.use(db);
- const input={date,end:'17:00',fill:true,isWorkday:true,i7Dossier:i7dos,code:'ADM',autoFillId:'fill',batchId:'b',operationId:'once',nowMs:2,nowIso:date+'T17:00:00Z'};
+ const HH=evaluateDayRules(),db=persistentDB({regels:[rule],dossiers:[dossier,i7dos],codes:[{code:'PRAK-701',naam:'Praktijkorganisatie'}],meta:{}});HH.storage.indexedDB.use(db);
+ const input={date,end:'17:00',fill:true,isWorkday:true,i7Dossier:i7dos,code:'PRAK-701',autoFillId:'fill',batchId:'b',operationId:'once',nowMs:2,nowIso:date+'T17:00:00Z'};
  const first=await HH.services.dayRules.closeDay(input);assert(first.ok,'Eerste afsluiting mislukt');
  const saved=db.rows.regels.get('r');db.rows.regels.set('r',{...saved,omschrijving:'Later',revision:5});
  const again=await HH.services.dayRules.closeDay(input);assert(again.ok&&again.replayed&&again.reload,'Herhaling moet actuele reload vragen');

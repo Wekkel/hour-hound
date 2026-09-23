@@ -599,7 +599,7 @@ test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => 
   const rule={id:'r1',datum:'2026-08-25',start:'09:00',eind:'10:00',
     dossierId:dossier.id,code:'COM',omschrijving:'25.08.2026 · Voorlopig · Werk',
     soort:'werk',gewijzigd:1};
-  const db=fakeDatabase({dossiers:[dossier,{id:'dvn-2',naam:'Geen nummer',voorlopig:true,dvn:true,dvnIntappAudit:[]}],regels:[rule,{...rule,id:'r2',dossierId:'dvn-2',code:'ANDERS',omschrijving:'Werk'}],meta:{stack:[{dossierId:dossier.id,omschrijving:rule.omschrijving},{dossierId:'dvn-2'}],running:null}});gateway.use(db);
+  const db=fakeDatabase({dossiers:[dossier,{id:'dvn-2',naam:'Geen nummer',voorlopig:true,dvn:true,dvnIntappAudit:[]}],regels:[rule,{...rule,id:'r2',dossierId:'dvn-2',code:'ANDERS',omschrijving:'Werk'}],meta:{stack:[{dossierId:dossier.id,omschrijving:rule.omschrijving},{dossierId:'dvn-2'}],running:null},codes:[{code:'COM',naam:'Commercieel'},{code:'ANDERS',naam:'Anders'}]});gateway.use(db);
   const assigned=await service.assignDvnNumber({dossier,number:'304000001',name:'Nieuwe naam',
     dossiers:[dossier],rules:[rule],stack:[{dossierId:dossier.id,omschrijving:rule.omschrijving}],
     waitForRules:()=>Promise.resolve(),nowMs:10,nowIso:'2026-08-25T10:00:00.000Z'});
@@ -641,7 +641,7 @@ test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => 
   assertEq(JSON.stringify(transactions.map(call=>[call.stores,call.mode])),JSON.stringify([
     [['dossiers','regels','meta'],'readwrite'],
     [['dossiers','regels','meta'],'readwrite'],
-    [['dossiers','regels','meta'],'readwrite']]),
+    [['dossiers','regels','codes','meta'],'readwrite']]),
   'Iedere DVN-use-case moet één volledige transactie bezitten');
 
   const failedDb=fakeDatabase({dossiers:[assigned.dossier],regels:assigned.rules,meta:{}},{fail:true});
@@ -666,7 +666,7 @@ test('overboekingsservices bewaren beide terminale routes en eerdere i7-boeking'
     item.dossierId).join(','),code:'',oms:'Werk',u:1,bron:rules.map(item=>({id:item.id}))}];
   const row={fp:summarize([rule])[0].fp,dosIds:[target.id],nummer:target.nummer,
     naam:target.naam,code:'',oms:'Werk',u:1,bron:[{id:rule.id}]};
-  const db=fakeDatabase({dossiers:[target,i7],regels:[rule],meta:{running:null,geboekt:{oud:['bestaande-i7-boeking']}},overboekingen:[]});gateway.use(db);
+  const db=fakeDatabase({dossiers:[target,i7],regels:[rule],meta:{running:null,geboekt:{oud:['bestaande-i7-boeking']}},overboekingen:[],codes:[{code:'COM',naam:'Commercieel'}]});gateway.use(db);
   const parked=await service.parkOverbooking({row,target,i7Dossier:i7,commercialCode:'COM',
     rules:[rule],overbookings:[],sourceDate:rule.datum,roundingMode:'groep',summarize,id:'o1',
     nowIso:'2026-08-25T10:00:00.000Z',hoursOf:()=>1,waitForRules:()=>Promise.resolve()});
@@ -819,7 +819,7 @@ test('dagservice sluit, vult exact aan en heropent vanuit één opgeslagen dagst
   const date='2026-08-25',rule={id:'r1',datum:date,start:'09:00',eind:'14:54',
     dossierId:'d1',omschrijving:'Werk',uren:5.9,urenHand:true,soort:'werk'};
   const i7={id:'i7',isI7:true,naam:'Indirect'};
-  const db=fakeDatabase({regels:[rule],dossiers:[{id:'d1'},i7],overboekingen:[],meta:{}});gateway.use(db);
+  const db=fakeDatabase({regels:[rule],dossiers:[{id:'d1'},i7],overboekingen:[],codes:[{code:'PRAK-701',naam:'Praktijkorganisatie'}],meta:{}});gateway.use(db);
   const closed=await service.closeDay({date,end:'17:00',rules:[rule],dossiers:[{id:'d1'}],
     overbookings:[],runningId:null,dayEnds:{},dayAudit:{},stack:[],totalBefore:5.9,
     bookingContext:{runningId:null,today:date,nowHM:'17:00'},nowMs:1,nowIso:'sluit'});
@@ -828,7 +828,7 @@ test('dagservice sluit, vult exact aan en heropent vanuit één opgeslagen dagst
 
   const fillInput={date,isWorkday:true,dayEnds:closed.dayEnds,dayAudit:closed.dayAudit,
     dayEnd:'17:00',rules:[rule],dossiers:[{id:'d1'},i7],overbookings:[],runningId:null,
-    i7Dossier:i7,code:'ADM',currentTotal:5.9,
+    i7Dossier:i7,code:'PRAK-701',currentTotal:5.9,
     bookingContext:{runningId:null,today:date,nowHM:'17:00'},id:'fill',batchId:'batch',
     nowMs:2,nowIso:'vul',waitForRules:()=>Promise.resolve()};
   const filled=await service.autoFillDay(fillInput);
@@ -1281,8 +1281,6 @@ test('i7-codeplicht heeft geen stille standaard en lokale codes blijven leidend'
     'laadWerkcodes() moet een lokale werklijst vóór netwerkbootstrap gebruiken');
   assertIncludes(src.app, 'return false;}\n  let d=null;',
     'Een bestaande lokale werklijst moet de werkcodes.json-bootstrap overslaan');
-  assertIncludes(src.wizard, 'if(d&&d.isI7&&!HH.state.read().running.code)',
-    'De N-wizard moet i7 zonder expliciete code blokkeren');
   assertIncludes(src.wizard, 'if(!HH.state.read().codes.some(c=>c.code===code))',
     'De wizard moet een stale i7-keuze tegen de actuele lokale lijst controleren');
 });
@@ -1627,8 +1625,8 @@ test('Patch H houdt gewone blokkade los van DVN en echte boekstatus', () => {
   assertIncludes(src.views, 'Van tijdelijk i7 naar dossier', 'Beheer mist de overboekingswerkvoorraad');
   assertIncludes(src.html, 'Tijdelijk niet boekbaar', 'Dagwizard mist de parkeeractie');
   assertIncludes(src.html, 'Op i7 geboekt · parkeren', 'Expliciete tijdelijke i7-bevestiging ontbreekt');
-  assertIncludes(src.admin, 'atomic(input,["regels","dossiers","overboekingen"],["running","bookingHistory"]',
-    'Parkeren moet apart van geboekt worden opgeslagen');
+  assertIncludes(src.admin, 'atomic(input,["regels","dossiers","overboekingen","codes"],["running","bookingHistory","geboekt"]',
+    'Parkeren moet bestaande boekingen controleren zonder die te wijzigen');
   assertNotIncludes(src.booking, 'zetGeboekt(p.row.fp,true)', 'Parkeren mag niet als echte dossierboeking gelden');
   assertIncludes(src.booking, 'status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd · "+status.open+" open',
     'Dagstatus moet drie aantallen tonen');

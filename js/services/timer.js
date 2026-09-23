@@ -88,7 +88,7 @@
     const expected=idOf(input.currentTimer);
     await waitFor(input,[input.id,expected]);
     if(!tokenValid(token,input))return fail("timer_changed");
-    return gateway.atomicWrite({stores:["regels","dossiers","overboekingen"],
+    return gateway.atomicWrite({stores:["regels","dossiers","overboekingen","codes"],
       metaKeys:["running","pending","stack","dagEinde","dagAudit","codeGebruik","geboekt"],
       operationId:input.operationId,completedAt:input.nowIso},(snapshot,writer)=>{
       const currentId=snapshot.meta.running||null;
@@ -102,6 +102,16 @@
       const created=input.createdDossier?copy(input.createdDossier):null,
         dossier=created||byId(snapshot.dossiers,input.dossierId);
       if(input.dossierId&&!dossier)return fail("dossier_missing");
+      if(dossier&&dvn.isIndirect(dossier)){
+        const selected=input.code||null,codes=snapshot.codes||[],known=!!selected&&
+          codes.some(item=>item.code===selected);
+        if(!selected||!known)return fail("i7_code_required");
+        if(dossier.voorlopig||dvn.isFinalI7(dossier)){
+          const commercial=codes.find(item=>/commerc/i.test(item.naam||""))||
+            codes.find(item=>(item.code||"").endsWith("-704"));
+          if(!commercial||selected!==commercial.code)return fail("i7_code_mismatch");
+        }
+      }
       const rule=gateway.createdRule({id:input.id,datum:input.date,start:input.time,eind:null,
         dossierId:dossier?dossier.id:null,code:input.code||null,
         omschrijving:input.description||"",uren:0.1,urenHand:false,

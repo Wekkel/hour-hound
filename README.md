@@ -291,3 +291,32 @@ Visuele browsertests en installatie van de PWA-update zijn niet uitgevoerd.
 Validatie AC: `npm run test:browserless` slaagt met 272 controles, waaronder
 30 nieuwe uitvoerende controles voor groepering, wizard, opslag en dagboeken.
 Die 30 controles falen tegen de AB-baseline en slagen met AC.
+
+## Patch AD — i7-werkcodes, DVN-nummer en parkeren
+
+Nieuwe Taak koppelt een regel pas aan i7 wanneer de werkcode is gekozen. Een
+onderbreking blijft herkenbaar als nog toe te wijzen tijd tot de dossierkeuze is
+afgerond. De timer, het koppelen van een lopende regel en de Dag-editor weigeren
+een i7-regel zonder werkcode; bij het opslaan wordt de actuele werklijst uit
+IndexedDB gecontroleerd. Een onvoltooide, nog ongekoppelde regel moet onder Dag
+worden afgemaakt voordat de dag naar Intapp kan.
+
+Een DVN mag niet aan het bestaande i7-dossiernummer worden gekoppeld. Bij een
+nummer van een al bestaand gewoon dossier toont het nummerformulier de naam van
+dat dossier als alleen-lezen. Bij een eigen nummer blijft de DVN-naam bewerkbaar.
+
+Het parkeerformulier toont het i7-dossier, de werkcode Commercieel, uren en de
+omschrijving afzonderlijk, met kopieerknoppen. Parkeren weigert een bron die al
+als gewone dossierboeking is bevestigd, inclusief een oude boekmarkering.
+Hour Hound bewaart bij parkeren het echte doeldossier voor later.
+
+Deze patch past geen bestaande regels of boekingsbewijzen aan. Controleer eerdere
+bevestigingen tegen de daadwerkelijke invoer in Intapp; de app kan Intapp niet
+zelf raadplegen. Publiceer de gewijzigde bestanden samen bovenop patch AC en
+verhoog bij publicatie zelf de serviceworker-cacheversie. `sw.js` hoort niet bij
+deze patch.
+
+Validatie AD: `npm run test:browserless` slaagt, inclusief uitvoerende tests
+voor oude tabbladen met gewijzigde werkcodes, DVN-nummering, parkeren en
+Praktijkorganisatie bij de automatische dagaanvulling. Na publicatie is een
+visuele controle in de PWA nog nodig; de browsertestomgeving was niet aanwezig.

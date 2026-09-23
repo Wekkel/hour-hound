@@ -19,10 +19,10 @@
   };
   const byId=(rows,id)=>(rows||[]).find(row=>row.id===id)||null;
   const fresh=(input,snapshot)=>Object.assign({},input,{rules:snapshot.regels||[],
-    dossiers:snapshot.dossiers||[],beforeDossiers:input.dossiers||[],overbookings:snapshot.overboekingen||[]});
+    dossiers:snapshot.dossiers||[],codes:snapshot.codes||[],beforeDossiers:input.dossiers||[],overbookings:snapshot.overboekingen||[]});
   const metaValue=(snapshot,input,key,inputKey)=>snapshot.meta[key];
   const atomic=(input,metaKeys,prepare)=>gateway.atomicWrite({
-    stores:["regels","dossiers","overboekingen"],metaKeys:metaKeys||[],
+    stores:["regels","dossiers","overboekingen","codes"],metaKeys:metaKeys||[],
     operationId:input.operationId,completedAt:input.nowIso},prepare);
   const revisionMatches=(current,expected)=>gateway.revisionOf(current)===gateway.revisionOf(expected);
 
@@ -70,8 +70,24 @@
     return[...map.values()];
   }
 
+  function persistedI7Code(code,codes){
+    return !!code&&(codes||[]).some(item=>item.code===code);
+  }
+  function commercialCode(codes){
+    return (codes||[]).find(item=>/commerc/i.test(item.naam||""))||
+      (codes||[]).find(item=>(item.code||"").endsWith("-704"))||null;
+  }
   function validateRule(rule,input,allowOpen){
     if(!rule||!rule.id)return fail("rule_missing");
+    const dossier=byId(input.dossiers,rule.dossierId)||byId(input.dossierWrites,rule.dossierId);
+    if(dossier&&dvn.isIndirect(dossier)){
+      const selected=persistedI7Code(rule.code,input.codes);
+      if(!selected)return fail("i7_code_required");
+      if(dossier.voorlopig||dvn.isFinalI7(dossier)){
+        const commercial=commercialCode(input.codes);
+        if(!commercial||rule.code!==commercial.code)return fail("i7_code_mismatch");
+      }
+    }
     const start=time.hm2m(rule.start),end=rule.eind?time.hm2m(rule.eind):null;
     if(start==null)return fail("invalid_start");
     if(rule.eind&&end==null)return fail("invalid_end");
@@ -271,6 +287,8 @@
       byId(input.rules,input.runningId).datum===input.date)return fail("timer_running");
     if(!input.i7Dossier)return fail("i7_missing");
     if(!input.code)return fail("admin_code_missing");
+    if(Array.isArray(input.codes)&&!persistedI7Code(input.code,input.codes))
+      return fail("i7_code_required");
     const current=Math.round((+input.currentTotal||0)*10)/10;
     const shortfall=booking.autoFillShortfall(current);
     if(shortfall<=0.05)return ok({noChange:true,currentTotal:current,shortfall:0,finalTotal:current});

@@ -26,15 +26,19 @@ function ntRenderSamenvatting(){
   const box=$("nt-summary");if(!box)return;
   box.classList.toggle("on",!!ntWizard);
   if(!ntWizard)return;
-  const d=HH.state.read().running?dosOf(HH.state.read().running.dossierId):null,s=ntSoort(),vak=ntActiefVak();
+  const active=HH.state.read().running,
+    current=active?dosOf(active.dossierId):null,
+    choosingI7=ntWizard.kind==="i7"&&(!current||!current.isI7),
+    d=choosingI7?i7():current,s=ntSoort(),vak=ntActiefVak(),
+    currentCode=choosingI7?null:active&&active.code;
   $("nt-v-soort").textContent=s[0];$("nt-x-soort").textContent=s[1];
   $("nt-v-dos").textContent=d?d.naam:"—";
   $("nt-x-dos").textContent=d?(d.nummer||"nummer volgt nog"):"nog niet gekozen";
   const dvnVast=ntWizard.kind==="volgt"?i7CodeOp(VAST_VOORLOPIG,"-704"):null;
   const dvnCode=dvnVast?HH.state.read().codes.find(c=>c.code===dvnVast):null;
-  $("nt-v-code").textContent=HH.state.read().running&&HH.state.read().running.code?codeNaam(d,HH.state.read().running.code):
+  $("nt-v-code").textContent=currentCode?codeNaam(d,currentCode):
     (ntWizard.kind==="volgt"?(dvnCode?dvnCode.naam:"Commercieel"):"—");
-  $("nt-x-code").textContent=HH.state.read().running&&HH.state.read().running.code?HH.state.read().running.code:
+  $("nt-x-code").textContent=currentCode?currentCode:
     (ntWizard.kind==="volgt"?(dvnVast?"automatisch":"ontbreekt in werklijst"):
       (d&&d.isI7?"verplicht":"optioneel"));
   $("nt-v-oms").textContent=ntRauw()||"—";
@@ -239,6 +243,12 @@ async function ntWisIdentiteit(){
 async function ntKiesSoort(k){
   const ind=k==="i7"?i7():null;
   if(k==="i7"&&!ind){toast("Het i7-dossier ontbreekt");return;}
+  /* Keep the timer's current identity untouched while the user chooses an i7 code.
+     The dossier and code are committed together by ntKiesI7(). */
+  if(k==="i7"){
+    ntWizard.kind="i7";ntWizard.hi=0;ntWizard.codeOpen=false;ntWizard.descHi=-1;
+    ntWizard.step="i7";ntRender();ntFocus();return;
+  }
   return ntVoerSelectieUit(r=>koppelRegel(r,{dossierId:ind?ind.id:null,code:null,
     omschrijving:ntRauw()}),w=>{
     w.kind=k;w.hi=0;w.codeOpen=false;w.descHi=-1;
@@ -348,13 +358,18 @@ async function ntBewaarGewoneCode(){
     if(HH.state.read().running.code)await koppelRegel(HH.state.read().running,{code:null});
     return true;}
   return await codeUitVeld(HH.state.read().running,v);}
+function ntI7CodeMissing(d){
+  const activeRule=HH.state.read().running;
+  if(d&&d.isI7&&!activeRule.code)return true;
+  return !!(d&&d.isI7&&!HH.state.read().codes.some(c=>c.code===activeRule.code));
+}
 async function ntKlaar(){
   if(!HH.state.read().running||!ntWizard)return;
   const d=dosOf(HH.state.read().running.dossierId);
   /* Laat een i7-wizard nooit afronden zonder de verplichte vaste-lijstkeuze. Dit is
      de laatste invariant achter de UI: ook een stale DOM of onverwachte statewissel
      kan daardoor niet ongemerkt een i7-regel zonder werkcode opleveren. */
-  if(d&&d.isI7&&!HH.state.read().running.code){
+  if((ntWizard.kind==="i7"&&(!d||!d.isI7))||ntI7CodeMissing(d)){
     toast(HH.state.read().codes.length?"Kies eerst de verplichte i7-werkcode":
       "Geen i7-werkcodes beschikbaar — importeer werkcodes.json onder Beheer");
     ntWizard.step="i7";ntWizard.hi=0;ntRender();ntFocus();return;}
@@ -371,6 +386,15 @@ async function ntTerug(){
   if(ntWizard.step==="nieuw")ntWizard.step="dossier";
   else if(ntWizard.step==="omschrijving")
     ntWizard.step=ntWizard.kind==="i7"?"i7":(ntWizard.kind==="volgt"?"volgt":"dossier");
+  else if(ntWizard.step==="i7"){
+    /* No i7 identity was written before code selection, so Back only leaves the
+       route screen and preserves whatever task identity was already running. */
+    const selected=HH.state.read().running?
+      dosOf(HH.state.read().running.dossierId):null;
+    if(selected&&selected.isI7)return ntWisIdentiteit();
+    ntWizard.kind=null;ntWizard.step="kind";ntWizard.hi=0;ntWizard.descHi=-1;
+    ntRender();ntFocus();return;
+  }
   else return ntWisIdentiteit();
   ntWizard.hi=0;ntWizard.descHi=-1;ntWizard.codeOpen=false;ntRender();ntFocus();}
 function ntBind(){

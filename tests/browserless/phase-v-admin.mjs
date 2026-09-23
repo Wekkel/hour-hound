@@ -142,7 +142,7 @@ test('timer-undo controleert pointer en revisie atomair',async()=>{
 
 test('timer-dossierwrites verhogen bestaande en nieuwe revisies',async()=>{
   const HH=services(),existing={...dossier,revision:4,used:2},db=persistentDB({
-    dossiers:[existing],meta:{}});HH.storage.indexedDB.use(db);
+    dossiers:[existing],codes:[{code:'COM',naam:'Commercieel'}],meta:{}});HH.storage.indexedDB.use(db);
   const started=await HH.services.timer.start({currentTimer:null,date,time:'09:00',id:'nieuw',
     dossierId:'d',description:'Werk',kind:'werk',nowMs:3,nowIso:'nu'});
   assert(started.ok,'Timerstart met bestaand dossier is geweigerd: '+started.error);
@@ -152,9 +152,77 @@ test('timer-dossierwrites verhogen bestaande en nieuwe revisies',async()=>{
     date,time:'10:00',nowMs:5,nowIso:'later'});
   assert(stopped.ok,'Voorbereidende stop is geweigerd: '+stopped.error);
   const createdStart=await HH.services.timer.start({currentTimer:null,date,time:'10:00',id:'nieuw-2',
-    dossierId:created.id,createdDossier:created,description:'Werk',kind:'werk',nowMs:6,nowIso:'later'});
+    dossierId:created.id,createdDossier:created,code:'COM',description:'Werk',kind:'werk',nowMs:6,nowIso:'later'});
   assert(createdStart.ok,'Timerstart met nieuw dossier is geweigerd: '+createdStart.error);
   equal(db.rows.dossiers.get(created.id).revision,1,'Nieuw timerdossier kreeg geen beginrevisie');
+});
+
+test('Dagservice weigert i7 zonder code bij toevoegen en bewerken',async()=>{
+  const i7={id:'i7',nummer:'I700000000',naam:'i7',isI7:true,revision:1},
+    existing={...rule,id:'existing',dossierId:i7.id,code:'PRAK-701'},
+    db=persistentDB({dossiers:[i7],regels:[existing],codes:[{code:'PRAK-701',naam:'Praktijkorganisatie'}],meta:{}}),HH=services();
+  HH.storage.indexedDB.use(db);
+  const bad={...rule,id:'new-i7',dossierId:i7.id,code:null},input={rule:bad,
+    dossiers:[i7],rules:[existing],nowMs:5,nowIso:'now',bookingContext:{}};
+  const added=await HH.services.dayRules.addRule(input);
+  equal(added.error,'i7_code_required','i7 zonder code toegevoegd');
+  equal(db.writes,0,'afgewezen toevoeging schreef toch');
+  const changed=await HH.services.dayRules.editRule({...input,before:existing,
+    rule:{...existing,code:null},confirmedWarnings:true});
+  equal(changed.error,'i7_code_required','i7-code verwijderd via dagservice');
+  equal(db.writes,0,'afgewezen bewerking schreef toch');
+  equal(db.rows.regels.get('existing').code,'PRAK-701','oude code verloren');
+  const stale={...rule,id:'stale-i7',dossierId:i7.id,code:'REMOVED'};
+  const staleAdd=await HH.services.dayRules.addRule({...input,rule:stale});
+  equal(staleAdd.error,'i7_code_required','i7 met niet meer opgeslagen werkcode toegevoegd');
+  equal(db.rows.regels.has(stale.id),false,'stale werkcode werd toch opgeslagen');
+  const normal={...dossier},billable={...rule,id:'new-billable',dossierId:normal.id,code:null};
+  db.rows.dossiers.set(normal.id,normal);
+  const allowed=await HH.services.dayRules.addRule({...input,rule:billable,dossiers:[i7,normal]});
+  assert(allowed.ok,'Gewoon dossier zonder optionele code is onterecht geweigerd: '+allowed.error);
+});
+
+test('Auto-aanvulling accepteert Praktijkorganisatie en weigert verdwenen i7-code atomair',async()=>{
+  const i7={id:'i7',nummer:'I700000000',naam:'i7',isI7:true,revision:1},
+    base={...rule,id:'base',dossierId:'d',code:null},
+    db=persistentDB({dossiers:[dossier,i7],regels:[base],codes:[
+      {code:'PRAK-701',naam:'Praktijkorganisatie'},{code:'OTHER',naam:'Overig'}],
+      meta:{dagEinde:{[date]:'17:00'},dagAudit:{}}}),HH=services();
+  HH.storage.indexedDB.use(db);
+  const common={date,isWorkday:true,i7Dossier:i7,currentTotal:7,dayEnd:'17:00',
+    id:'autofill',batchId:'batch',nowMs:4,nowIso:'nu',bookingContext:{}};
+  const stale=await HH.services.dayRules.autoFillDay({...common,code:'REMOVED'});
+  equal(stale.error,'i7_code_required','auto-aanvulling accepteerde verdwenen code');
+  equal(db.rows.regels.has('autofill'),false,'afgewezen stale auto-aanvulling schreef een regel');
+  const valid=await HH.services.dayRules.autoFillDay({...common,id:'valid-code',code:'PRAK-701'});
+  assert(valid.ok,'auto-aanvulling met opgeslagen Praktijkorganisatie werd geweigerd: '+valid.error);
+  equal(db.rows.regels.get('valid-code').code,'PRAK-701','auto-aanvulling verloor Praktijkorganisatie-code');
+});
+
+test('Dag sluiten weigert stale code en accepteert Praktijkorganisatie voor aanvulling',async()=>{
+  const i7={id:'i7',nummer:'I700000000',naam:'i7',isI7:true,revision:1},
+    base={...rule,id:'close-base',dossierId:'d',code:null},
+    db=persistentDB({dossiers:[dossier,i7],regels:[base],codes:[{code:'PRAK-701',naam:'Praktijkorganisatie'}],meta:{}}),HH=services();
+  HH.storage.indexedDB.use(db);
+  const out=await HH.services.dayRules.closeDay({date,end:'17:00',fill:true,isWorkday:true,
+    i7Dossier:i7,code:'MISSING',currentTotal:7,totalForRules:()=>7,autoFillId:'close-fill',
+    batchId:'batch',nowMs:4,nowIso:'nu',bookingContext:{}});
+  equal(out.error,'i7_code_required','dag sluiten vulde met een niet-bestaande i7-code aan');
+  equal(db.rows.meta.has('dagEinde'),false,'mislukte dagsluiting sloot de dag toch');
+  equal(db.rows.regels.has('close-fill'),false,'mislukte dagsluiting schreef auto-regel');
+  const valid=await HH.services.dayRules.closeDay({date,end:'17:00',fill:true,isWorkday:true,
+    i7Dossier:i7,code:'PRAK-701',totalForRules:()=>7,autoFillId:'close-valid',
+    batchId:'batch',nowMs:5,nowIso:'nu',bookingContext:{}});
+  assert(valid.ok,'dag sluiten weigerde Praktijkorganisatie: '+valid.error);
+  equal(db.rows.regels.get('close-valid').code,'PRAK-701','dagafsluiting schreef verkeerde aanvulcode');
+});
+
+test('Onbekende timerfout blijft een fout en meldt een herstelbare boodschap',async()=>{
+  const runtime=coreRuntime(),messages=[];
+  runtime.context.toast=message=>messages.push(message);runtime.context.L=()=>{};
+  const rejected=await vm.runInContext('meldTimerFout({ok:false,error:"unknown_write_reject"},"Timer niet opgeslagen")',runtime.context);
+  equal(rejected,true,'onbekende servicefout werd als succes behandeld');
+  equal(messages[0],'Timer niet opgeslagen','gebruikersmelding ontbreekt');
 });
 
 test('dossier-save weigert revision-zero model tegen nieuwere opslag',async()=>{
@@ -226,7 +294,7 @@ test('adminregelmerge bewaart latere velden en verhoogt revisie',async()=>{
   const HH=services(),dvn={id:'v',naam:'DVN',voorlopig:true,dvn:true,revision:1,gewijzigd:1},
     before={...rule,id:'v-r',dossierId:'v',code:'ANDERS'},
     actual={...before,omschrijving:'Latere tekst',revision:2,gewijzigd:2},
-    db=persistentDB({regels:[actual],dossiers:[dvn],meta:{stack:[]}});HH.storage.indexedDB.use(db);
+    db=persistentDB({regels:[actual],dossiers:[dvn],codes:[{code:'COM',naam:'Commercieel'},{code:'ANDERS',naam:'Anders'}],meta:{stack:[]}});HH.storage.indexedDB.use(db);
   const out=await HH.services.admin.finalizeDvnI7({dossier:dvn,dossiers:[dvn],rules:[before],
     stack:[],runningId:null,commercialCode:'COM',hoursOf:()=>1,nowMs:3,nowIso:'nu'});
   assert(out.ok,'Veilige adminmerge is geweigerd: '+out.error);
