@@ -1929,7 +1929,9 @@ function phaseUDocument(){
 
 function evaluateEditorHandler(){
   const dom=phaseUDocument(),calls=[],toasts=[];
-  const state={rules:[],dossiers:[],overbookings:[],booked:{},running:null};
+  /* Patch AF: een afgesloten werkregel hoort in een soort; de fixture gebruikt daarom een gewoon dossier. */
+  const gewoon={id:'d',nummer:'300000001',naam:'Dossier'};
+  const state={rules:[],dossiers:[gewoon],overbookings:[],booked:{},running:null,codes:[]};
   const context={console,setTimeout,clearTimeout,document:dom.document,window:{},confirm:()=>true,
     HH:{ui:{modals:{anyOpen:()=>false}},state:{read:()=>state,commit(delta){Object.assign(state,delta);},selectors:{day:()=>[]}},
       services:{dayRules:{ruleWarnings:()=>[]},timer:{async editRule(input){calls.push(input);
@@ -1937,8 +1939,11 @@ function evaluateEditorHandler(){
       app:{render(){}}},
     $:dom.el,hm2m:v=>/^\d\d:\d\d$/.test(v)?Number(v.slice(0,2))*60+Number(v.slice(3)):null,
     m2hm:m=>String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'),
-    uu:n=>Number(n).toFixed(1).replace('.',','),urenOf:r=>r.uren,dagLabel:x=>x,dosOf:()=>null,
-    dosVeld:()=>'',codeNaam:()=>'',sumVan:()=>[],overboekingAfgerondVoorRow:()=>false,
+    uu:n=>Number(n).toFixed(1).replace('.',','),urenOf:r=>r.uren,dagLabel:x=>x,dosOf:id=>id==='d'?gewoon:null,
+    dosVeld:d=>d?(d.nummer||d.naam):'',codeNaam:()=>'',closeAC(){},openAC(){},ac:{el:null},acKeys:()=>false,pickBusy:0,
+    i7:()=>null,codeItems:()=>[],dossierItems:()=>[],isGewoonDossier:d=>!!d&&!d.isI7&&!d.voorlopig,
+    zoekDossierExact:()=>({}),dvnNaamSchoon:x=>x,normOms:x=>String(x||'').toLowerCase(),i7CodeOp:()=>null,
+    VAST_VOORLOPIG:/commerc/i,VOOR:/^\d{2}\.\d{2}\.\d{4} · [^·]* · /,kort:x=>x,codesFor:()=>[],defaultCode:()=>null,sumVan:()=>[],overboekingAfgerondVoorRow:()=>false,
     overboekingOpenVoorRegel:()=>false,isDvn:()=>false,dvnIntappState:()=>'',isIndirect:()=>false,
     dvnDefinitiefI7:()=>false,actief:()=>[],splitsDossier:()=>null,nummerBezet:()=>false,
     prefixVoor:(_d,_date,text)=>text,kopie1:x=>JSON.parse(JSON.stringify(x)),DAGMAX:24,
@@ -1956,7 +1961,7 @@ function evaluateEditorHandler(){
 
 test('Phase U editor bewaart automatische uren, handmatige keuze, wissen en echte no-op', async() => {
   const h=evaluateEditorHandler();
-  const auto={id:'r1',datum:'2026-09-05',start:'09:00',eind:'10:00',dossierId:null,code:null,
+  const auto={id:'r1',datum:'2026-09-05',start:'09:00',eind:'10:00',dossierId:'d',code:null,
     omschrijving:'werk',uren:1,urenHand:false,gewijzigd:111};
   h.state.rules=[auto];h.state.booked={'2026-09-05':['blijft-geboekt']};
   let done=h.open('r1');h.el('er-eind').value='11:00';h.el('er-eind').dispatch('input');

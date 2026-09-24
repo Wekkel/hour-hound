@@ -89,7 +89,12 @@ const adminFoutTekst={invalid_dvn:"Deze DVN is niet meer beschikbaar",
   number_required:"Vul eerst een dossiernummer in",
   target_is_dvn:"Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.",
   target_is_i7:"Dit nummer hoort bij i7. Vul een gewoon dossiernummer in.",
-  number_exists:"Deze DVN heeft al een dossiernummer en kan niet naar definitief i7",
+  number_exists:"Deze DVN heeft (of had) al een dossiernummer of koppeling en kan niet naar definitief i7",
+  number_taken:"Dat dossiernummer hoort al bij een ander dossier",
+  number_locked:"Het nummer van een i7- of DVN-dossier wijzig je via Nummer toekennen/aanpassen",
+  sphere_locked:"Dit dossier kan hier niet van soort veranderen (gewoon/i7/DVN)",
+  i7_protected:"Het i7-dossier kan niet worden verwijderd",
+  linked_target:"Een DVN verwijst naar dit dossier — verwijderen zou die koppeling breken",
   timer_running:"Stop eerst alle betrokken timers",
   commercial_code_missing:"Werkcode Commercieel ontbreekt — herstel werkcodes.json onder Beheer",
   i7_code_mismatch:"Werkcode Commercieel is gewijzigd — controleer de i7-werklijst en probeer opnieuw",
@@ -118,6 +123,8 @@ const dagRegelFoutTekst={rule_missing:"De tijdregel ontbreekt",
   day_limit:"Dat zou meer dan 24,0 uur op één dag maken",
   confirmation_required:"Bevestig eerst de administratieve gevolgen",
   parked_rule:"Deze regel wacht nog op dossierboeking — rond de overboeking eerst af onder Beheer",
+  dossier_required:"Kies eerst de soort en het dossier: Dossier, i7 of DVN",
+  number_taken:"Dat dossiernummer bestaat al — kies het bestaande dossier",
   booked_rule:"Deze geboekte regel blijft bewaard — controleer eerst de boeking in Intapp",
   day_closed:"Deze werkdag is al afgesloten",day_empty:"Deze dag heeft geen tijdregels",
   weekend:"Weekenddagen hebben geen 8-uursaanvulling",
@@ -138,11 +145,13 @@ const timerFoutTekst={blocked:"Rond eerst het herstelvenster af",
   invalid_recovery:"De herstelkeuze past niet meer bij de open regels",
   invalid_undo:"De opgeslagen toestand kan niet veilig worden hersteld",
   rule_changed:"De betrokken regel is intussen gewijzigd",
-  parked_rule:"Een betrokken regel wacht op dossierboeking",
+  parked_rule:"Een betrokken regel wacht op dossierboeking — rond de overboeking eerst af onder Beheer",
   booked_rule:"Een betrokken dag is inmiddels geboekt",
   admin_changed:"De administratieve status is inmiddels gewijzigd",
   day_closed:"Een betrokken werkdag is inmiddels afgesloten",
   day_limit:"Herstellen zou de daggrens overschrijden",
+  number_taken:"Dat dossiernummer bestaat al — kies het bestaande dossier",
+  dossier_required:"Kies eerst de soort en het dossier: Dossier, i7 of DVN",
   write_failed:"Timeractie mislukt — er is niets gewijzigd"};
 async function meldTimerFout(result,fallback){
   if(result&&result.ok)return false;
@@ -399,6 +408,8 @@ const isDvn=dvnDomain.isDvn;
 const dvnDefinitiefI7=dvnDomain.isFinalI7;
 const isIndirect=dvnDomain.isIndirect;
 const dosVeld=d=>d?(d.nummer||d.naam):"";
+const dvnOoitGenummerd=d=>dvnDomain.everNumbered(d);
+const dvnNaamSchoon=v=>dvnDomain.cleanName(v);
 const overboekingOpen=overbookingDomain.isOpen;
 const bronIdsVan=overbookingDomain.sourceIds;
 const overboekingOpenVoorRegel=id=>overbookingDomain.openForRule(id,HH.state.read().overbookings);
@@ -532,7 +543,8 @@ function valideerBoekData(lijst,dossierRows){
   return bookingDomain.validateDay(lijst,{runningId:HH.state.read().running?HH.state.read().running.id:null,
     today:today(),nowHM:nowHM(),getDossier:dossier,isIndirect,hasCodeError:codeFout,
     isFixedCode:d=>!!d&&(d.voorlopig||dvnDefinitiefI7(d)),getFixedCode:defaultCode,
-    getCodeName:codeNaam});}
+    getCodeName:codeNaam,getIntappNumber:d=>dvnDomain.intappInfo(d,{dossiers:ds,
+      i7Dossier:ds.find(x=>x.isI7)||null}).nummer});}
 function valideerBoekDag(lijst){return valideerBoekData(lijst);}
 const dagCapaciteit=(datum,extra,exclId)=>
   bookingDomain.dayCapacity(HH.state.read().rules,datum,extra,exclId,boekRekenContext());
@@ -710,33 +722,34 @@ function splitsDossier(q){
      automatisch een nieuw dossier aan. */
   const m=/^(.+?)\s+[-–—]\s+(.+)$/.exec(t);
   return m?{nummer:m[1].trim(),naam:m[2].trim()}:null;}
+/* Patch AE: het live dossierveld is uitsluitend de route voor GEWONE dossiers,
+   net als "Dossier" in Nieuwe taak. i7-codes, DVN's, recente taken en "Dossier volgt
+   nog" horen hier niet meer: die mengden de drie sferen in één lijst. i7 en DVN lopen
+   via Nieuwe taak / Gegevens aanvullen. */
+const isGewoonDossier=d=>!!d&&!isIndirect(d)&&!d.voorlopig&&!d.dvnTo;
+function zoekDossierExact(v,filter){
+  const lo=String(v||"").trim().toLowerCase();if(!lo)return{};
+  const pool=actief().filter(filter||(()=>true));
+  const opNummer=pool.filter(x=>(x.nummer||"").toLowerCase()===lo);
+  if(opNummer.length===1)return{hit:opNummer[0]};
+  const opNaam=pool.filter(x=>x.naam.toLowerCase()===lo||
+    ((x.nummer||"")+" - "+x.naam).toLowerCase()===lo);
+  if(opNaam.length===1)return{hit:opNaam[0]};
+  if(opNaam.length>1||opNummer.length>1)return{ambiguous:true};
+  return{};}
 function dossierItems(q){
   const t=(q||"").trim(),lo=t.toLowerCase();
   const m=x=>!lo||String(x).toLowerCase().includes(lo);
   const it=[];
-  takenVandaag().filter(x=>(!HH.state.read().running||x.k!==taakKey(HH.state.read().running))&&
-      m(taakLabel(x)+" "+x.oms)).slice(0,6)
-    .forEach(x=>it.push({t:"taak",k:x.k,d:dosOf(x.dossierId),
-      label:taakLabel(x)+(x.oms?" — "+x.oms:""),sub:uu(x.u)+" u",
-      group:"Verder op vandaag"}));
-  actief().filter(d=>!d.isI7&&!d.voorlopig&&m((d.nummer||"")+" "+d.naam))
+  actief().filter(d=>isGewoonDossier(d)&&m((d.nummer||"")+" "+d.naam))
     .sort((a,b)=>(b.used||0)-(a.used||0)).slice(0,12)
     .forEach(d=>it.push({t:"dos",id:d.id,d,label:d.naam,sub:d.nummer||"",
       group:"Dossiers"}));
-  codesGesorteerd().filter(c=>m("i7 indirect "+c.code+" "+c.naam))
-    .slice(0,lo?8:4)
-    .forEach(c=>it.push({t:"i7code",code:c.code,label:"i7 · "+c.naam,
-      sub:c.code.split("-").pop(),group:"Indirecte uren"}));
-  actief().filter(d=>d.voorlopig&&m(d.naam)).slice(0,6)
-    .forEach(d=>it.push({t:"dos",id:d.id,d,label:d.naam,sub:"volgt nog",
-      group:"Dossiernummer volgt nog"}));
   if(t){
     const pd=splitsDossier(t);
     if(pd&&!nummerBezet(pd.nummer,null))
       it.push({t:"nieuw",nummer:pd.nummer,naam:pd.naam,isNew:true,
-        label:"Nieuw dossier: "+pd.naam,sub:pd.nummer,group:"Aanmaken"});
-    it.push({t:"volgt",naam:t,isNew:true,label:'Dossier volgt nog: "'+t+'"',
-      sub:"i7",group:"Aanmaken"});}
+        label:"Nieuw dossier: "+pd.naam,sub:pd.nummer,group:"Aanmaken"});}
   return it;}
 function codeItems(d,q){
   /* Bij een dossier waarvan het nummer nog volgt is er maar één geldige werkcode. */

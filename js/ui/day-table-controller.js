@@ -36,18 +36,10 @@ $("d-table").addEventListener("click",async e=>{
   if(fl){const[a,b]=fl.dataset.fill.split("-").map(Number);
     const u=Math.ceil((b-a)/6)/10;
     if(!dagRuimte(HH.state.read().viewDate,u,null))return;
+    /* Patch AF: het gat wordt pas een tijdregel na "Regel toevoegen" in de bewerksheet.
+       Annuleren laat dus geen regel zonder dossier achter. */
     const r=nieuweRegel({start:m2hm(a),eind:m2hm(b),uren:u});
-    let uit;
-    try{uit=await HH.services.dayRules.addRule({rule:r,rules:HH.state.read().rules,
-      dossiers:HH.state.read().dossiers,
-      overbookings:HH.state.read().overbookings,bookingContext:boekRekenContext(),waitForRules:rustig,
-      nowMs:Date.now(),nowIso:new Date().toISOString(),undoLabel:"gat invullen"});}
-    catch(x){L("FOUT-gat-invullen",String(x));toast("Regel toevoegen mislukt — niets gewijzigd");return;}
-    if(meldDagRegelFout(uit,"Regel toevoegen is niet uitgevoerd"))return;
-    uit.dossiers.forEach(memDossier);memRegel(uit.rule);pasMutatieUndoToe(uit.undo);
-    if(uit.dayWasClosed){undoStack=[];await herlaad(true);}
-    bouwDag();renderTot();announce();
-    await openRegelEditor(uit.rule.id,"dag");}});
+    if(await openRegelEditor(r.id,"dag",r)){bouwDag();renderTot();announce();}}});
 /* De enige manier om een afgesloten regel weer te laten lopen. Sluit de huidige timer
    af, opent de gekozen regel en zet meta.running om — atomisch, met controle op datum,
    starttijd en overlap. urenHand gaat er af, anders bevriest de teller.        */
@@ -93,14 +85,7 @@ $("d-next").onclick=()=>{HH.state.commit({viewDate:addD(HH.state.read().viewDate
 $("d-today").onclick=()=>{HH.state.commit({viewDate:today()});bouwDag();};
 $("d-add").onclick=async()=>{
   if(!dagRuimte(HH.state.read().viewDate,0.1,null))return;
+  /* Patch AF: concept-regel; opgeslagen via HH.services.dayRules.addRule in de
+     bewerksheet, pas na bevestiging. */
   const r=nieuweRegel({start:nowHM(),eind:nowHM()});
-  let uit;
-  try{uit=await HH.services.dayRules.addRule({rule:r,rules:HH.state.read().rules,
-    dossiers:HH.state.read().dossiers,
-    overbookings:HH.state.read().overbookings,bookingContext:boekRekenContext(),waitForRules:rustig,
-    nowMs:Date.now(),nowIso:new Date().toISOString(),undoLabel:"regel toevoegen"});}
-  catch(x){L("FOUT-regel-toevoegen",String(x));toast("Regel toevoegen mislukt — niets gewijzigd");return;}
-  if(meldDagRegelFout(uit,"Regel toevoegen is niet uitgevoerd"))return;
-  uit.dossiers.forEach(memDossier);memRegel(uit.rule);pasMutatieUndoToe(uit.undo);
-    if(uit.dayWasClosed){undoStack=[];await herlaad(true);}
-  bouwDag();announce();await openRegelEditor(uit.rule.id,"dag");};
+  if(await openRegelEditor(r.id,"dag",r)){bouwDag();announce();}};

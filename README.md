@@ -320,3 +320,72 @@ Validatie AD: `npm run test:browserless` slaagt, inclusief uitvoerende tests
 voor oude tabbladen met gewijzigde werkcodes, DVN-nummering, parkeren en
 Praktijkorganisatie bij de automatische dagaanvulling. Na publicatie is een
 visuele controle in de PWA nog nodig; de browsertestomgeving was niet aanwezig.
+
+## Patch AE — drie sferen afgedicht en gebundeld overboeken
+
+Analyse van alle overgangen tussen gewoon dossier, i7 en DVN (zonder nummer, eigen
+nummer, gekoppeld aan bestaand dossier, definitief i7) en de parkeerroute. Zie
+`ANALYSE_PATCH_AE.md` voor de volledige bevindingenlijst.
+
+- Een DVN-koppeling wordt tot het eindpunt gevolgd. Een verbroken of cyclische
+  koppeling levert géén nummer meer op (voorheen: stil het oude `dvnResolvedNr`).
+  Dag blokkeert elke regel zonder Intapp-dossiernummer.
+- Het doeldossier van een gekoppelde DVN en het i7-dossier kunnen niet worden
+  verwijderd. Een DVN die ooit een nummer of koppeling had, kan niet naar definitief i7.
+- De generieke dossiersave in Beheer kan geen sfeer wisselen (DVN/i7/koppeling),
+  geen DVN-/i7-nummer wijzigen en geen dubbel nummer opslaan.
+- Een geparkeerde bronregel kan niet naar een ander dossier, i7 of DVN worden verhangen.
+- Nieuwe dossiers uit wizard, live veld en bewerksheet krijgen de nummercontrole
+  binnen de schrijftransactie. Beheer maakt geen dossier zonder nummer meer aan.
+- Nieuwe taak → DVN: teruggaan en een andere naam typen hernoemt een bestaande DVN
+  met historie niet meer; alleen een DVN die uitsluitend voor de lopende regel bestaat
+  mag nog worden verbeterd. Hernoemen van een DVN met bevestigde boekingen vraagt
+  eerst bevestiging. DVN-namen kunnen geen `·` meer bevatten.
+- Het live dossierveld toont alleen gewone dossiers; i7 en DVN lopen via Nieuwe taak
+  of Gegevens aanvullen. Gekoppelde DVN-schillen staan niet meer als los dossier in de
+  Dossier-route. Een naam die bij meerdere dossiers hoort wordt nooit stil gekozen.
+- Beheer bundelt alle wachtende tijdelijk-i7-items per doeldossier tot één actie:
+  regel voor regel overnemen, één bevestiging, één transactie. Gewijzigde items blijven
+  een aparte controle-actie; "Dit item definitief i7" raakt alleen het getoonde item.
+
+Geen wijziging van databaseversie 4, back-upschema 11, bestaande regels of
+boekingsbewijzen. `sw.js` hoort niet bij deze patch; verhoog bij publicatie zelf de
+cacheversie. Publiceer alle gewijzigde bestanden samen bovenop AD.
+
+Validatie AE: `npm run test:browserless` slaagt (alle suites, 311 controles), inclusief
+19 nieuwe uitvoerende controles in `phase-ae-spheres.mjs`. Tegen de ongewijzigde
+AD-code falen daarvan 16; de 3 die daar slagen zijn bewuste bewakers dat bestaand goed
+gedrag blijft (geldige DVN boekbaar, typfoutherstel, geen definitief i7 na nummer).
+Visuele browsercontrole en PWA-update zijn niet uitgevoerd.
+
+## Patch AF — regels zonder soort voorkomen en herstellen
+
+Waarom er regels zonder Dossier/i7/DVN ontstonden:
+
+- **N gevolgd door Esc.** De timer start meteen (bewust, de tijdknip gaat voor); wie de
+  keuze sluit zonder soort te kiezen, houdt een lopende regel zonder dossier. De volgende
+  N sluit die af. Dit blijft zo, maar is nu in de bewerksheet snel te herstellen.
+- **"+ regel" en een gat invullen (✎)** sloegen eerst een lege regel op en openden daarna
+  de bewerksheet. Annuleren liet die lege regel staan (bijv. 20:35–20:35, 0,1 u).
+  Nu is dat een concept: pas "Regel toevoegen" slaat op, annuleren laat niets achter.
+- **De bewerksheet accepteerde een leeg dossierveld.** Nu weigert zowel de sheet als de
+  dagservice een afgesloten werkregel zonder soort (`dossier_required`).
+
+De bewerksheet heeft bovenaan de keuze **Dossier · i7 · DVN**:
+
+- i7: het i7-nummer wordt zelf ingevuld en staat vast; de werkcode kies je uit de
+  i7-werklijst (typen filtert, pijltjes + Enter kiest).
+- DVN: kies een bestaande DVN of maak een nieuwe werknaam; Commercieel staat vast en het
+  voorvoegsel `datum · naam · tekst` wordt automatisch gezet.
+- Dossier: alleen gewone dossiers in de lijst; nieuw als `123456789 - naam`.
+- Een afgesloten werkregel zonder omschrijving wordt niet opgeslagen.
+
+De keuzelijst ligt nu boven dialogen (z-index). De sneltoetsuitleg onderaan noemde nog
+T, O en V, die sinds Patch Y niet meer bestaan; die zijn verwijderd.
+
+Validatie AF: `npm run test:browserless` slaagt (317 controles), met 6 nieuwe uitvoerende
+controles in `phase-af-repair.mjs` tegen de echte bewerksheet, core, dagservice en
+opslag. Tegen patch AE falen alle 6. De bestaande Phase U-editortest gebruikt nu een
+regel mét dossier (nieuw contract). Geen database-, back-up- of `sw.js`-wijziging;
+verhoog bij publicatie zelf de cacheversie. Bestaande regels zonder soort worden niet
+automatisch gewijzigd: open ze via de rode foutregel en kies de soort.

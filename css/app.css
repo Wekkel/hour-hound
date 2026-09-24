@@ -204,7 +204,7 @@ tfoot td{font-weight:500;border-top:2px solid var(--line)}
 .probs div.pb{padding:.16rem .3rem;border-radius:5px;cursor:pointer}
 .probs div.pb:hover{background:var(--warm)}
 
-#ac{position:fixed;z-index:40;background:var(--card);border:1px solid var(--line);
+#ac{position:fixed;z-index:65;background:var(--card);border:1px solid var(--line);
     border-radius:8px;box-shadow:0 8px 26px rgba(0,0,0,.18);max-height:300px;overflow-y:auto;
     display:none;min-width:280px}
 #ac.on{display:block}
@@ -389,3 +389,9 @@ tr.needsreview td{box-shadow:inset 3px 0 0 var(--amber)}
 .manage-flow-foot{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.45rem;padding-top:.6rem;border-top:1px solid var(--line);flex-shrink:0}
 #manage-flow button:disabled{opacity:.5;cursor:default}
 #manage-work [hidden],#v-beheer>[hidden]{display:none!important}
+
+/* Patch AF: soortkeuze in de bewerksheet */
+.er-soort{display:flex;flex-wrap:wrap;gap:.45rem;align-items:center;margin:0 0 .8rem}
+.er-soort .cap{font:500 10px/1 var(--sans);color:var(--soft);letter-spacing:.08em;text-transform:uppercase;margin-right:.2rem}
+.er-soort .hint{flex-basis:100%;margin-top:.1rem}
+.editgrid input[readonly]{opacity:.75}

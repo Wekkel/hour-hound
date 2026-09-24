@@ -296,9 +296,8 @@
 <div class="legend">
   <kbd>N</kbd> nieuwe taak — timer start direct, daarna kies je één van drie soorten ·
   <kbd>1</kbd>–<kbd>4</kbd> verder op een taak van vandaag ·
-  <kbd>5</kbd>–<kbd>9</kbd> i7-werkcode uit de rij eronder · <kbd>T</kbd> telefoon ·
-  <kbd>O</kbd> onderbreking · <kbd>R</kbd> terug naar geparkeerde taak ·
-  <kbd>V</kbd> lopende taak markeren als dossier volgt nog · <kbd>P</kbd> pauze ·
+  <kbd>5</kbd>–<kbd>9</kbd> i7-werkcode uit de rij eronder ·
+  <kbd>R</kbd> terug naar geparkeerde taak · <kbd>P</kbd> pauze ·
   <kbd>E</kbd> einde werkdag · <kbd>B</kbd> boeken in Intapp · <kbd>D</kbd> dag ·
   <kbd>U</kbd> week · <kbd>Ctrl</kbd>+<kbd>Z</kbd> ongedaan maken ·
   <kbd>Esc</kbd> stap terug / invoer sluiten; een met N gestarte timer blijft lopen<br>
@@ -444,6 +443,13 @@
     </div>
     <div class="mbody">
       <div class="closewarn" id="er-warn"></div>
+      <div class="er-soort" id="er-soort" role="group" aria-label="Soort tijdregel">
+        <span class="cap">Soort</span>
+        <button type="button" class="sm" data-er-soort="gewoon" aria-pressed="false">Dossier</button>
+        <button type="button" class="sm" data-er-soort="i7" aria-pressed="false">i7</button>
+        <button type="button" class="sm" data-er-soort="dvn" aria-pressed="false">DVN</button>
+        <span class="hint" id="er-soort-hint"></span>
+      </div>
       <div class="editgrid">
         <label>Start<input id="er-start" inputmode="numeric" autocomplete="off"></label>
         <label>Eind<input id="er-eind" inputmode="numeric" autocomplete="off" placeholder="loopt"></label>

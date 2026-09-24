@@ -70,6 +70,18 @@
     return[...map.values()];
   }
 
+  /* Patch AE: een via de bewerksheet nieuw aangemaakt dossier mag geen bestaand
+     dossiernummer dupliceren (bijv. aangemaakt in een ander venster). */
+  function newDossierConflict(input){
+    const key=v=>String(v==null?"":v).trim().toLowerCase();
+    return (input.dossierWrites||[]).filter(Boolean).some(desired=>
+      !byId(input.dossiers,desired.id)&&key(desired.nummer)&&
+      (input.dossiers||[]).some(d=>key(d.nummer)===key(desired.nummer)));
+  }
+  /* Patch AF: een handmatig toegevoegde of bewerkte, afgesloten werkregel moet in één
+     van de drie soorten vallen. (Een met N gestarte, nog lopende of door de timer
+     afgesloten regel blijft wel tijdelijk zonder dossier mogelijk: de tijdknip gaat voor.) */
+  const needsDossier=rule=>!!rule&&rule.soort!=="pauze"&&!!rule.eind&&!rule.dossierId;
   function persistedI7Code(code,codes){
     return !!code&&(codes||[]).some(item=>item.code===code);
   }
@@ -131,6 +143,8 @@
     return atomic(input,["dagEinde","dagAudit","geboekt"],(snapshot,writer)=>{
       const actual=fresh(input,snapshot);
       if(byId(actual.rules,input.rule.id))return fail("rule_changed");
+      if(newDossierConflict(actual))return fail("number_taken");
+      if(needsDossier(input.rule))return fail("dossier_required");
       const rule=gateway.createdRule(copy(input.rule),input.nowMs),valid=validateRule(rule,actual,!!input.allowOpen);
       if(!valid.ok)return valid;
       const dossiers=dossierUpdates(actual,[rule.dossierId],"tijdregel toegevoegd",input.dossierWrites);
@@ -150,6 +164,13 @@
       if(!current||current.id!==input.rule.id)return fail("rule_changed");
       const merged=gateway.mergeRule(current,input.before,input.rule,input.nowMs);
       if(!merged.ok)return merged;
+      /* Patch AE: een geparkeerde bronregel blijft bij zijn doeldossier. Verhangen naar
+         een ander dossier, i7 of DVN zou de tijdelijke i7-boeking (die het oude
+         doelnummer noemt) en de latere dossierboeking uit elkaar trekken. */
+      if(merged.rule.dossierId!==current.dossierId&&
+        over.openForRule(current.id,actual.overbookings))return fail("parked_rule");
+      if(newDossierConflict(actual))return fail("number_taken");
+      if(needsDossier(merged.rule))return fail("dossier_required");
       const storedRunning=metaValue(snapshot,input,"running","runningId")||null,
         rule=merged.rule,running=storedRunning===current.id,
         closing=running&&!!rule.eind;
