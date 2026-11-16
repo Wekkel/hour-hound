@@ -42,14 +42,37 @@
       dvnIntappAudit:auditAdd(dossier,"controle-nodig",{reden:why},o.auditAt),
       gewijzigd:o.modifiedAt});
   }
+  /* Patch AG: zodra een DVN een dossiernummer heeft, is de werkdatum in de omschrijving
+     niet meer nodig. resolvedDescription() levert daarom de kale tekst: zonder het
+     voorvoegsel "datum · naam · " én zonder de losse werkdatum die Patch AB ervoor zette.
+     Alleen een datum die exact de eigen werkdatum van de regel is, wordt weggelaten.
+     datedDescription() is het oude gedrag (datum + tekst) en dient uitsluitend om een
+     eerder zó bevestigde boeking te blijven herkennen. */
+  const PREFIX=/^(\d{2}\.\d{2}\.\d{4}) · .*? · ([\s\S]*)$/;
+  const stampOf=date=>/^\d{4}-\d{2}-\d{2}$/.test(date||"")?HH.domain.time.dmy(date):"";
   function resolvedDescription(value,date){
-    const text=String(value||"").trim(),old=/^(\d{2}\.\d{2}\.\d{4}) · .*? · ([\s\S]*)$/.exec(text);
-    const stamp=/^\d{4}-\d{2}-\d{2}$/.test(date||"")?HH.domain.time.dmy(date):old&&old[1];
+    const text=String(value||"").trim(),old=PREFIX.exec(text),body=old?old[2].trim():text,
+      stamp=stampOf(date);
+    if(stamp&&body.startsWith(stamp+" ")){
+      const rest=body.slice(stamp.length+1).trim();
+      if(rest)return rest;
+    }
+    return body;
+  }
+  function datedDescription(value,date){
+    const text=String(value||"").trim(),old=PREFIX.exec(text);
+    const stamp=stampOf(date)||(old&&old[1])||"";
     const body=old?old[2].trim():text;
     if(!body)return "";
     if(!stamp||body===stamp||body.startsWith(stamp+" "))return body;
     return stamp+" "+body;
   }
+  /* Deze twee helpers horen bij Patch AE en ontbraken in de gepubliceerde dvn.js,
+     terwijl core.js en de bewerksheet ze wel aanroepen. */
+  const cleanName=value=>String(value==null?"":value).replace(/[\t\r\n\u0000-\u001f]/g," ")
+    .replace(/·/g," ").replace(/\s+/g," ").trim();
+  const everNumbered=dossier=>!!dossier&&!!(dossier.nummer||dossier.dvnResolvedNr||
+    dossier.dvnTo||dossier.dvnResolvedAt);
   function intappInfo(dossier,options){
     const o=Object.assign({dossiers:[],i7Dossier:null,fallbackI7Name:""},options||{}),
       ind=o.i7Dossier;
@@ -69,5 +92,6 @@
   }
 
   HH.domain.dvn=Object.freeze({isDvn,isFinalI7,isIndirect,rulesFor,resolvedTarget,
-    resolvedNumber,resolvedDescription,intappState,auditAdd,markNeedsCheck,intappInfo});
+    resolvedNumber,resolvedDescription,datedDescription,cleanName,everNumbered,
+    intappState,auditAdd,markNeedsCheck,intappInfo});
 })(globalThis.HH);

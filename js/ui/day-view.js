@@ -57,7 +57,7 @@ function bouwDag(){
         (isIndirect(d)&&!d.voorlopig?"verplicht":"&mdash;")+'" autocomplete="off"'+
         (d&&(d.voorlopig||dvnDefinitiefI7(d))?' readonly title="Vast op '+esc(codeNaam(d,defaultCode(d)))+
           '"':"")+"></td>"+
-      '<td><input data-f="omschrijving" readonly title="Open bewerksheet" value="'+esc(r.omschrijving)+'" autocomplete="off"></td>'+
+      '<td><input data-f="omschrijving" readonly title="Open bewerksheet" value="'+esc(regelToonOmschrijving(r))+'" autocomplete="off"></td>'+
       '<td class="u"><input data-f="uren" readonly title="Open bewerksheet" value="'+uu(urenOf(r))+'"></td>'+
       '<td class="x">'+
       (r.autoAanvul?'<span class="autobadge" title="Automatisch aangemaakt bij dagaanvulling">auto</span>':"")+
@@ -96,17 +96,28 @@ function toonBlokkade(probs,wat){
     (probs.length>10?"\n• …":"")+
     "\n\nDit zijn blokkerende fouten. Los ze eerst op onder Dag.");}
 
+/* Patch AG: afgesloten werkregels zonder dossier, werkcode én omschrijving. Ze bevatten
+   niets om te boeken en blokkeren alleen; daarom is er één knop om ze op te ruimen. */
+function legeRegels(datum){
+  return HH.state.selectors.day(datum).filter(r=>!!r.eind&&isLegeWerkregel(r)&&
+    !overboekingOpenVoorRegel(r.id));}
 function bouwSum(){
   const rs=sumRows(),probs=controleer();
   const box=$("d-probs");
   box.className="probs"+(probs.length?" on":"");
-  const nBlok=probs.filter(x=>x.blok).length;
+  const nBlok=probs.filter(x=>x.blok).length,leeg=legeRegels(HH.state.read().viewDate);
   box.innerHTML=probs.length?"<strong>"+(nBlok?nBlok+" blokkerend"+
     (nBlok>1?"e fouten":"e fout"):"Nog te controleren")+
     (nBlok&&probs.length>nBlok?" · "+(probs.length-nBlok)+" waarschuwing"+
       (probs.length-nBlok>1?"en":""):"")+"</strong>"+
     probs.map(x=>'<div class="pb'+(x.blok?" blok":"")+'" data-goto="'+esc(x.id)+'">'+
-      (x.blok?"⛔ ":"⚠ ")+esc(x.tekst)+"</div>").join(""):"";
+      (x.blok?"⛔ ":"⚠ ")+esc(x.tekst)+"</div>").join("")+
+    (leeg.length?'<div class="leegbar"><span>'+leeg.length+" lege regel"+(leeg.length>1?"s":"")+
+      " zonder dossier, werkcode en omschrijving ("+uu(leeg.reduce((n,r)=>n+urenOf(r),0))+
+      ' u). Klik de foutregel hierboven aan om alsnog dossier en omschrijving in te vullen, of verwijder '+
+      (leeg.length>1?"ze":"hem")+'.</span>'+
+      '<button class="sm warn" data-leeg-opruimen="1">Lege regel'+(leeg.length>1?"s":"")+
+      " verwijderen</button></div>":""):"";
   if(!rs.length){$("d-sum").innerHTML='<tbody><tr><td class="hint">Nog niets.</td></tr></tbody>';return;}
   const tot=rs.reduce((s,x)=>s+x.u,0);
   $("d-sum").innerHTML='<thead><tr><th>Dag</th><th>Dossiernummer</th><th>Dossiernaam</th>'+

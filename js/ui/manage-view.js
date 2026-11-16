@@ -1,9 +1,16 @@
 "use strict";
 /* ---------- beheer ---------- */
 let bookingCorrectionMap=new Map();
+/* Regels één keer per werkdag groeperen: bij veel regels scheelt dat een volledige
+   doorloop van alle regels per datum. */
+function regelsPerDag(){
+  const map=new Map();
+  HH.state.read().rules.forEach(r=>{let lijst=map.get(r.datum);
+    if(!lijst){lijst=[];map.set(r.datum,lijst);}lijst.push(r);});
+  return map;}
 function alleBookingSnapshots(){
-  const out=[],rules=HH.state.read().rules,dates=[...new Set(rules.map(r=>r.datum))];
-  dates.forEach(date=>sumVanData(rules.filter(r=>r.datum===date)).forEach(row=>
+  const out=[];
+  regelsPerDag().forEach((dag,date)=>sumVanData(dag).forEach(row=>
     out.push(bookingSnapshotVan(row,date))));return out;}
 function bookingRegelHtml(s,copyKey){
   if(!s)return '<span class="hint">Regels verwijderd</span>';
@@ -77,7 +84,8 @@ function beheerWerkData(){
     dvnTasks=state.dossiers.filter(d=>isDvn(d)&&!dvnDefinitiefI7(d)).map(d=>({dossierId:d.id,state:dvnIntappState(d)})).filter(t=>t.state!=="posted");
   const groups=groepeerBeheerWerk({dossiers:state.dossiers,rules:state.rules,corrections,overbookings:overs,dvnTasks});
   const blockedIds=new Set(corrections.flatMap(c=>(c.beforeSnapshots||[c.before]).concat(c.currentOptions||[]).flatMap(bookingBronIds))),
-    parkedIds=new Set(overs.flatMap(bronIdsVan)),usedBookings=new Set();
+    parkedIds=new Set(overs.flatMap(bronIdsVan)),usedBookings=new Set(),perDag=regelsPerDag(),dagRows=new Map(),
+    rowsVan=date=>{if(!dagRows.has(date))dagRows.set(date,sumVanData(perDag.get(date)||[]));return dagRows.get(date);};
   for(const group of groups){
     group.tasks=[];
     for(const c of group.corrections)group.tasks.push({key:"correction:"+c.receiptId,type:"correction",label:"Boekingscorrectie controleren",correction:c,
@@ -97,7 +105,7 @@ function beheerWerkData(){
         if(!sources.some(id=>ids.has(id))||sources.some(id=>blockedIds.has(id)||parkedIds.has(id))||usedBookings.has(key)||
           bookingBewijsVoor(state.bookingHistory,snapshot))continue;
         usedBookings.add(key);
-        const aggregate=sumVanData(state.rules.filter(r=>r.datum===snapshot.date)).find(row=>
+        const aggregate=rowsVan(snapshot.date).find(row=>
           JSON.stringify(bookingBronIds(row))===JSON.stringify(sources));
         group.tasks.push({fingerprint:aggregate?aggregate.fp:key,key:"book:"+key,type:"book",label:"Boeken op dossier",snapshot,lines:[snapshot]});
       }
@@ -120,10 +128,84 @@ function beheerWerkData(){
   return groups.sort((a,b)=>Number(!a.tasks.length)-Number(!b.tasks.length)||a.name.localeCompare(b.name));
 }
 function beheerTaakSignature(task){return JSON.stringify([task.type,task.lines,task.correction||null,task.record||null,task.dossierId||null]);}
-function beheerSamenvatting(group){
-  const counts={};group.tasks.forEach(t=>{counts[t.label]=(counts[t.label]||0)+1;});
-  return Object.entries(counts).map(([label,n])=>n+" × "+label.toLowerCase()).join(" · ")||"Geen open acties";
-}
+/* Patch AG — overzicht van de werkvoorraad. Iedere dossierregel toont wat er open
+   staat in aantallen, uren en werkdatums; alles is afgeleid van dezelfde taken als de
+   afhandelstappen. De indeling volgt wat je er nú mee kunt: eerst boeken, dan
+   correcties, dan geparkeerd, en als laatste DVN's die nog op een nummer wachten. */
+const BEHEER_SOORTEN=[
+  ["book","Nu te boeken in Intapp","Dossiernummer bekend; de uren staan nog niet op het dossier."],
+  ["correction","Gewijzigd na boeken — correctie in Intapp","Eerder bevestigd, daarna gewijzigd."],
+  ["parked","Geparkeerd op i7 — later naar het dossier","Tijdelijk op i7 · Commercieel geboekt."],
+  ["number","Wacht op dossiernummer (DVN)","Nog niet te boeken; ken eerst een nummer toe."],
+  ["inspect","Koppeling controleren","De dossierkoppeling is niet eenduidig."]];
+const beheerTaakSoort=t=>t.type==="book"?"book":(t.type==="correction"||t.type==="legacy")?"correction":
+  (t.type==="overpost"||t.type==="overcheck")?"parked":t.type==="number"?"number":"inspect";
+function beheerDvnIds(group){
+  return ((group&&group.dossierIds)||[]).filter(id=>{const d=dosOf(id);return !!d&&isDvn(d)&&!dvnDefinitiefI7(d);});}
+function beheerKengetallen(group){
+  const k={book:{n:0,u:0,dates:[]},correction:{n:0,u:0,dates:[]},parked:{n:0,u:0,dates:[]},
+    number:{n:0,u:0,dates:[]},inspect:{n:0,u:0,dates:[]}};
+  ((group&&group.tasks)||[]).forEach(t=>{
+    const soort=beheerTaakSoort(t),x=k[soort];
+    if(soort==="number"){
+      /* Uren en datums van een DVN zonder nummer: de actuele boekregels, per werkdag
+         samengevat zoals ze nu op i7 staan. */
+      const snaps=dvnBoekSnapshots(dosOf(t.dossierId));
+      x.n+=snaps.length;snaps.forEach(sn=>{x.u+=+sn.hours||0;x.dates.push(sn.date);});return;}
+    x.n+=1;
+    (t.lines||[]).forEach(line=>{if(!line)return;x.u+=+line.hours||0;if(line.date)x.dates.push(line.date);});
+  });
+  Object.keys(k).forEach(key=>{k[key].u=Math.round(k[key].u*10)/10;k[key].dates.sort();});
+  return k;}
+function beheerHoofdSoort(k){const hit=BEHEER_SOORTEN.find(x=>k[x[0]].n>0);return hit?hit[0]:"none";}
+function beheerPeriode(dates){
+  if(!dates.length)return"";
+  const a=dates[0],b=dates[dates.length-1];
+  return a===b?kortDag(a):kortDag(a)+" – "+kortDag(b);}
+function beheerRegelTekst(k){
+  const delen=[],stuk=(x,enkel,meer)=>x.n+" "+(x.n===1?enkel:meer)+" · "+uu(x.u)+" u"+
+    (x.dates.length?" · "+beheerPeriode(x.dates):"");
+  if(k.book.n)delen.push("Te boeken: "+stuk(k.book,"boekregel","boekregels"));
+  if(k.correction.n)delen.push(k.correction.n+" correctie"+(k.correction.n===1?"":"s"));
+  if(k.parked.n)delen.push("Geparkeerd: "+stuk(k.parked,"item","items"));
+  if(k.number.n)delen.push("Wacht op nummer: "+stuk(k.number,"boekregel","boekregels"));
+  if(k.inspect.n)delen.push(k.inspect.n+" × koppeling controleren");
+  return delen.join("  ·  ")||"Geen open acties";}
+function beheerFilterPast(filter,k,heeftTaken){
+  if(filter==="all")return true;
+  if(filter==="done")return !heeftTaken;
+  if(filter==="open")return heeftTaken;
+  return !!(k[filter]&&k[filter].n>0);}
+function renderBeheerOverzicht(){
+  const list=$("manage-worklist");if(!list)return;
+  const q=beheerUi.query.trim().toLowerCase(),rijen=beheerGroups.map(g=>{
+    const k=beheerKengetallen(g);return{g,k,soort:beheerHoofdSoort(k),
+      oudste:Object.keys(k).flatMap(key=>k[key].dates).sort()[0]||"9999"};})
+    .filter(x=>beheerFilterPast(beheerUi.filter,x.k,!!x.g.tasks.length)&&
+      (x.g.name+" "+x.g.number+" "+x.g.dossierIds.map(id=>{const d=dosOf(id);return d?d.naam+" "+(d.dvnOriginalName||""):"";})
+        .join(" ")).toLowerCase().includes(q));
+  const som=key=>Math.round(rijen.reduce((n,x)=>n+x.k[key].u,0)*10)/10,
+    acties=rijen.reduce((n,x)=>n+x.g.tasks.length,0);
+  $("manage-count").textContent=rijen.length+" dossier(s) · "+acties+" open actie(s)"+
+    (som("book")?" · te boeken "+uu(som("book"))+" u":"")+
+    (som("parked")?" · geparkeerd "+uu(som("parked"))+" u":"")+
+    (som("number")?" · wacht op nummer "+uu(som("number"))+" u":"");
+  const rijHtml=x=>{const g=x.g,boekbaar=x.k.book.n>0,anders=g.tasks.length-x.k.book.n;
+    return '<div class="manage-row" data-manage-kind="'+x.soort+'"><div><strong>'+esc(g.number?g.number+' · '+g.name:g.name)+
+      '</strong><div class="hint">'+esc(beheerRegelTekst(x.k))+'</div></div>'+
+      (boekbaar?'<button class="sm go" data-manage-book="'+esc(g.id)+'" title="Zelfde boekvenster als onder Dag">Boeken in Intapp</button>':'')+
+      '<button class="sm'+(!boekbaar&&g.tasks.length?' go':'')+'" data-manage-open="'+esc(g.id)+'">'+
+      (!g.tasks.length?'Bekijken':boekbaar?(anders>0?'Overige acties ('+anders+')':'Details'):'Afhandelen')+'</button></div>';};
+  let html="";
+  BEHEER_SOORTEN.map(x=>x[0]).concat(["none"]).forEach(soort=>{
+    const deel=rijen.filter(x=>x.soort===soort).sort((a,b)=>a.oudste.localeCompare(b.oudste)||a.g.name.localeCompare(b.g.name));
+    if(!deel.length)return;
+    const def=BEHEER_SOORTEN.find(x=>x[0]===soort),u=Math.round(deel.reduce((n,x)=>n+(soort==="none"?0:x.k[soort].u),0)*10)/10;
+    html+='<div class="manage-group" data-manage-group="'+soort+'"><div class="manage-group-head"><strong>'+
+      esc(def?def[1]:"Zonder open acties")+'</strong><span class="tag">'+deel.length+' dossier'+(deel.length===1?'':'s')+
+      (def&&u?' · '+uu(u)+' u':'')+'</span>'+(def?'<span class="hint">'+esc(def[2])+'</span>':'')+'</div>'+
+      deel.map(rijHtml).join("")+'</div>';});
+  list.innerHTML=html||'<p class="hint">Geen dossiers binnen dit filter.</p>';}
 function renderBeheerWerk(){
   const list=$("manage-worklist");if(!list)return;
   beheerGroups=beheerWerkData();
@@ -134,14 +216,9 @@ function renderBeheerWerk(){
   $("manage-work").hidden=beheerUi.section!=="work";$("manage-dossiers").hidden=beheerUi.section!=="dossiers";$("manage-settings").hidden=beheerUi.section!=="settings";
   document.querySelectorAll("[data-manage-section]").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.manageSection===beheerUi.section)));
   $("manage-overview").hidden=!!beheerUi.group;$("manage-flow").hidden=!beheerUi.group;
-  const q=beheerUi.query.trim().toLowerCase(),visible=beheerGroups.filter(g=>(beheerUi.filter==="all"||(beheerUi.filter==="done"?!g.tasks.length:!!g.tasks.length))&&
-    (g.name+" "+g.number+" "+g.dossierIds.map(id=>{const d=dosOf(id);return d?d.naam:"";}).join(" ")).toLowerCase().includes(q));
   $("manage-scope").hidden=!beheerUi.scopeDate;
   $("manage-scope-text").textContent=beheerUi.scopeDate?"Acties bij "+dmy(beheerUi.scopeDate):"";
-  $("manage-count").textContent=visible.length+" dossier(s) · "+visible.reduce((n,g)=>n+g.tasks.length,0)+" open actie(s)";
-  list.innerHTML=visible.map(g=>'<div class="manage-row"><div><strong>'+esc(g.number?g.number+' · '+g.name:g.name)+
-    '</strong><div class="hint">'+esc(beheerSamenvatting(g))+'</div></div><button class="sm'+(g.tasks.length?' go':'')+'" data-manage-open="'+esc(g.id)+'">'+
-    (g.tasks.length?'Afhandelen':'Bekijken')+'</button></div>').join("")||'<p class="hint">Geen dossiers binnen dit filter.</p>';
+  renderBeheerOverzicht();
   if(beheerUi.group)renderBeheerFlow();
 }
 function beheerHistorieHtml(group){
@@ -159,7 +236,10 @@ function beheerHistorieHtml(group){
     (!receipts.length&&!completed.length?'<p class="hint">Geen eerdere bevestigingen voor dit dossier.</p>':'')+'</details>';
 }
 function renderBeheerFlow(){
-  const group=beheerGroups.find(g=>g.id===beheerUi.group),tasks=group?group.tasks:[];
+  /* Patch AG: boekregels lopen via het boekvenster (knop bovenaan). De stappen hier
+     zijn voor al het andere: nummer toekennen, correcties, geparkeerde uren. */
+  const group=beheerGroups.find(g=>g.id===beheerUi.group),alleTaken=group?group.tasks:[],
+    boekTaken=alleTaken.filter(t=>t.type==="book"),tasks=alleTaken.filter(t=>t.type!=="book");
   let task=tasks.find(t=>t.key===beheerUi.taskKey)||tasks[0];
   if(task){const signature=beheerTaakSignature(task);if(signature!==beheerUi.signature){
       const saved=beheerUi.progress[task.key];beheerUi.taskKey=task.key;
@@ -169,10 +249,17 @@ function renderBeheerFlow(){
     beheerUi.line=Math.min(beheerUi.line,Math.max(0,task.lines.length-1));}
   if(task)beheerUi.progress[task.key]={signature:beheerUi.signature,line:beheerUi.line,seen:beheerUi.seen.slice()};
   beheerShown=task?JSON.parse(JSON.stringify(task)):null;
+  const nBoek=boekTaken.length,uBoek=Math.round(boekTaken.reduce((n,t)=>n+(+t.snapshot.hours||0),0)*10)/10;
   const top='<div class="manage-flow-head"><button class="sm ghost" data-manage-back>← Dossiers</button><strong>'+esc(beheerUi.title)+
-    '</strong><span class="hint">'+tasks.length+' open actie(s)</span></div>';
-  if(!task){$("manage-flow").innerHTML=top+'<div class="manage-flow-body"><h2>Geen open acties voor dit dossier</h2><p>Er staan binnen deze selectie geen acties meer open.</p>'+beheerHistorieHtml(group)+'</div>'+ 
-    '<div class="manage-flow-foot"><button class="go" data-manage-back>Terug naar dossiers</button></div>';return;}
+    '</strong><span class="hint">'+alleTaken.length+' open actie(s)</span>'+
+    (nBoek&&group?'<button class="sm go" data-manage-book="'+esc(group.id)+'" title="Zelfde boekvenster als onder Dag">Boeken in Intapp · '+
+      nBoek+' regel'+(nBoek===1?'':'s')+'</button>':'')+'</div>';
+  if(!task){$("manage-flow").innerHTML=top+'<div class="manage-flow-body">'+(nBoek?
+      '<h2>Boeken in Intapp</h2><p>'+nBoek+' boekregel'+(nBoek===1?'':'s')+' · '+uu(uBoek)+' u '+(nBoek===1?'staat':'staan')+
+      ' klaar voor dit dossier. Het boekvenster werkt hetzelfde als onder Dag: <kbd>C</kbd> kopieert de omschrijving, <kbd>&#9166;</kbd> markeert als geboekt en gaat door.</p>'+
+      '<p><button class="go" data-manage-book="'+esc(group.id)+'">Boekvenster openen</button></p>':
+      '<h2>Geen open acties voor dit dossier</h2><p>Er staan binnen deze selectie geen acties meer open.</p>')+beheerHistorieHtml(group)+'</div>'+ 
+    '<div class="manage-flow-foot"><button class="'+(nBoek?'sm':'go')+'" data-manage-back>Terug naar dossiers</button></div>';return;}
   const line=task.lines[beheerUi.line],multi=task.lines.length>1,last=beheerUi.line>=task.lines.length-1;
   const field=(label,value,key)=>'<div class="booking-field"><span class="cap">'+label+'</span><div class="booking-value">'+esc(value)+
     '</div><button class="sm ghost" data-manage-copy="'+key+'">Kopieer '+label.toLowerCase()+'</button></div>';

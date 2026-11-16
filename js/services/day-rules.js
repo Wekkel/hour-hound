@@ -203,7 +203,10 @@
       const actual=fresh(input,snapshot),current=byId(actual.rules,input.rule.id);
       if(!current||!revisionMatches(current,input.rule))return fail("rule_changed");
       if(over.openForRule(current.id,actual.overbookings))return fail("parked_rule");
-      const dateBooked=(snapshot.meta.geboekt&&snapshot.meta.geboekt[current.datum]||[]).length>0;
+      /* Patch AG: een volledig lege werkregel kan nooit deel van een boeking zijn; die mag
+         dus ook weg op een dag waarvan andere regels al geboekt zijn. */
+      const dateBooked=(snapshot.meta.geboekt&&snapshot.meta.geboekt[current.datum]||[]).length>0&&
+        !booking.isBlankWorkRule(current);
       if(input.isBooked||dateBooked)return fail("booked_rule");
       const wasRunning=(snapshot.meta.running||null)===current.id;
       const dossiers=dossierUpdates(actual,[current.dossierId],"tijdregel verwijderd");
@@ -232,21 +235,27 @@
       const rule=merged.rule,valid=validateRule(rule,actual,true);if(!valid.ok)return valid;
       if(rule.datum!==input.today)return fail("not_today");
       if(time.hm2m(rule.start)>time.hm2m(input.nowTime))return fail("start_future");
-      let closed=null;
+      let closed=null,dropped=null;
       const runningId=snapshot.meta.running||null;
       if(runningId&&runningId!==rule.id){
         const actualRunning=byId(actual.rules,runningId),before=input.currentTimer;
         if(!actualRunning||!before||before.id!==runningId||!input.closedRule)return fail("timer_changed");
-        const closeMerge=gateway.mergeRule(actualRunning,before,input.closedRule,input.nowMs);
-        if(!closeMerge.ok)return fail("timer_changed",{conflicts:closeMerge.conflicts});closed=closeMerge.rule;
+        /* Patch AG: een nog lege Nieuwe-taak-regel wordt niet als spookregel afgesloten. */
+        if(booking.isEmptyDraft(actualRunning,{date:input.today,time:input.nowTime,
+          pendingDescription:input.closedRule.omschrijving}))dropped=actualRunning;
+        else{
+          const closeMerge=gateway.mergeRule(actualRunning,before,input.closedRule,input.nowMs);
+          if(!closeMerge.ok)return fail("timer_changed",{conflicts:closeMerge.conflicts});closed=closeMerge.rule;
+        }
       }
       const day=reopenAfterChange(snapshot,writer,rule.datum,input,rule.id);
       const dossiers=dossierUpdates(actual,[rule.dossierId,closed&&closed.dossierId],
         "tijdregel opnieuw lopend gemaakt");
-      if(closed)writer.put("regels",closed);
+      if(closed)writer.put("regels",closed);if(dropped)writer.remove("regels",dropped.id);
       dossiers.forEach(d=>writer.put("dossiers",d));writer.put("regels",rule);
       writeTimerPointer(writer.stores,rule.id);writer.stores.meta.delete("pending");
-      return ok(Object.assign({rule,closedRule:closed,dossiers,warnings:warningCheck.warnings,runningId:rule.id,
+      return ok(Object.assign({rule,closedRule:closed,droppedRule:dropped?copy(dropped):null,
+        dossiers,warnings:warningCheck.warnings,runningId:rule.id,
         invalidateTimerUndo:true},day));
     });
   }
@@ -262,13 +271,22 @@
       let actualRules=actual.rules.slice();
       if(!actualRules.some(rule=>rule.datum===input.date))return fail("day_empty");
       const runningId=snapshot.meta.running||null,actualRunning=runningId?byId(actualRules,runningId):null;
-      let closed=null;
+      let closed=null,dropped=null;
       if(actualRunning&&actualRunning.datum===input.date){
         if(!input.closedRule||!input.currentTimer||input.currentTimer.id!==runningId)return fail("timer_changed");
-        const merged=gateway.mergeRule(actualRunning,input.currentTimer,input.closedRule,input.nowMs);
-        if(!merged.ok)return fail("timer_changed",{conflicts:merged.conflicts});closed=merged.rule;
-        const valid=validateRule(closed,actual,false);if(!valid.ok)return valid;
-        actualRules=actualRules.map(r=>r.id===closed.id?closed:r);
+        const clock=input.bookingContext||{};
+        /* Patch AG: een nog lege Nieuwe-taak-regel verdwijnt bij het afsluiten van de dag
+           in plaats van als blokkerende lege regel achter te blijven. */
+        if(booking.isEmptyDraft(actualRunning,{date:clock.today,time:clock.nowHM,
+          pendingDescription:input.closedRule.omschrijving})){
+          dropped=actualRunning;actualRules=actualRules.filter(r=>r.id!==dropped.id);
+          if(!actualRules.some(rule=>rule.datum===input.date))return fail("day_empty");
+        }else{
+          const merged=gateway.mergeRule(actualRunning,input.currentTimer,input.closedRule,input.nowMs);
+          if(!merged.ok)return fail("timer_changed",{conflicts:merged.conflicts});closed=merged.rule;
+          const valid=validateRule(closed,actual,false);if(!valid.ok)return valid;
+          actualRules=actualRules.map(r=>r.id===closed.id?closed:r);
+        }
       }
       const dayEnds=copy(storedEnds);dayEnds[input.date]=input.end;
       const totalBefore=Math.round((typeof input.totalForRules==="function"?
@@ -289,12 +307,13 @@
             totaalVoor:fill.currentTotal,totaalNa:fill.finalTotal},input.nowIso);}
       }
       const dossiers=dossierUpdates(actual,[closed&&closed.dossierId],"tijdregel gewijzigd");
-      if(closed)writer.put("regels",closed);if(fill&&!fill.noChange)writer.put("regels",fill.rule);
+      if(closed)writer.put("regels",closed);if(dropped)writer.remove("regels",dropped.id);
+      if(fill&&!fill.noChange)writer.put("regels",fill.rule);
       dossiers.forEach(d=>writer.put("dossiers",d));
       if(actualRunning&&actualRunning.datum===input.date){writeTimerPointer(writer.stores,null);
         writer.stores.meta.delete("pending");writer.stores.meta.put([],"stack");}
       writer.stores.meta.put(dayEnds,"dagEinde");writer.stores.meta.put(dayAudit,"dagAudit");
-      return ok({closedRule:closed,dossiers,dayEnds,dayAudit,fill,
+      return ok({closedRule:closed,droppedRule:dropped?copy(dropped):null,dossiers,dayEnds,dayAudit,fill,
         stoppedRunning:!!(actualRunning&&actualRunning.datum===input.date),
         stack:actualRunning&&actualRunning.datum===input.date?[]:(snapshot.meta.stack||[]),
         invalidateTimerUndo:!!(actualRunning&&actualRunning.datum===input.date)});

@@ -389,3 +389,41 @@ opslag. Tegen patch AE falen alle 6. De bestaande Phase U-editortest gebruikt nu
 regel mét dossier (nieuw contract). Geen database-, back-up- of `sw.js`-wijziging;
 verhoog bij publicatie zelf de cacheversie. Bestaande regels zonder soort worden niet
 automatisch gewijzigd: open ze via de rode foutregel en kies de soort.
+
+## Patch AG — DVN zonder datum, boeken per dossier, spookregels
+
+- **Geen werkdatum meer bij een genummerde DVN.** Bij het toekennen van een dossiernummer
+  verdwijnen zowel de DVN-naam als de werkdatum uit de omschrijving (regels, terugkeerstapel,
+  Dag-tabel, bewerksheet en boekregel). Bestaande regels worden niet herschreven; de datum
+  valt bij het tonen en boeken weg. Uitzondering: een regel die al mét datum als geboekt is
+  bevestigd of geparkeerd, houdt precies die bevestigde tekst, zodat er geen correctietaak
+  ontstaat voor iets wat in Intapp al staat. i7-regels en DVN's zonder nummer houden hun datum.
+- **Beheer → hetzelfde boekvenster als Dag.** Elk dossier met boekbare DVN-uren krijgt de knop
+  "Boeken in Intapp". Die opent het boekvenster van Dag (C kopieert, Enter markeert en gaat
+  door, L hele lijst, parkeren), maar dan over alle werkdagen van dat dossier; de werkdatum
+  staat groot bovenaan iedere kaart. Na het toekennen van een nummer opent het venster direct.
+- **Werkvoorraad ingedeeld op wat je nu kunt doen:** Nu te boeken · Correcties · Geparkeerd op
+  i7 · Wacht op dossiernummer, elk met aantal dossiers en uren, per dossier het aantal
+  boekregels, uren en de periode, oudste eerst. Het filter kent dezelfde vier soorten.
+- **Spookregels.** Een met N gestarte regel die nog niets bevat (geen dossier, werkcode of
+  omschrijving) en hooguit 6 minuten loopt, wordt door de volgende actie overgenomen in plaats
+  van als lege regel afgesloten (nieuwe taak, bestaande taak, regel opnieuw laten lopen, dag
+  afsluiten). Loopt hij langer, dan blijft hij als nog toe te wijzen tijd staan. Bestaande lege
+  regels ruim je onder Dag op met "Lege regel(s) verwijderen", ook op een dag waarvan andere
+  regels al geboekt zijn. Een lege regel komt niet meer op de terugkeerstapel (R).
+- **Hersteld uit Patch AE:** `dvn.js` miste `cleanName` en `everNumbered`, terwijl `core.js` ze
+  aanroept; DVN kiezen in de bewerksheet gaf daardoor een fout. De overige AE-onderdelen
+  (koppeling tot het eindpunt volgen, `phase-ae-spheres.mjs`, `ANALYSE_PATCH_AE.md`) staan
+  niet in de repository en zijn hier niet opnieuw gebouwd.
+- Een DVN-schil die naar een bestaand dossier wijst, staat niet meer als los dossier in de
+  Dossier-route van Nieuwe taak.
+
+Geen wijziging van databaseversie 4, back-upschema 11 of opgeslagen regels. `sw.js` hoort niet
+bij deze patch: verhoog `VERSION` daarin naar een nieuw nummer (bijv. 0.2.2). Er zijn geen
+nieuwe scriptbestanden.
+
+Validatie AG: `npm run test:browserless` slaagt volledig, met 23 nieuwe controles in
+`phase-ag.mjs`. Zes gerichte mutaties van de nieuwe logica laten elk minstens één van die
+controles falen. In een echte Chrome slagen de drie nieuwe tests in
+`tests/e2e/phase-ag.spec.mjs`. Dertien oudere e2e-tests falen, ook tegen de ongewijzigde code:
+ze verwijzen naar schermonderdelen van vóór Patch AC en zijn in deze patch niet bijgewerkt.

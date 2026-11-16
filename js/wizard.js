@@ -46,7 +46,9 @@ function ntRenderSamenvatting(){
   ["soort","dos","code","oms"].forEach(x=>$("nt-s-"+x).classList.toggle("active",x===vak));}
 function ntGewoneDossiers(q){
   const lo=schoon(q).toLowerCase();
-  return actief().filter(d=>!d.isI7&&!d.voorlopig&&
+  /* Een DVN-schil die naar een bestaand dossier wijst (dvnTo) is geen eigen dossier;
+     die stond hier als los, nummerloos "dossier" tussen de echte dossiers. */
+  return actief().filter(d=>!d.isI7&&!d.voorlopig&&!d.dvnTo&&
     (!lo||((d.nummer||"")+" "+d.naam).toLowerCase().includes(lo)))
     .sort((a,b)=>(b.used||0)-(a.used||0)||a.naam.localeCompare(b.naam)).slice(0,10);}
 function ntI7Codes(q){

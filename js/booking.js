@@ -7,7 +7,12 @@
    dag onthouden, zodat een onderbreking niet betekent dat je opnieuw moet zoeken waar
    je gebleven was. Met L schakel je naar de hele lijst om buiten de volgorde om een
    willekeurige regel te pakken.                                                  */
-let boek={aan:false,i:0,rows:[],datum:"",lijst:false,completion:false};
+/* Patch AG: het venster kent twee bereiken. "dag" loopt de regels van één werkdag af
+   (boek.datum). "dossier" loopt alle boekregels van één dossier af, over meerdere
+   werkdagen; iedere regel draagt dan zijn eigen werkdatum (row.datum). Markeren,
+   parkeren, kopiëren en de toetsen zijn in beide bereiken dezelfde code. */
+let boek={aan:false,i:0,rows:[],datum:"",lijst:false,completion:false,scope:null};
+const boekDatum=row=>(row&&row.datum)||boek.datum;
 let parkBoek=null;
 /* Nieuwe bevestigingen gebruiken duurzame inhoudssnapshots. Oude vingerafdrukken
    blijven alleen als terugval gelden voor nog niet gereconstrueerde bronnen. */
@@ -25,10 +30,17 @@ const isDossierGeboektOp=(row,datum)=>{const snapshot=rowSnapshotOp(row,datum),
   known=bookingDomain.hasHistoricalSource(HH.state.read().bookingHistory,snapshot);
   return isGeboektOp(row,datum)||!known&&!!overboekingAfgerondVoorRow(row,datum);};
 const isAfgehandeldOp=(row,datum)=>isDossierGeboektOp(row,datum)||isGeparkeerdOp(row,datum);
-const isGeboekt=row=>isGeboektOp(row,boek.datum);
-const isGeparkeerd=row=>isGeparkeerdOp(row,boek.datum);
-const isDossierGeboekt=row=>isDossierGeboektOp(row,boek.datum);
-const isAfgehandeld=row=>isAfgehandeldOp(row,boek.datum);
+const isGeboekt=row=>isGeboektOp(row,boekDatum(row));
+const isGeparkeerd=row=>isGeparkeerdOp(row,boekDatum(row));
+const isDossierGeboekt=row=>isDossierGeboektOp(row,boekDatum(row));
+const isAfgehandeld=row=>isAfgehandeldOp(row,boekDatum(row));
+const isCorrectie=row=>isCorrectieOp(row,boekDatum(row));
+/* Dezelfde telling voor dag en dossier; iedere regel wordt op zijn eigen datum beoordeeld. */
+function boekStatusVan(rows){
+  const nGeboekt=rows.filter(isDossierGeboekt).length,nGeparkeerd=rows.filter(isGeparkeerd).length,
+    correcties=rows.filter(row=>!isAfgehandeld(row)&&isCorrectie(row)).length;
+  return{geboekt:nGeboekt,geparkeerd:nGeparkeerd,open:Math.max(0,rows.length-nGeboekt-nGeparkeerd),correcties,
+    klaar:rows.length>0&&rows.every(isAfgehandeld)};}
 function dagBoekStatus(rows,datum){
   const aantalGeboekt=rows.filter(row=>isDossierGeboektOp(row,datum)).length;
   const aantalGeparkeerd=rows.filter(row=>isGeparkeerdOp(row,datum)).length;
@@ -38,16 +50,16 @@ function dagBoekStatus(rows,datum){
     correcties,
     klaar:rows.length>0&&rows.every(row=>isAfgehandeldOp(row,datum))};}
 function kanParkeren(row){
-  if(!row||isAfgehandeld(row)||isCorrectieOp(row,boek.datum)||!Array.isArray(row.dosIds)||row.dosIds.length!==1)return false;
+  if(!row||isAfgehandeld(row)||isCorrectie(row)||!Array.isArray(row.dosIds)||row.dosIds.length!==1)return false;
   const d=dosOf(row.dosIds[0]);
   if(d&&d.dvnTo&&!dvnResolvedDoel(d))return false;
   const target=dvnResolvedDoel(d)||d;
   return !!d&&!isIndirect(d)&&!!target&&!isIndirect(target)&&!!dvnResolvedNummer(d);
 }
 async function zetGeboekt(row,aan){
-  if(!row||(aan&&isCorrectieOp(row,boek.datum)))return false;
+  if(!row||(aan&&isCorrectie(row)))return false;
   const nowIso=new Date().toISOString();
-  try{const uit=await HH.services.admin.setRegularBooking({snapshot:rowSnapshotOp(row,boek.datum),
+  try{const uit=await HH.services.admin.setRegularBooking({snapshot:rowSnapshotOp(row,boekDatum(row)),
     fingerprint:row.fp,enabled:aan,receiptId:uid(),resolutionId:uid(),nowIso,
     rules:HH.state.read().rules,aggregateRows:sumVanData,snapshotRow:bookingSnapshotVan,
     validateRules:valideerBoekData,
@@ -87,23 +99,60 @@ function openBoek(){
   if(waar.length&&!confirm(waar.length+" waarschuwing(en):\n\n"+
     waar.slice(0,6).map(x=>"• "+x.tekst).join("\n")+(waar.length>6?"\n• …":"")+
     "\n\nDoorgaan met boeken?"))return;
-  boek={aan:true,i:0,rows:rs,datum:HH.state.read().viewDate,lijst:false,completion:false};
+  boek={aan:true,i:0,rows:rs,datum:HH.state.read().viewDate,lijst:false,completion:false,scope:null};
   const eerste=rs.findIndex(x=>!isAfgehandeld(x)&&!isCorrectieOp(x,datum));
   boek.i=eerste<0?0:eerste;boek.completion=eerste<0;
   $("boek").classList.add("on");tekenBoek();
   L("boekvenster",rs.length+" regels · "+uu(rs.reduce((s,x)=>s+x.u,0))+" u");}
-function sluitBoek(){boek.aan=false;$("boek").classList.remove("on");boekStat();}
+/* Alle boekregels van één dossier (of van meerdere DVN's die naar hetzelfde dossier
+   wijzen), per werkdag samengevat met exact dezelfde aggregatie als de Dag-tab. */
+function dossierBoekRows(dossierIds){
+  const ids=new Set(dossierIds||[]),perDag=new Map();
+  HH.state.read().rules.forEach(r=>{let lijst=perDag.get(r.datum);
+    if(!lijst){lijst=[];perDag.set(r.datum,lijst);}lijst.push(r);});
+  const rows=[];
+  [...perDag.keys()].sort().forEach(datum=>{
+    const dag=perDag.get(datum);
+    if(!dag.some(r=>ids.has(r.dossierId)&&r.soort!=="pauze"))return;
+    sumVan(dag).filter(row=>(row.dosIds||[]).some(id=>ids.has(id)))
+      .forEach(row=>rows.push(Object.assign({},row,{datum})));});
+  return rows;}
+function dossierBoekBlokkades(dossierIds){
+  const ids=new Set(dossierIds||[]),perDag=new Map(),uit=[];
+  HH.state.read().rules.filter(r=>ids.has(r.dossierId)).forEach(r=>{let lijst=perDag.get(r.datum);
+    if(!lijst){lijst=[];perDag.set(r.datum,lijst);}lijst.push(r);});
+  [...perDag.keys()].sort().forEach(datum=>valideerBoekData(perDag.get(datum)).filter(x=>x.blok)
+    .forEach(x=>uit.push(Object.assign({},x,{datum,tekst:kortDag(datum)+" · "+x.tekst}))));
+  return uit;}
+function openBoekDossier(scope){
+  const o=scope||{},dossierIds=o.dossierIds||[],rs=dossierBoekRows(dossierIds);
+  if(!rs.length){toast("Geen boekregels voor dit dossier");return false;}
+  const blok=dossierBoekBlokkades(dossierIds);
+  if(blok.length){
+    L("boeken-geblokkeerd","dossier · "+blok.length+" fout(en)");
+    alert("Deze regels kunnen nog niet naar Intapp:\n\n"+blok.slice(0,10).map(x=>"• "+x.tekst).join("\n")+
+      (blok.length>10?"\n• …":"")+"\n\nDit zijn blokkerende fouten. Los ze eerst op onder Dag.");
+    return false;}
+  boek={aan:true,i:0,rows:rs,datum:rs[0].datum,lijst:false,completion:false,
+    scope:{soort:"dossier",dossierIds:dossierIds.slice(),titel:o.titel||""}};
+  const eerste=rs.findIndex(x=>!isAfgehandeld(x)&&!isCorrectie(x));
+  boek.i=eerste<0?0:eerste;boek.completion=eerste<0;
+  $("boek").classList.add("on");tekenBoek();
+  L("boekvenster","dossier · "+rs.length+" regels · "+uu(rs.reduce((s,x)=>s+x.u,0))+" u");
+  return true;}
+function sluitBoek(){const wasDossier=!!boek.scope;boek.aan=false;$("boek").classList.remove("on");boekStat();
+  if(wasDossier)HH.renderCoordinator.render("manage");}
 function boekGa(n){
   if(!boek.rows.length)return;
   boek.i=(n+boek.rows.length)%boek.rows.length;tekenBoek();}
 function volgendeOpen(){
   const n=boek.rows.length;
   for(let s=1;s<=n;s++){const j=(boek.i+s)%n;
-    if(!isAfgehandeld(boek.rows[j])&&!isCorrectieOp(boek.rows[j],boek.datum)){boek.i=j;tekenBoek();return true;}}
+    if(!isAfgehandeld(boek.rows[j])&&!isCorrectie(boek.rows[j])){boek.i=j;tekenBoek();return true;}}
   return false;}
 function tekenBoek(){
   if(boek.completion&&!boek.lijst){
-    const status=dagBoekStatus(boek.rows,boek.datum),open=status.open-status.correcties;
+    const status=boekStatusVan(boek.rows),open=status.open-status.correcties;
     $("bk-titel").textContent=status.correcties?"Boeken in Intapp · Correcties afronden":"Boeken in Intapp · klaar";
     $("bk-tel").innerHTML='<span class="pill ok">'+status.geboekt+" geboekt · "+status.geparkeerd+" geparkeerd · "+open+" open · "+status.correcties+" correcties</span>";
     $("bk-kaart").className="kaart gedaan";
@@ -120,17 +169,21 @@ function tekenBoek(){
   const geboekte=rs.filter(isDossierGeboekt),geparkeerde=rs.filter(isGeparkeerd);
   const klaar=rs.filter(isAfgehandeld);
   const uTot=rs.reduce((s,r)=>s+r.u,0),uKlaar=klaar.reduce((s,r)=>s+r.u,0);
-  $("bk-titel").textContent="Boeken in Intapp · "+kortDag(boek.datum);
+  const dossierScope=!!boek.scope;
+  $("bk-titel").textContent="Boeken in Intapp · "+(dossierScope?(boek.scope.titel||"dossier"):kortDag(boek.datum));
   $("bk-tel").innerHTML='<span class="pill'+(klaar.length>=rs.length?" ok":"")+'">'+
     geboekte.length+" geboekt · "+geparkeerde.length+" geparkeerd · "+
     (rs.length-klaar.length)+" open · "+uu(uKlaar)+" van "+uu(uTot)+" u</span>";
   $("bk-toggle").innerHTML=(boek.lijst?"Eén voor één":"Hele lijst")+" <kbd>L</kbd>";
   $("bk-kaart").style.display=boek.lijst?"none":"block";
   $("bk-lijst").style.display=boek.lijst?"block":"none";
-  const g=isDossierGeboekt(x),p=isGeparkeerd(x),c=isCorrectieOp(x,boek.datum);
+  const g=isDossierGeboekt(x),p=isGeparkeerd(x),c=isCorrectie(x);
   $("bk-kaart").className="kaart"+(g||p?" gedaan":"");
   $("bk-copy").disabled=!!(g||p||c);$("bk-copy").setAttribute("aria-disabled",g||p||c?"true":"false");
   $("bk-kaart").innerHTML=
+    (dossierScope?'<div class="rij werkdatum"><span class="cap">Werkdatum in Intapp</span>'+
+      '<span class="wd">'+esc(kortDag(boekDatum(x)))+'</span>'+
+      '<span class="hint">regel '+(boek.i+1)+" van "+rs.length+"</span></div>":"")+
     '<div class="rij"><span class="nr">'+esc(x.nummer||"—")+"</span>"+
     '<button class="sm ghost" id="bk-nrcopy"'+(g||p||c?' disabled aria-disabled="true"':'')+' title="Dossiernummer kopiëren">kopieer</button>'+ 
     '<span class="uu">'+uu(x.u)+"</span></div>"+
@@ -145,10 +198,11 @@ function tekenBoek(){
       "dossier, een werkcode of een omschrijving.</div>":"");
   let h="";
   rs.forEach((r,i)=>{
-    const rg=isDossierGeboekt(r),rp=isGeparkeerd(r),rc=isCorrectieOp(r,boek.datum);
+    const rg=isDossierGeboekt(r),rp=isGeparkeerd(r),rc=isCorrectie(r);
     h+='<div class="bkrow'+(i===boek.i?" nu":"")+(rg||rp?" gedaan":"")+
       '" data-i="'+i+'">'+
-      '<span class="bn">'+esc(r.nummer||"—")+"</span>"+
+      (dossierScope?'<span class="bd">'+esc(kortDag(boekDatum(r)))+"</span>":
+      '<span class="bn">'+esc(r.nummer||"—")+"</span>")+
       (r.dvnStatus?'<span class="tag dvn">DVN dossier</span>':"")+
       '<span class="bo">'+esc(r.oms||"(leeg)")+"</span>"+
       '<span class="bu">'+uu(r.u)+"</span>"+
@@ -179,7 +233,7 @@ function openParkeer(row){
   const ind=i7(),com=i7CodeOp(VAST_VOORLOPIG,"-704");
   if(!ind){toast("Het i7-dossier ontbreekt");return;}
   if(!com){toast("Werkcode Commercieel ontbreekt in de i7-werklijst");return;}
-  const doel=dosOf(row.dosIds[0]);parkBoek={row,doel,ind,com};
+  const doel=dosOf(row.dosIds[0]);parkBoek={row,doel,ind,com,datum:boekDatum(row)};
   const resolved=dvnResolvedDoel(doel)||doel;
   $("pb-target").textContent=(dvnResolvedNummer(doel)||resolved.nummer||"—")+" · "+resolved.naam;
   $("pb-i7").textContent=(ind.nummer||"—")+" · "+ind.naam;
@@ -201,7 +255,7 @@ async function bevestigParkeer(){
   bevestigParkeer.busy=true;$('pb-save').disabled=true;
   const nowIso=new Date().toISOString();let uit;
   try{uit=await HH.services.admin.parkOverbooking({row:p.row,target:p.doel,i7Dossier:p.ind,
-    commercialCode:p.com,rules:HH.state.read().rules,overbookings:HH.state.read().overbookings,sourceDate:boek.datum,
+    commercialCode:p.com,rules:HH.state.read().rules,overbookings:HH.state.read().overbookings,sourceDate:p.datum||boek.datum,
     roundingMode:HH.state.read().roundingMode,id:uid(),nowIso,hoursOf:urenOf,
     summarize:sumVan,waitForRules:rustig});}
   catch(e){L("FOUT-overboeking-parkeren",String(e));toast("Parkeren mislukt — er is niets gewijzigd");return;}
@@ -216,7 +270,7 @@ async function bevestigParkeer(){
 }
 async function kopieerHuidig(){
   if(boek.completion)return;
-  const x=boek.rows[boek.i];if(!x||isAfgehandeld(x)||isCorrectieOp(x,boek.datum))return;
+  const x=boek.rows[boek.i];if(!x||isAfgehandeld(x)||isCorrectie(x))return;
   await kopieer(schoon(x.oms),$("bk-copy"),'Kopieer omschrijving <kbd>C</kbd>');
   L("boek-kopieer","regel "+(boek.i+1)+" van "+boek.rows.length);}
 $("bk-close").onclick=sluitBoek;
@@ -229,12 +283,13 @@ $("bk-park").onclick=()=>openParkeer(boek.rows[boek.i]);
 $("bk-done").onclick=async()=>{
   const x=boek.rows[boek.i];if(!x)return;
   if(boek.completion){
-    const status=dagBoekStatus(boek.rows,boek.datum);sluitBoek();
-    if(status.correcties){if(typeof openBeheerVoorDag==="function")openBeheerVoorDag(boek.datum);else HH.app.showTab("beheer");}
+    const status=boekStatusVan(boek.rows),eersteCorrectie=boek.rows.find(r=>!isAfgehandeld(r)&&isCorrectie(r));
+    sluitBoek();
+    if(status.correcties){if(typeof openBeheerVoorDag==="function")openBeheerVoorDag(boekDatum(eersteCorrectie));else HH.app.showTab("beheer");}
     return;}
-  if(isCorrectieOp(x,boek.datum)){sluitBoek();if(typeof openBeheerVoorDag==="function")openBeheerVoorDag(boek.datum,x);else HH.app.showTab("beheer");
+  if(isCorrectie(x)){sluitBoek();if(typeof openBeheerVoorDag==="function")openBeheerVoorDag(boekDatum(x),x);else HH.app.showTab("beheer");
     toast("Controleer de getoonde wijziging in Intapp");return;}
-  if(boek.rows.every(r=>isAfgehandeld(r)||isCorrectieOp(r,boek.datum))){
+  if(boek.rows.every(r=>isAfgehandeld(r)||isCorrectie(r))){
     boek.completion=true;boek.lijst=false;tekenBoek();return;}
   if(!isAfgehandeld(x)){if(!await zetGeboekt(x,true))return;}
   if(!volgendeOpen()){
@@ -243,24 +298,24 @@ $("bk-done").onclick=async()=>{
   boekStat();};
 $("bk-lijst").addEventListener("click",async e=>{
   const c=e.target.closest("[data-copy]");
-  if(c){const i=+c.dataset.copy;if(boek.completion||!boek.rows[i]||isAfgehandeld(boek.rows[i])||isCorrectieOp(boek.rows[i],boek.datum))return;boek.i=i;
+  if(c){const i=+c.dataset.copy;if(boek.completion||!boek.rows[i]||isAfgehandeld(boek.rows[i])||isCorrectie(boek.rows[i]))return;boek.i=i;
     await kopieer(schoon(boek.rows[i].oms),c,"kopieer");
     L("boek-kopieer","regel "+(i+1)+" van "+boek.rows.length);return;}
   const d=e.target.closest("[data-done]");
   if(d){const i=+d.dataset.done;boek.i=i;
     if(await zetGeboekt(boek.rows[i],d.checked)){
-      boek.completion=boek.rows.every(r=>isAfgehandeld(r)||isCorrectieOp(r,boek.datum));
+      boek.completion=boek.rows.every(r=>isAfgehandeld(r)||isCorrectie(r));
       tekenBoek();boekStat();
     }
     return;}
   const p=e.target.closest("[data-park]");
   if(p){boek.i=+p.dataset.park;openParkeer(boek.rows[boek.i]);return;}
   const correction=e.target.closest("[data-correctie]");
-  if(correction){const i=+correction.dataset.correctie,x=boek.rows[i];sluitBoek();if(typeof openBeheerVoorDag==="function")openBeheerVoorDag(boek.datum,x);else HH.app.showTab("beheer");return;}
+  if(correction){const i=+correction.dataset.correctie,x=boek.rows[i];sluitBoek();if(typeof openBeheerVoorDag==="function")openBeheerVoorDag(boekDatum(x),x);else HH.app.showTab("beheer");return;}
   const r=e.target.closest("[data-i]");
   if(r){boek.i=+r.dataset.i;boek.lijst=false;tekenBoek();}});
 $("bk-kaart").addEventListener("click",async e=>{
-  if(e.target.id==="bk-nrcopy"){if(boek.completion)return;const x=boek.rows[boek.i];if(!x||isAfgehandeld(x)||isCorrectieOp(x,boek.datum))return;
+  if(e.target.id==="bk-nrcopy"){if(boek.completion)return;const x=boek.rows[boek.i];if(!x||isAfgehandeld(x)||isCorrectie(x))return;
     await kopieer(schoon(x.nummer),e.target,"kopieer");}});
 function boekKeys(e){
   const k=e.key.toLowerCase();

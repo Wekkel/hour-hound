@@ -73,7 +73,9 @@ async function maakLopend(id){
   if(await meldTimerFout(uit,"Regel opnieuw starten is niet uitgevoerd")||
     meldDagRegelFout(uit,"Regel opnieuw starten is niet uitgevoerd"))return;
   if(dicht&&dicht._omsVersie)bevestigOmschr(dicht.id,dicht._omsVersie);
-  pending=null;ntWizard=null;const nextRules=mergeById(HH.state.read().rules,[uit.closedRule,uit.rule]);
+  pending=null;ntWizard=null;const nextRules=mergeById(uit.droppedRule?
+    zonderIds(HH.state.read().rules,[uit.droppedRule.id]):HH.state.read().rules,[uit.closedRule,uit.rule]);
+  if(uit.droppedRule)L("lege-regel-vervallen","bij opnieuw laten lopen · start "+uit.droppedRule.start);
   HH.state.commit({dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),rules:nextRules,
     running:nextRules.find(x=>x.id===uit.rule.id)});
   if(uit.dayWasClosed){undoStack=[];await herlaad(true);}

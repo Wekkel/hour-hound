@@ -57,6 +57,24 @@
     return gaps.filter(gap=>gap[1]-gap[0]>=6);
   }
 
+  /* Patch AG — spookregels. N start direct een lege werkregel (T3). Maakt de gebruiker
+     die invoer niet af en kiest hij meteen iets anders, dan bleef die lege regel als
+     blokkerende "geen dossier gekozen" achter. Een regel die nog niets bevat (geen
+     dossier, geen werkcode, geen omschrijving) en hooguit 6 minuten = 0,1 uur loopt,
+     is geen werk maar een onafgemaakte keuze: de volgende actie neemt hem over.
+     Loopt hij langer, dan is het echte, nog toe te wijzen tijd en blijft hij staan. */
+  const EMPTY_DRAFT_MINUTES=6;
+  const isBlankWorkRule=rule=>!!rule&&rule.soort==="werk"&&!rule.dossierId&&!rule.code&&
+    !rule.autoAanvul&&!String(rule.omschrijving||"").trim();
+  function isEmptyDraft(rule,options){
+    const o=options||{};
+    if(!isBlankWorkRule(rule)||rule.eind||rule.urenHand)return false;
+    if(o.pendingDescription!=null&&String(o.pendingDescription).trim())return false;
+    if(!o.date||rule.datum!==o.date)return false;
+    const start=time.hm2m(rule.start),now=time.hm2m(o.time);
+    return start!=null&&now!=null&&now>=start&&now-start<=EMPTY_DRAFT_MINUTES;
+  }
+
   const autoFillShortfall=total=>Math.max(0,Math.round((NORM-(+total||0))*10)/10);
   const dayHours=(rules,date,excludeId,options)=>(rules||[])
     .filter(r=>r.datum===date&&r.id!==excludeId)
@@ -225,6 +243,7 @@
 
   HH.domain.booking=Object.freeze({NORM,DAGMAX,endOf,rawMinutes,hoursOf,pauseHours,
     totalHours,gapsFor,gapHours,autoFillShortfall,dayHours,dayCapacity,
+    EMPTY_DRAFT_MINUTES,isBlankWorkRule,isEmptyDraft,
     normalizeDescription,emptyHistory,normalizeHistory,rowSourceIds,bookingSnapshot,
     semanticKey,semanticEqual,evidence,evidenceForSnapshot,hasHistoricalSource,
     boundaryForSource,corrections,

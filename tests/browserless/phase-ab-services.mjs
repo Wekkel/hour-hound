@@ -138,15 +138,15 @@ test('loss of an alias target blocks both refresh and completion',async()=>{
   assert(!completed.ok,'completion accepted a lost canonical target');
   equal(h.db.writes,1,'rejected target loss wrote after the original park');
 });
-test('assignDvnNumber preserves the source date in rules and stack',async()=>{
+test('Patch AG: assignDvnNumber strips DVN name and work date in rules and stack',async()=>{
   const target={id:'new-dvn',nummer:null,naam:'New DVN',voorlopig:true,dvn:true,revision:1},
     rule={...makeRule(target),omschrijving:'15.09.2026 · Old name · Work'},stackRule={...rule};
   const h=load({dossiers:[target,i7],regels:[rule],overboekingen:[],meta:{stack:[stackRule]}});
   const out=await h.HH.services.admin.assignDvnNumber({dossier:target,dossiers:[target,i7],rules:[rule],
     number:'555555555',name:'Resolved name',nowIso,nowMs:2});
   assert(out.ok,`assign failed: ${out.error}`);
-  equal(out.rules[0].omschrijving,'15.09.2026 Work','rule date was discarded');
-  equal(out.stack[0].omschrijving,'15.09.2026 Work','stack date was discarded');
+  equal(out.rules[0].omschrijving,'Work','rule keeps date or DVN name');
+  equal(out.stack[0].omschrijving,'Work','stack keeps date or DVN name');
 });
 
 

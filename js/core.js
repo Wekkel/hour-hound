@@ -172,6 +172,8 @@ function vervangOverboekingenGeheugen(updated){
 }
 const {NORM,DAGMAX}=bookingDomain,VOOR=/^\d{2}\.\d{2}\.\d{4} · [^·]* · /;
 const autoAanvulTekort=bookingDomain.autoFillShortfall;
+/* Patch AG: werkregel zonder dossier, werkcode en omschrijving (spookregel). */
+const isLegeWerkregel=bookingDomain.isBlankWorkRule;
 
 let liveId=null;
 let hiddenAt=null,snoozeTot=0,openDagenSnooze=0,oldRunSnooze=0;
@@ -504,6 +506,35 @@ function codeFout(d,r){
   if(!codesFor(d).some(c=>c.code===r.code))return true;
   if(d.voorlopig||dvnDefinitiefI7(d)){const vast=defaultCode(d);return !vast||r.code!==vast;}
   return false;}
+/* Patch AG: omschrijving van een regel op een genummerde DVN. Standaard de kale tekst
+   zonder werkdatum. Uitzondering: staat deze regel al mét datum in een bevestigde
+   boeking of in een parkeerrecord, dan blijft precies die bevestigde tekst gelden. Zo
+   ontstaat er geen correctietaak voor iets wat in Intapp al goed staat. */
+let dvnTekstCache={sleutel:null,map:null};
+function bevestigdeDvnTeksten(hist,overs){
+  const h=hist||{},sleutel=[h.receipts,(h.receipts||[]).length,h.resolutions,
+    (h.resolutions||[]).length,overs,(overs||[]).length];
+  if(dvnTekstCache.sleutel&&sleutel.every((x,i)=>x===dvnTekstCache.sleutel[i]))return dvnTekstCache.map;
+  const map=new Map(),voegToe=(id,tekst)=>{if(!id)return;
+    let set=map.get(id);if(!set){set=new Set();map.set(id,set);}
+    set.add(bookingDomain.normalizeDescription(tekst));};
+  bookingDomain.evidence(h).forEach(item=>bookingDomain.rowSourceIds(item.snapshot)
+    .forEach(id=>voegToe(id,item.snapshot.description)));
+  (overs||[]).forEach(o=>{const teksten=(o.targetLines||[]).map(x=>x.omschrijving).concat([o.description]);
+    overbookingDomain.sourceIds(o).forEach(id=>teksten.forEach(t=>voegToe(id,t)));});
+  dvnTekstCache={sleutel,map};return map;}
+function dvnBoekOmschrijving(r,hist,overs){
+  const kaal=dvnDomain.resolvedDescription(r.omschrijving,r.datum),
+    metDatum=dvnDomain.datedDescription(r.omschrijving,r.datum);
+  if(kaal===metDatum)return kaal;
+  const bevestigd=bevestigdeDvnTeksten(hist,overs).get(r.id);
+  return bevestigd&&bevestigd.has(bookingDomain.normalizeDescription(metDatum))?metDatum:kaal;}
+/* Wat de Dag-tabel en de bewerksheet als omschrijving tonen: bij een genummerde DVN
+   dezelfde tekst als de boekregel, zodat scherm en Intapp-samenvatting niet verschillen. */
+function regelToonOmschrijving(r){
+  const d=r?dosOf(r.dossierId):null;
+  return d&&isDvn(d)&&!isIndirect(d)&&dvnResolvedNummer(d)?
+    dvnBoekOmschrijving(r,HH.state.read().bookingHistory,HH.state.read().overbookings):(r&&r.omschrijving)||"";}
 /* Adapter naar de pure Intapp-aggregatie. Alle runtimecontext wordt hier expliciet
    verzameld; core.js is daardoor niet meer afhankelijk van views.js. */
 function sumVanData(lijst,dossierRows,roundingMode,overbookingRows,history){
@@ -517,7 +548,7 @@ function sumVanData(lijst,dossierRows,roundingMode,overbookingRows,history){
     runningId:HH.state.read().running?HH.state.read().running.id:null,today:today(),nowHM:nowHM(),
     getDossier:dossier,getIntappInfo:info,
     getDescription:(r,d)=>isDvn(d)&&!isIndirect(d)&&dvnDomain.resolvedNumber(d,ds)?
-      dvnDomain.resolvedDescription(r.omschrijving,r.datum):r.omschrijving||"",
+      dvnBoekOmschrijving(r,hist,overs):r.omschrijving||"",
     getCodeName:(d,c)=>{if(!c)return"";
       const codes=d&&isIndirect(d)?HH.state.read().codes:(d&&d.codes||[]);
       const found=codes.find(x=>x.code===c);return found?found.naam:c;},

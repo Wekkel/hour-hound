@@ -1,5 +1,36 @@
 "use strict";
+/* Patch AG: lege regels in één keer opruimen. Elke regel gaat door dezelfde
+   verwijderservice als de ✕-knop in de dagtabel, inclusief ongedaan maken. */
+async function ruimLegeRegelsOp(){
+  if(ruimLegeRegelsOp.busy)return;
+  const datum=HH.state.read().viewDate,leeg=legeRegels(datum);
+  if(!leeg.length){toast("Geen lege regels op deze dag");return;}
+  if(!confirm(leeg.length+" lege regel"+(leeg.length>1?"s":"")+" verwijderen?\n\n"+
+    leeg.map(r=>"• "+r.start+"–"+r.eind+" · "+uu(urenOf(r))+" u").join("\n")+
+    "\n\nDe tijd wordt daarna als 'niet verantwoord' getoond; je kunt die met ✎ alsnog invullen."))return;
+  ruimLegeRegelsOp.busy=true;let weg=0;
+  try{
+    for(const regel of leeg){
+      const oud=HH.state.read().rules.find(x=>x.id===regel.id);if(!oud)continue;
+      const uit=await HH.services.timer.deleteRule({currentTimer:HH.state.read().running,
+        readCurrentTimer:()=>HH.state.read().running,rule:oud,rules:HH.state.read().rules,
+        dossiers:HH.state.read().dossiers,overbookings:HH.state.read().overbookings,
+        runningId:HH.state.read().running?HH.state.read().running.id:null,isBooked:false,
+        waitForRules:rustig,nowMs:Date.now(),nowIso:new Date().toISOString()});
+      if(await meldTimerFout(uit,"Verwijderen is niet uitgevoerd")||
+        meldDagRegelFout(uit,"Verwijderen is niet uitgevoerd"))break;
+      HH.state.commit({dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
+        rules:zonderIds(HH.state.read().rules,[oud.id])});
+      pasMutatieUndoToe(uit.undo);weg++;
+      if(uit.dayWasClosed){undoStack=[];await herlaad(true);}
+    }
+  }catch(e){L("FOUT-lege-regels",String(e));toast("Opruimen mislukt: "+e);}
+  finally{ruimLegeRegelsOp.busy=false;}
+  L("lege-regels-opgeruimd",weg+" van "+leeg.length);
+  bouwDag();HH.app.render();announce();
+  if(weg)toast(weg+" lege regel"+(weg>1?"s":"")+" verwijderd"+(weg<leeg.length?" — niet alle regels konden weg":""));}
 $("d-probs").addEventListener("click",e=>{
+  if(e.target.closest("[data-leeg-opruimen]")){ruimLegeRegelsOp();return;}
   const b=e.target.closest("[data-goto]");if(!b)return;
   openRegelEditor(b.dataset.goto,"dag");});
 $("d-mode").onchange=async e=>{const next=e.target.value;

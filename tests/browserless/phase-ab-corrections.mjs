@@ -12,9 +12,9 @@ const r={id:'r',datum:'2026-09-04',dossierId:'d',code:null,omschrijving:'red fla
 HH.state.commit({dossiers:[d],rules:[r],roundingMode:'groep',overbookings:[],bookingHistory:HH.domain.booking.emptyHistory()});
 let failed=0,passed=0;
 async function test(name,fn){try{await fn();passed++;console.log('PASS '+name);}catch(e){failed++;console.error('FAIL '+name+': '+e.message);}}
-await test('Resolved DVN restores date for previously stripped description',()=>assert.equal(run('sumVanData(HH.state.read().rules)[0].oms'),'04.09.2026 red flag review docs'));
-await test('Old DVN prefix loses project but retains work date',()=>assert.equal(HH.domain.dvn.resolvedDescription('04.09.2026 · Bank - Project · red flag review docs','2026-09-04'),'04.09.2026 red flag review docs'));
-await test('Resolved description is idempotent and empty stays invalid',()=>{assert.equal(HH.domain.dvn.resolvedDescription('04.09.2026 red flag review docs','2026-09-04'),'04.09.2026 red flag review docs');assert.equal(HH.domain.dvn.resolvedDescription('','2026-09-04'),'');});
+await test('Patch AG: resolved DVN books the bare description without work date',()=>assert.equal(run('sumVanData(HH.state.read().rules)[0].oms'),'red flag review docs'));
+await test('Patch AG: old DVN prefix loses project and work date',()=>assert.equal(HH.domain.dvn.resolvedDescription('04.09.2026 · Bank - Project · red flag review docs','2026-09-04'),'red flag review docs'));
+await test('Patch AG: resolved description drops the Patch AB date, is idempotent and empty stays invalid',()=>{assert.equal(HH.domain.dvn.resolvedDescription('04.09.2026 red flag review docs','2026-09-04'),'red flag review docs');assert.equal(HH.domain.dvn.resolvedDescription('red flag review docs','2026-09-04'),'red flag review docs');assert.equal(HH.domain.dvn.resolvedDescription('05.09.2026 red flag review docs','2026-09-04'),'05.09.2026 red flag review docs');assert.equal(HH.domain.dvn.resolvedDescription('','2026-09-04'),'');});
 await test('Ordinary and unnumbered DVN descriptions retain text',()=>{for(const dossier of [{...d,dvn:false},{...d,nummer:null,voorlopig:true}]){HH.state.commit({dossiers:[dossier]});assert.equal(run('sumVanData(HH.state.read().rules)[0].oms'),r.omschrijving);}HH.state.commit({dossiers:[d]});});
 await test('Correction exposes three copy actions and exact clipboard values',async()=>{
  const current=run('bookingSnapshotVan(sumVanData(HH.state.read().rules)[0],"2026-09-04")');
@@ -22,7 +22,7 @@ await test('Correction exposes three copy actions and exact clipboard values',as
  HH.state.commit({bookingHistory:{version:1,receipts:[{id:'receipt',channel:'day',snapshot:before,confirmedAt:'2026-09-05'}],resolutions:[]}});
  run('renderBookingCorrections()');const html=els.get('booking-corrections').innerHTML;
  for(const field of ['targetNumber','hours','description']){assert.ok(html.includes('data-booking-field="'+field+'"'));const button={dataset:{bookingCopy:'receipt|0',bookingField:field},innerHTML:'Kopieer'};await els.get('booking-corrections').click({target:{closest:selector=>selector==='[data-booking-copy]'?button:null}});}
- assert.deepEqual(copied,['123456789','4,0','04.09.2026 red flag review docs']);assert.equal(HH.state.read().bookingHistory.receipts[0].snapshot.description,before.description);
+ assert.deepEqual(copied,['123456789','4,0','red flag review docs']);assert.equal(HH.state.read().bookingHistory.receipts[0].snapshot.description,before.description);
 });
 await test('Stale copy button cannot copy missing correction',async()=>{const count=copied.length,button={dataset:{bookingCopy:'missing|0',bookingField:'description'}};await els.get('booking-corrections').click({target:{closest:()=>button}});assert.equal(copied.length,count);});
 console.log(`${passed} passed, ${failed} failed`);if(failed)process.exitCode=1;

@@ -96,13 +96,15 @@ async function sluitWerkdag(datum){
   if(dicht&&dicht._omsVersie)bevestigOmschr(dicht.id,dicht._omsVersie);
   const written=[uit.closedRule,uit.fill&&!uit.fill.noChange?uit.fill.rule:null].filter(Boolean),
     delta={dossiers:mergeById(HH.state.read().dossiers,uit.dossiers),
-    rules:mergeById(HH.state.read().rules,written),dayEnds:uit.dayEnds,dayAudit:uit.dayAudit,
+    rules:mergeById(uit.droppedRule?zonderIds(HH.state.read().rules,[uit.droppedRule.id]):
+      HH.state.read().rules,written),dayEnds:uit.dayEnds,dayAudit:uit.dayAudit,
     viewDate:datum};
   if(wasRunning){pending=null;delta.running=null;delta.stack=[];
     vergeetTimerUndo("einde werkdag");liveId=null;}
   HH.state.commit(delta);HH.app.showTab("dag");HH.app.render();announce();
   const totaalNaSluit=dagIntappTotaal(datum),naTekort=dagTekort(datum);
   L("einde-werkdag",datum+" om "+dagSluitStatus(datum).eind+" · "+uu(totaalNaSluit)+" u");
+  if(uit.droppedRule)L("lege-regel-vervallen","bij dagafsluiting · start "+uit.droppedRule.start);
   if(!werkdag(datum))toast("Weekendregistratie afgesloten. "+uu(totaalNaSluit)+
     " uur verantwoord; geen 8-uursaanvulling toegepast.");
   else if(keuze.actie==="fill"&&uit.fill&&!uit.fill.noChange)toast("Werkdag afgesloten en "+

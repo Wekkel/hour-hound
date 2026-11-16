@@ -126,6 +126,13 @@ $("b-adddos").onclick=async()=>{
   catch(error){toast("Dossier niet toegevoegd — "+String(error.message||error));return;}
   $("b-nr").value="";$("b-naam").value="";HH.app.render();toast("Dossier toegevoegd");};
 
+/* Patch AG: de boekregels van een genummerde DVN lopen door hetzelfde boekvenster als
+   een werkdag onder Dag — zelfde kaart, zelfde toetsen, zelfde bevestiging. */
+function openBeheerBoekvenster(groupId){
+  const g=beheerGroups.find(x=>x.id===groupId);if(!g)return false;
+  const ids=beheerDvnIds(g);
+  if(!ids.length){toast("Dit dossier heeft geen DVN-regels om te boeken");return false;}
+  return openBoekDossier({dossierIds:ids,titel:(g.number?g.number+" · ":"")+g.name});}
 function sluitBeheerFlow(){
   if(beheerUi.busy)return;
   beheerUi.group=null;beheerUi.taskKey=null;beheerUi.error="";renderBeheerWerk();
@@ -142,7 +149,13 @@ async function bevestigBeheerTaak(){
   beheerUi.busy=true;beheerUi.error="";renderBeheerFlow();
   try{
     if(shown.type==="inspect"){beheerUi.section="dossiers";return;}
-    if(shown.type==="number"){await kenNummerToe(shown.dossierId);return;}
+    if(shown.type==="number"){
+      /* Patch AG: na het toekennen van het nummer direct door naar het boekvenster;
+         Esc sluit het als je de uren later wilt boeken. */
+      const toegekend=await kenNummerToe(shown.dossierId);
+      if(toegekend)setTimeout(()=>{if(!beheerUi.busy&&beheerUi.group&&HH.state.read().tab==="beheer")
+        openBeheerBoekvenster(beheerUi.group);},0);
+      return;}
     if(shown.type==="overcheck"){await verversOverboeking(shown.record.id);return;}
     const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString(),s=HH.state.read();let out;
     if(shown.type==="correction"){
@@ -174,6 +187,10 @@ async function bevestigBeheerTaak(){
 $("v-beheer").addEventListener("click",async e=>{
   if(e.target.closest("[data-manage-clear-scope]")){if(beheerUi.busy)return;beheerUi.scopeDate=null;renderBeheerWerk();return;}
   const section=e.target.closest("[data-manage-section]");if(section){if(beheerUi.busy)return;beheerUi.section=section.dataset.manageSection;renderBeheerWerk();return;}
+  const book=e.target.closest("[data-manage-book]");if(book){
+    if(beheerUi.busy)return;
+    openBeheerBoekvenster(book.dataset.manageBook);return;
+  }
   const open=e.target.closest("[data-manage-open]");if(open){
     const g=beheerGroups.find(x=>x.id===open.dataset.manageOpen);if(!g)return;
     beheerUi.group=g.id;beheerUi.dossierIds=g.dossierIds.slice();beheerUi.title=(g.number?g.number+" · ":"")+g.name;
@@ -185,7 +202,8 @@ $("v-beheer").addEventListener("click",async e=>{
     if(s&&["hours","targetNumber","code","description"].includes(key))await kopieer(key==="hours"?uu(s.hours):String(s[key]||""),copy,copy.innerHTML);return;}
   if(e.target.closest("[data-manage-prev]")){beheerUi.line=Math.max(0,beheerUi.line-1);renderBeheerFlow();return;}
   if(e.target.closest("[data-manage-later]")){
-    const group=beheerGroups.find(g=>g.id===beheerUi.group),tasks=group?group.tasks:[],i=tasks.findIndex(t=>t.key===beheerUi.taskKey);
+    const group=beheerGroups.find(g=>g.id===beheerUi.group),tasks=(group?group.tasks:[]).filter(t=>t.type!=="book"),
+      i=tasks.findIndex(t=>t.key===beheerUi.taskKey);
     if(tasks.length<2){sluitBeheerFlow();return;}
     beheerUi.taskKey=tasks[(i+1)%tasks.length].key;beheerUi.error="";renderBeheerFlow();return;
   }

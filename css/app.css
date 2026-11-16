@@ -395,3 +395,20 @@ tr.needsreview td{box-shadow:inset 3px 0 0 var(--amber)}
 .er-soort .cap{font:500 10px/1 var(--sans);color:var(--soft);letter-spacing:.08em;text-transform:uppercase;margin-right:.2rem}
 .er-soort .hint{flex-basis:100%;margin-top:.1rem}
 .editgrid input[readonly]{opacity:.75}
+/* Patch AG */
+.probs .leegbar{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;margin-top:.55rem;
+  padding-top:.55rem;border-top:1px dashed var(--line)}
+.probs .leegbar span{flex:1;min-width:220px}
+.manage-group{margin-top:1rem}
+.manage-group-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:.5rem;padding:.35rem 0}
+.manage-group-head strong{font-size:15px}
+.manage-group[data-manage-group="book"] .manage-group-head strong{color:var(--moss)}
+.manage-group[data-manage-group="correction"] .manage-group-head strong{color:var(--rust)}
+.manage-group[data-manage-group="parked"] .manage-group-head strong,
+.manage-group[data-manage-group="number"] .manage-group-head strong{color:var(--amber)}
+.manage-row{flex-wrap:wrap}
+.manage-row>div{min-width:220px}
+.kaart .werkdatum{align-items:center;margin-bottom:.7rem;padding-bottom:.55rem;border-bottom:1px solid var(--line)}
+.kaart .werkdatum .wd{font:500 22px/1.1 var(--mono)}
+.kaart .werkdatum .hint{margin-left:auto}
+.bkrow .bd{font-family:var(--mono);width:118px;flex:none}

@@ -164,7 +164,7 @@ function openRegelEditor(id,bron,draft){
   $("er-eind").placeholder=loopt?"loopt":"";
   $("er-dossier").value=dosVeld(d);
   $("er-code").value=codeNaam(d,r.code);
-  $("er-oms").value=r.omschrijving||"";
+  $("er-oms").value=regelToonOmschrijving(r);
   /* Keep the persisted mode. The displayed calculated value is not an edit. */
   editorUrenHand=!!r.urenHand;
   editorUrenWasHand=editorUrenHand;

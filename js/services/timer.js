@@ -112,11 +112,25 @@
           if(!commercial||selected!==commercial.code)return fail("i7_code_mismatch");
         }
       }
-      const rule=gateway.createdRule({id:input.id,datum:input.date,start:input.time,eind:null,
-        dossierId:dossier?dossier.id:null,code:input.code||null,
-        omschrijving:input.description||"",uren:0.1,urenHand:false,
-        soort:input.kind||"werk",gemaakt:input.nowMs},input.nowMs);
-      const closed=current?gateway.replaceRule(current,closeRule(current,input,null),input.nowMs):null;
+      /* Patch AG: een nog volledig lege, hooguit 6 minuten oude Nieuwe-taak-regel wordt
+         niet afgesloten (dat liet een spookregel achter) maar overgenomen: dezelfde
+         regel, met zijn eigen starttijd, krijgt de nieuwe taakgegevens. */
+      const takeover=booking.isEmptyDraft(current,{date:input.date,time:input.time,
+        pendingDescription:input.pendingDescription});
+      let rule,closed=null,ruleChanged=true;
+      if(takeover){
+        const desired=Object.assign({},current,{dossierId:dossier?dossier.id:null,
+          code:input.code||null,omschrijving:input.description||"",soort:input.kind||"werk"});
+        ruleChanged=desired.dossierId!==(current.dossierId||null)||desired.code!==(current.code||null)||
+          desired.omschrijving!==(current.omschrijving||"")||desired.soort!==current.soort;
+        rule=ruleChanged?gateway.replaceRule(current,desired,input.nowMs):current;
+      }else{
+        rule=gateway.createdRule({id:input.id,datum:input.date,start:input.time,eind:null,
+          dossierId:dossier?dossier.id:null,code:input.code||null,
+          omschrijving:input.description||"",uren:0.1,urenHand:false,
+          soort:input.kind||"werk",gemaakt:input.nowMs},input.nowMs);
+        closed=current?gateway.replaceRule(current,closeRule(current,input,null),input.nowMs):null;
+      }
       let nextStack=copy(snapshot.meta.stack)||[],stackChanged=false;
       if(Object.prototype.hasOwnProperty.call(input,"stackAfter")){
         nextStack=copy(input.stackAfter)||[];stackChanged=true;
@@ -143,7 +157,8 @@
       const codeUsage=Object.assign({},snapshot.meta.codeGebruik||{});
       if(rule.code)codeUsage[rule.code]=(codeUsage[rule.code]||0)+1;
       writer.stores.meta.delete("pending");autoRemoved.forEach(item=>writer.remove("regels",item.id));
-      if(closed)writer.put("regels",closed);writer.put("regels",rule);writePointer(writer.stores,rule.id);
+      if(closed)writer.put("regels",closed);if(ruleChanged)writer.put("regels",rule);
+      writePointer(writer.stores,rule.id);
       if(stackChanged)writer.stores.meta.put(nextStack,"stack");
       if(dayWasClosed){writer.stores.meta.put(dayEnds,"dagEinde");writer.stores.meta.put(nextDayAudit,"dagAudit");}
       dossierMap.forEach(item=>writer.put("dossiers",item));
@@ -151,7 +166,7 @@
       return ok({rule,closedRule:closed,dossiers:[...dossierMap.values()],createdDossier:created,
         stack:nextStack,stackChanged,dayEnds,nextDayAudit,dayWasClosed,autoRemoved,
         autoPreserved:automatic.filter(r=>!autoRemoved.includes(r)),codeUsage,currentTimerId:rule.id,
-        invalidateTimerUndo:true});
+        tookOver:takeover,invalidateTimerUndo:true});
     });
   }
   function start(input){return enqueue("starten",input,token=>startNow(input,token));}

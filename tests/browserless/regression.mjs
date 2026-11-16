@@ -608,7 +608,7 @@ test('DVN-services bewaren nummer, posted en definitief-i7 atomair', async() => 
   assertEq(assigned.dossier.dvnIntappStatus,'needs_check',
     'Nummerwijziging na posted moet controle nodig maken');
   assertEq(assigned.rules[0].code,null,'Oude verplichte DVN-code moet worden gewist');
-  assertEq(assigned.rules[0].omschrijving,'25.08.2026 Werk','DVN-projectnaam verdwijnt maar de werkdatum blijft');
+  assertEq(assigned.rules[0].omschrijving,'Werk','Patch AG: na nummer toekennen verdwijnen DVN-projectnaam én werkdatum');
   assertEq(assigned.dossier.dvnIntappAudit.at(-1).reden,'dossiernummer aangepast',
     'Nummerwijziging moet traceerbaar blijven');
 
@@ -1942,7 +1942,7 @@ function evaluateEditorHandler(){
     uu:n=>Number(n).toFixed(1).replace('.',','),urenOf:r=>r.uren,dagLabel:x=>x,dosOf:id=>id==='d'?gewoon:null,
     dosVeld:d=>d?(d.nummer||d.naam):'',codeNaam:()=>'',closeAC(){},openAC(){},ac:{el:null},acKeys:()=>false,pickBusy:0,
     i7:()=>null,codeItems:()=>[],dossierItems:()=>[],isGewoonDossier:d=>!!d&&!d.isI7&&!d.voorlopig,
-    zoekDossierExact:()=>({}),dvnNaamSchoon:x=>x,normOms:x=>String(x||'').toLowerCase(),i7CodeOp:()=>null,
+    zoekDossierExact:()=>({}),dvnNaamSchoon:x=>x,regelToonOmschrijving:r=>(r&&r.omschrijving)||'',normOms:x=>String(x||'').toLowerCase(),i7CodeOp:()=>null,
     VAST_VOORLOPIG:/commerc/i,VOOR:/^\d{2}\.\d{2}\.\d{4} · [^·]* · /,kort:x=>x,codesFor:()=>[],defaultCode:()=>null,sumVan:()=>[],overboekingAfgerondVoorRow:()=>false,
     overboekingOpenVoorRegel:()=>false,isDvn:()=>false,dvnIntappState:()=>'',isIndirect:()=>false,
     dvnDefinitiefI7:()=>false,actief:()=>[],splitsDossier:()=>null,nummerBezet:()=>false,

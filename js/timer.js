@@ -83,6 +83,9 @@ function pasTimerStartToe(uit,context){
   HH.state.commit(delta);
   if(context.created)L("dossier-nieuw","dos"+idKort(context.created.id)+
     (context.created.nummer?"":" · VOORLOPIG")+(logOms?" · "+kort(context.created.naam):""));
+  /* Een overgenomen regel houdt zijn ID; een nog open invoerscherm hoort daar niet meer bij. */
+  if(uit.tookOver)ntWizard=null;
+  if(uit.tookOver)L("lege-regel-overgenomen","start "+uit.rule.start+" blijft · geen losse lege regel");
   L("start-regel",uit.rule.soort+" · "+dosIdLog(uit.rule.dossierId)+" · code "+
     (uit.rule.code||"-")+" · "+uit.rule.start+" · oms "+omsLog(uit.rule.omschrijving));
   liveId=null;snoozeTot=0;hideWake();HH.app.render(["live","recent","totals","openDays",
@@ -271,8 +274,10 @@ async function makeDossier(naam,nummer,lang){
 
 /* De stapel wordt niet meer apart weggeschreven: hij gaat als stackNa mee in dezelfde
    transactie als de nieuwe regel, zodat parkeren en starten niet los kunnen raken. */
+/* Patch AG: alleen een taak mét dossier is iets om naar terug te keren. Een lege
+   regel op de stapel leverde na de pauze opnieuw een lege regel zonder invoerscherm op. */
 const parkeerLijst=()=>{const st=HH.state.read().stack.slice();
-  if(HH.state.read().running&&HH.state.read().running.soort==="werk")
+  if(HH.state.read().running&&HH.state.read().running.soort==="werk"&&HH.state.read().running.dossierId)
     st.push({dossierId:HH.state.read().running.dossierId,code:HH.state.read().running.code,
       omschrijving:HH.state.read().running.omschrijving});
   return st;};
@@ -436,7 +441,7 @@ async function slaDvnNummerOp(){
     toast("Dit nummer hoort bij een andere DVN. Kies eerst een gewoon dossiernummer.");return;}
   const warn=[];
   if(bestaand)warn.push('Nummer '+nr+' hoort al bij "'+bestaand.naam+'". Deze DVN blijft eigen regels houden, maar Intapp gebruikt dat bestaande dossier.');
-  warn.push(rs.length+' regel(s) blijven intern aan deze DVN gekoppeld. De DVN-naam verdwijnt uit de omschrijving, de werkdatum blijft behouden en de i7-werkcode wordt gewist.');
+  warn.push(rs.length+' regel(s) blijven intern aan deze DVN gekoppeld. De werkdatum en de DVN-naam verdwijnen uit de omschrijving en de i7-werkcode wordt gewist.');
   if(!confirm(warn.join("\n\n")+"\n\nDoorgaan?"))return;
   const nowMs=Date.now(),nowIso=new Date(nowMs).toISOString();let uit;
   try{

@@ -24,10 +24,10 @@ await test('day correction link opens the matching dossier instead of a general 
  assert.equal(HH.state.read().tab,'beheer');assert.equal(els.get('manage-flow').hidden,false);
  assert.equal(els.get('manage-overview').hidden,true);assert.ok(els.get('manage-flow').innerHTML.includes('123456789'));
 });
-await test('grouped correction clipboard contains the current dated description',async()=>{
+await test('grouped correction clipboard contains the current description without work date',async()=>{
  const button={dataset:{manageCopy:'description'},innerHTML:'Kopieer'};
  await els.get('v-beheer').click({target:{closest:s=>s==='[data-manage-copy]'?button:null}});
- assert.equal(copied.at(-1),'04.09.2026 red flag review docs');
+ assert.equal(copied.at(-1),'red flag review docs');
 });
 await test('grouped overview does not expand all correction fields',()=>{
  run('sluitBeheerFlow()');const html=els.get('manage-worklist').innerHTML;
